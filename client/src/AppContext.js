@@ -7,7 +7,6 @@ import { useUpdateChecker } from "~/hooks/useUpdateChecker";
 import { useScreenSaver } from "~/hooks/useScreenSaver";
 import { useDisplayScale } from "~/hooks/useDisplayScale";
 import { useUiPreferences } from "~/hooks/useUiPreferences";
-import { useSenseHatMode } from "~/hooks/useSenseHatMode";
 import useIdleDetection from "~/hooks/useIdleDetection";
 import useFavoriteLocations from "~/hooks/useFavoriteLocations";
 import { placeLabelFromAddress } from "~/ui/placeLabel";
@@ -253,25 +252,6 @@ export function AppContextProvider({ children }) {
     return () => { cancelled = true; };
   }, [mapGeo, reverseGeoApiKey]);
 
-  // Push the current map view to the server's kiosk-location cache so
-  // background daemons that don't know about React state — currently
-  // just `tools/sensehat_weather.py` via `/api/sensehat` — can follow
-  // what the user is looking at. Debounced 1 s so a quick pan across
-  // the map doesn't spam the endpoint with every interim coordinate.
-  // The post is best-effort: on a remote client (POST is
-  // localhostOnly) the server returns 403, which we swallow — the
-  // SenseHat at the friend's place still tracks its own kiosk, not
-  // ours, which is the intended per-Pi semantics.
-  useEffect(() => {
-    if (!mapGeo || mapGeo.latitude == null || mapGeo.longitude == null) return undefined;
-    const t = setTimeout(() => {
-      axios.post("/api/kiosk-location", {
-        lat: mapGeo.latitude,
-        lon: mapGeo.longitude,
-      }).catch(() => undefined);
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [mapGeo]);
   // Whether the AI weather summary feature is operational on this Pi.
   // Starts true (optimistic) and is flipped to false when the server returns
   // 503 (no Anthropic API key configured). Used by WeatherMap to conditionally
@@ -452,20 +432,7 @@ export function AppContextProvider({ children }) {
   } = useUiPreferences();
 
   // Sense HAT display-mode toggle — server side probes `import sense_hat`
-  // once and toggles between pi-sensehat.service (weather animations) and
-  // pi-sensehat-clock.service (HH:MM clock). Available only on the one
-  // Pi in the current fleet that has the HAT physically attached;
-  // `senseHatAvailable` gates the UI toggle on every other host.
-  const {
-    senseHatAvailable,
-    senseHatMode,
-    saveSenseHatMode,
-    senseHatClockBrightness,
-    setSenseHatClockBrightnessLive,
-    senseHatRadarBrightness,
-    setSenseHatRadarBrightnessLive,
-  } = useSenseHatMode();
-
+ 
   // Map zoom — three pieces of state working together:
   //   - defaultMapZoom : the user's preferred starting zoom, used on next mount
   //                      (Leaflet's MapContainer reads `zoom` only on init).
@@ -2041,9 +2008,6 @@ export function AppContextProvider({ children }) {
     setRadarOpacityDarkLive,
     setBrightnessLive,
     saveAdvancedSleepFlag,
-    saveSenseHatMode,
-    setSenseHatClockBrightnessLive,
-    setSenseHatRadarBrightnessLive,
     setMobileRadarMaximized,
     setDesktopRadarMaximized,
     setPiRadarMaximized,
@@ -2123,9 +2087,6 @@ export function AppContextProvider({ children }) {
     setRadarOpacityDarkLive,
     setBrightnessLive,
     saveAdvancedSleepFlag,
-    saveSenseHatMode,
-    setSenseHatClockBrightnessLive,
-    setSenseHatRadarBrightnessLive,
     setMobileRadarMaximized,
     setDesktopRadarMaximized,
     setPiRadarMaximized,
@@ -2219,10 +2180,6 @@ export function AppContextProvider({ children }) {
     sleepStage2Delay,
     sleepNightMode,
     sleepStage,
-    senseHatAvailable,
-    senseHatMode,
-    senseHatClockBrightness,
-    senseHatRadarBrightness,
     updateAvailable: updateAvailable && latestSha !== skippedSha,
     latestVersion,
     latestSha,
@@ -2268,10 +2225,6 @@ export function AppContextProvider({ children }) {
     sleepStage2Delay,
     sleepNightMode,
     sleepStage,
-    senseHatAvailable,
-    senseHatMode,
-    senseHatClockBrightness,
-    senseHatRadarBrightness,
     updateAvailable,
     latestVersion,
     latestSha,

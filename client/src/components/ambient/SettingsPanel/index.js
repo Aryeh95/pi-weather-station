@@ -243,7 +243,6 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
     mouseHide, saveMouseHide,
     showAdvisoryAlerts, saveShowAdvisoryAlerts,
     showTestAlerts, saveShowTestAlerts,
-    autoSelectTab, saveAutoSelectTab,
     showAlertRing, saveShowAlertRing,
     // Locality gate for the localhost-only "Show test alerts" row. This
     // section renders for remote clients too, so the row is wrapped in
@@ -443,15 +442,6 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
         * On a non-touch display (stable monitor) it switches even at idle
         * stage 0 since there's no reader to protect. */}
       <div className={styles.toggleRow}>
-        <Toggle
-          label={lbl(lang, "Auto-select forecast tab", "Sélection auto de l'onglet", "Selección automática de pestaña")}
-          sub={lbl(lang,
-            "Switches Temp/Wind/Precip when the weather turns. Off by default.",
-            "Bascule Temp/Vent/Précip selon la météo. Désactivé par défaut.",
-            "Cambia Temp/Viento/Precip. según el tiempo. Desactivado por defecto.")}
-          value={Boolean(autoSelectTab)}
-          onChange={saveBoolFlag(saveAutoSelectTab)}
-        />
       </div>
 
       {/* Trust-this-Pi helper. Downloads the self-signed CA cert
@@ -526,8 +516,7 @@ function i18nChangeLanguage(lang) {
  */
 const SectionConfig = ({ ctx, lang, remote }) => {
   const {
-    mapApiKey, weatherApiKey, reverseGeoApiKey,
-    anthropicApiKey, airNowApiKey, openAqApiKey,
+    mapApiKey, reverseGeoApiKey,
     customLat, customLon,
     radarSource, saveRadarSource,
     brightnessPercent, brightnessAvailable, brightnessMinPercent, setBrightnessLive,
@@ -564,11 +553,7 @@ const SectionConfig = ({ ctx, lang, remote }) => {
   // never got the chance to be flushed.
   const [draft, setDraft] = useState({
     mapApiKey: mapApiKey || "",
-    weatherApiKey: weatherApiKey || "",
     reverseGeoApiKey: reverseGeoApiKey || "",
-    anthropicApiKey: anthropicApiKey || "",
-    airNowApiKey: airNowApiKey || "",
-    openAqApiKey: openAqApiKey || "",
     customLat: customLat != null ? String(customLat) : "",
     customLon: customLon != null ? String(customLon) : "",
   });
@@ -582,15 +567,11 @@ const SectionConfig = ({ ctx, lang, remote }) => {
   useEffect(() => {
     setDraft((prev) => ({
       mapApiKey: prev.mapApiKey === "" ? (mapApiKey || "") : prev.mapApiKey,
-      weatherApiKey: prev.weatherApiKey === "" ? (weatherApiKey || "") : prev.weatherApiKey,
       reverseGeoApiKey: prev.reverseGeoApiKey === "" ? (reverseGeoApiKey || "") : prev.reverseGeoApiKey,
-      anthropicApiKey: prev.anthropicApiKey === "" ? (anthropicApiKey || "") : prev.anthropicApiKey,
-      airNowApiKey: prev.airNowApiKey === "" ? (airNowApiKey || "") : prev.airNowApiKey,
-      openAqApiKey: prev.openAqApiKey === "" ? (openAqApiKey || "") : prev.openAqApiKey,
       customLat: prev.customLat === "" ? (customLat != null ? String(customLat) : "") : prev.customLat,
       customLon: prev.customLon === "" ? (customLon != null ? String(customLon) : "") : prev.customLon,
     }));
-  }, [mapApiKey, weatherApiKey, reverseGeoApiKey, anthropicApiKey, airNowApiKey, openAqApiKey, customLat, customLon]);
+  }, [mapApiKey, reverseGeoApiKey, customLat, customLon]);
 
   // `isDirty` used to gate the Save button's disabled attribute, but
   // it caused the "Save click does nothing" UX bug — the button looked
@@ -624,11 +605,7 @@ const SectionConfig = ({ ctx, lang, remote }) => {
     setSaveError(null);
     saveSettingsToJson({
       mapsKey: draft.mapApiKey,
-      weatherKey: draft.weatherApiKey,
       geoKey: draft.reverseGeoApiKey,
-      anthropicKey: draft.anthropicApiKey,
-      airNowKey: draft.airNowApiKey,
-      openAqKey: draft.openAqApiKey,
       lat: draft.customLat,
       lon: draft.customLon,
     })
@@ -645,16 +622,8 @@ const SectionConfig = ({ ctx, lang, remote }) => {
   const providers = [
     { id: "mapApiKey", name: "Mapbox", tier: "required",
       unlocks: lbl(lang, "Map tiles + styles", "Tuiles de carte + styles", "Teselas y estilos de mapa") },
-    { id: "weatherApiKey", name: "Tomorrow.io", tier: "required",
-      unlocks: lbl(lang, "Hourly + daily forecast", "Prévisions horaires + 5 jours", "Pronóstico horario + 5 días") },
     { id: "reverseGeoApiKey", name: "LocationIQ", tier: "optional",
       unlocks: lbl(lang, "Reverse geocoding · place name", "Géocodage inverse · nom de lieu", "Geocodificación inversa · nombre del lugar") },
-    { id: "anthropicApiKey", name: "Anthropic", tier: "optional",
-      unlocks: lbl(lang, "AI weather summary (Claude Haiku)", "Résumé météo IA (Claude Haiku)", "Resumen meteorológico IA (Claude Haiku)") },
-    { id: "airNowApiKey", name: "EPA AirNow", tier: "optional",
-      unlocks: lbl(lang, "US air-quality index (AQI)", "Indice qualité d'air US (AQI)", "Índice de calidad del aire EE.UU. (AQI)") },
-    { id: "openAqApiKey", name: "OpenAQ", tier: "optional",
-      unlocks: lbl(lang, "Global air-quality fallback", "Repli qualité d'air mondial", "Calidad del aire global (respaldo)") },
   ];
 
   return (
@@ -855,13 +824,6 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
     brightnessMinPercent,
     debugEnabled,
     saveAdvancedSleepFlag,
-    senseHatAvailable,
-    senseHatMode,
-    saveSenseHatMode,
-    senseHatClockBrightness,
-    setSenseHatClockBrightnessLive,
-    senseHatRadarBrightness,
-    setSenseHatRadarBrightnessLive,
     // Display group (Phase 8b — ported in 2.14.22)
     lightModeStyle,
     darkModeStyle,
@@ -875,13 +837,6 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
     setAlertRadiusKmLive,
     distanceUnit,
     // AI group
-    radarAnalysisEnabled,
-    extendedRadarRadius,
-    showSamplingPoints,
-    calmDayFastPath,
-    saveAdvancedAiFlag,
-    pollenEnabled,
-    savePollenEnabled,
   } = ctx;
   // Each save helper returns a promise (POST /api/settings). Errors
   // are non-critical for the UI — log + swallow so a transient
@@ -896,11 +851,6 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
     if (typeof saveAdvancedDisplayFlag !== "function") return;
     Promise.resolve(saveAdvancedDisplayFlag(key, value))
       .catch((err) => console.warn("[settings] display flag save failed", key, err));
-  };
-  const ai = (key) => (value) => {
-    if (typeof saveAdvancedAiFlag !== "function") return;
-    Promise.resolve(saveAdvancedAiFlag(key, value))
-      .catch((err) => console.warn("[settings] AI flag save failed", key, err));
   };
   const percentFormat = (v) => `${Math.round(v * 100)}%`;
 
@@ -977,83 +927,6 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
             onChange={setAlertRadiusKmLive}
             disabled={remote}
           />
-
-          {/* ── AI / radar analysis ────────────────────────────────── */}
-          <div className={`${styles.subhead} ${styles.subheadGap}`}>
-            {lbl(lang, "AI · radar analysis", "IA · analyse radar", "IA · análisis radar")}
-          </div>
-          {/* grid2 (not grid4): each toggle carries a multi-line sub-text
-           * label that wraps badly in a narrow cell. grid2 is SINGLE-column
-           * across the whole kiosk family (< 1280 px) — at the 7" kiosk 2
-           * columns left the sub-text only ~150 px and it wrapped word-per-word
-           * — and only goes 2-col on the wide desktop panel (≥ 1280 px). See
-           * the breakpoint rationale in styles.css (.grid2). */}
-          <div className={styles.grid2}>
-            <Toggle
-              label={lbl(lang, "Radar analysis enabled", "Analyse radar activée", "Análisis radar activado")}
-              value={Boolean(radarAnalysisEnabled)}
-              onChange={ai("radarAnalysisEnabled")}
-              disabled={remote}
-              sub={lbl(lang,
-                "Analysis rings + AI radar summary",
-                "Cercles d'analyse + résumé IA radar",
-                "Anillos de análisis + resumen IA radar")}
-            />
-            <Toggle
-              /* The outer radar ring distance follows the unit (mirrors
-                 RADAR_GEOMETRY's outer max: 100 km / 60 mi) — was hardcoded
-                 "100 km", which read wrong in imperial. */
-              label={(() => {
-                const d = distanceUnit === "mi" ? "60 mi" : "100 km";
-                return lbl(lang, `Extended radius (${d})`, `Rayon étendu (${d})`, `Radio extendido (${d})`);
-              })()}
-              value={Boolean(extendedRadarRadius)}
-              onChange={ai("extendedRadius")}
-              disabled={remote}
-              sub={lbl(lang, "Adds the outer ring", "Ajoute l'anneau extérieur", "Añade el anillo exterior")}
-            />
-            <Toggle
-              label={lbl(lang, "Sampling points", "Points d'échantillonnage", "Puntos de muestreo")}
-              value={Boolean(showSamplingPoints)}
-              onChange={ai("showSamplingPoints")}
-              disabled={remote}
-              sub={lbl(lang,
-                "Show points read by the sampler",
-                "Affiche les points lus par le détecteur",
-                "Muestra los puntos leídos por el muestreador")}
-            />
-            <Toggle
-              /* Detechnified label (Phase 6): the vendor name "Claude"
-               * leaves the UI — the user only needs the BENEFIT (lower
-               * API cost), not which LLM runs behind it. The mechanism
-               * (still honestly "AI") stays in the sub-text. */
-              label={lbl(lang,
-                "AI call savings when skies are calm",
-                "Économie d'appels IA quand le ciel est calme",
-                "Ahorro de llamadas IA cuando el cielo está despejado")}
-              value={Boolean(calmDayFastPath)}
-              onChange={ai("calmDayFastPath")}
-              disabled={remote}
-              sub={lbl(lang,
-                "Pauses the AI radar analysis when no precipitation is nearby.",
-                "Suspend l'analyse radar par IA en l'absence de précipitations.",
-                "Pausa el análisis de radar por IA cuando no hay precipitación cerca.")}
-            />
-            <Toggle
-              label={lbl(lang, "Pollen badge", "Badge pollen", "Insignia de polen")}
-              value={Boolean(pollenEnabled)}
-              onChange={(v) => {
-                if (typeof savePollenEnabled !== "function") return;
-                Promise.resolve(savePollenEnabled(v))
-                  .catch((err) => console.warn("[settings] pollen save failed", err));
-              }}
-              disabled={remote}
-              sub={lbl(lang,
-                "Show pollen in the metrics grid (Europe + most metros)",
-                "Affiche le pollen dans la grille (Europe + grandes villes)",
-                "Mostrar polen en la cuadrícula (Europa + grandes ciudades)")}
-            />
-          </div>
 
           {/* ── Sleep ──────────────────────────────────────────────── */}
           <div className={`${styles.subhead} ${styles.subheadGap}`}>
@@ -1139,68 +1012,6 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
                 lang={lang}
               />
             </div>
-          ) : null}
-
-          {/* Sense HAT display-mode toggle — only rendered on the one
-            * Pi in the fleet that has the HAT physically attached.
-            * `senseHatAvailable` is set by useSenseHatMode after a
-            * one-shot `python3 -c "import sense_hat"` probe on the
-            * server side. */}
-          {senseHatAvailable ? (
-            <>
-              <div className={`${styles.subhead} ${styles.subheadGap}`}>
-                {lbl(lang, "Sense HAT", "Sense HAT", "Sense HAT")}
-              </div>
-              <div className={`${styles.grid4} ${styles.gridSenseHat}`}>
-                <Seg
-                  label={lbl(lang, "Display", "Affichage", "Pantalla")}
-                  options={[
-                    { v: "weather", l: lbl(lang, "Weather", "Météo", "Tiempo") },
-                    { v: "clock",   l: lbl(lang, "Clock",   "Horloge", "Reloj") },
-                    { v: "radar",   l: lbl(lang, "Radar",   "Radar",   "Radar") },
-                    { v: "auto",    l: lbl(lang, "Auto",    "Auto",    "Auto") },
-                  ]}
-                  value={senseHatMode || "weather"}
-                  onChange={saveSenseHatMode}
-                  disabled={remote}
-                />
-                {/* Clock brightness slider — only shown when clock mode is
-                  * active. Restarts pi-sensehat-clock.service server-side when
-                  * the value lands. Min pinned to 20 % to match the radar
-                  * slider (same scale → thumb aligns) and stay above the LED
-                  * visibility floor — below ~15 % the matrix reads black. */}
-                {senseHatMode === "clock" ? (
-                  <RangeSlider
-                    label={lbl(lang, "Clock brightness", "Luminosité horloge", "Brillo del reloj")}
-                    value={senseHatClockBrightness}
-                    min={20}
-                    max={100}
-                    step={5}
-                    onChange={setSenseHatClockBrightnessLive}
-                    disabled={remote}
-                  />
-                ) : null}
-                {/* Radar brightness slider — shown in radar/auto modes. Scales
-                  * the radar grid in BOTH day and night (like the clock slider;
-                  * it used to dim only at night, which made it look broken in
-                  * daytime). Applied live by the daemon (no restart) so it's
-                  * smooth at any drag speed. Min pinned to 20 %: the heavier
-                  * tiers stay visible there, below ~15 % the matrix goes black
-                  * on both v1 and v2. Same min/scale as the clock slider so the
-                  * thumb sits at the same place for the same %. */}
-                {(senseHatMode === "radar" || senseHatMode === "auto") ? (
-                  <RangeSlider
-                    label={lbl(lang, "Radar brightness", "Luminosité radar", "Brillo radar")}
-                    value={senseHatRadarBrightness}
-                    min={20}
-                    max={100}
-                    step={5}
-                    onChange={setSenseHatRadarBrightnessLive}
-                    disabled={remote}
-                  />
-                ) : null}
-              </div>
-            </>
           ) : null}
 
           <div className={`${styles.subhead} ${styles.subheadGap}`}>

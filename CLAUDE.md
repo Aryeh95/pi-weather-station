@@ -30,7 +30,25 @@ age* so staleness is visible rather than suspected.
   logic (they depended on RainViewer frame sampling).
 - **Keep NWS alerts polling** — already built, free, keyless, and polygon
   overlays are more useful on a radar map than on a forecast panel.
-- Homebridge indoor sensor integration: unaffected, leave as-is.
+- ~~Homebridge indoor sensor integration: unaffected, leave as-is.~~
+  **Superseded 2026-08-11: indoor data dropped too** (user request during the
+  teardown). `indoorTempCtrl` + `IndoorBlock` removed.
+
+### Decided during the teardown (not in the original plan)
+
+- **Drop all air quality** — `airQualityCtrl` + its 5 sources (3 of which were
+  Canada-only) and the AirCard / AirAlertCard UI.
+- **Drop pollen** — CAMS is Europe-only and returns null for every US coord.
+- **Drop the Open-Meteo PoC** — it existed only to compare against
+  Tomorrow.io, which is gone.
+- **Keep sunrise/sunset** — auto dark-mode switches the kiosk palette on it.
+  (`useTimeOfDay` does *not* depend on it; the auto-toggle does.)
+- **Drop the Sense HAT subsystem** — a Sense HAT is a Pi GPIO board and cannot
+  attach to a Surface Pro, and its weather mode read `/api/weather/current` +
+  `getRiskLevels`, both deleted here, so it was already non-functional.
+  `kioskLocationCtrl` went with it (its only consumer).
+- **UI scope: bare radar viewer** — forecast panels deleted rather than
+  re-pointed at another source.
 
 ## Target architecture
 
@@ -196,8 +214,28 @@ No good free option.
    source `"iem"`, now the default; RainViewer and ECCC still selectable. Full
    suite passes (618/620 — the 2 failures are pre-existing Windows POSIX-mode
    tests, they pass on Linux), client builds clean.
-1b. **Rip out tomorrow.io / RainViewer / AI summary — NOT STARTED.** Deferred
-   deliberately so the layers could be verified before a large deletion.
+1b. **Rip out tomorrow.io / RainViewer / AI summary — DONE** (2026-08-11).
+   ~12,000 lines removed across ~90 files. Also removed, beyond the original
+   plan: air quality (all 5 sources), pollen (Europe-only), the Open-Meteo
+   PoC, indoor temperature / Homebridge, and the Sense HAT subsystem (Pi GPIO
+   hardware that cannot attach to a Surface Pro, whose weather mode depended
+   on two controllers this pass deleted).
+
+   The client is now a radar viewer: full-bleed map, NWS alert stack, and a
+   RadarHeader carrying place name + clock. 22 ambient components deleted;
+   the deletion set was computed by walking the import graph from
+   `client/src/index.js`, not by hand.
+
+   Surviving API surface — verified live in the running app, every request
+   200, no orphaned polling:
+     /settings · /api/is-local · /api/brightness · /api/display-scale
+     /api/update-check · /api/health · /api/radar/{site,frames}
+     /api/weather-alerts · /api/nearby-alerts · /api/sunrise-sunset
+     /api/tiles/... · /api/reverse-geocode
+
+   Only two API keys remain relevant: **Mapbox** (basemap, required) and
+   **LocationIQ** (place name, optional). Tomorrow.io / Anthropic / AirNow /
+   OpenAQ keys are no longer read.
 2. STI storm tracks
 3. Lightning
 4. Level II, only if warranted

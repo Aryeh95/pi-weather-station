@@ -1,10 +1,6 @@
 {
-  "weatherApiKey": "key",
   "mapApiKey": "key",
   "reverseGeoApiKey": "key",
-  "anthropicApiKey": "key",
-  "airNowApiKey": "key",
-  "openAqApiKey": "key",
   "startingLat": "32.7473",
   "startingLon": "-97.0945"
 }
