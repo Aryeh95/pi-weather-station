@@ -1,0 +1,484 @@
+/* UpdateModal — slides up from the bottom, positioned over the InfoPanel */
+.container {
+  position: fixed;
+  bottom: 40px; /* above the ControlButtons bar */
+  right: 0;
+  width: 300px;
+  max-height: calc(100dvh - 40px);
+  z-index: 4999;
+  display: flex;
+  flex-direction: column;
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+.container-dark {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-bottom: none;
+  border-right: none;
+  color: #e2e8f0;
+}
+
+.container-light {
+  background: #f0f4f8;
+  border: 1px solid #ccc;
+  border-bottom: none;
+  border-right: none;
+  color: #1a2a3a;
+}
+
+/* Long-wavelength night-red palette. Colours mirror the nightRed
+ * tokens in src/ui/tokens.js (text #c04848, bg #100404) rather than
+ * referencing the CSS variables directly — the modal renders as a
+ * sibling of `<AmbientLayers>` in App/index.js, so it sits outside
+ * the `.ambientRoot` subtree where the variables are defined.
+ * Hardcoding keeps the override self-contained and avoids hoisting
+ * the variables to a global scope just for this one consumer. */
+.container-night-red {
+  background: #100404;
+  border: 1px solid rgba(176, 64, 64, 0.32);
+  border-bottom: none;
+  border-right: none;
+  color: #c04848;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid;
+  flex-shrink: 0;
+}
+
+.container-dark .header {
+  border-color: #444;
+}
+
+.container-light .header {
+  border-color: #ccc;
+}
+
+.container-night-red .header {
+  border-color: rgba(176, 64, 64, 0.22);
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.version {
+  font-size: 10px;
+  opacity: 0.6;
+  flex: 1;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.close-button:hover {
+  opacity: 1;
+}
+
+.container-dark .close-button {
+  color: #e2e8f0;
+}
+
+.container-light .close-button {
+  color: #1a2a3a;
+}
+
+.container-night-red .close-button {
+  color: #c04848;
+}
+
+/* Changelog list */
+.changelog {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.no-changelog {
+  font-size: 10px;
+  opacity: 0.5;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.commit-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.badge-feat {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.badge-fix {
+  background: #15803d;
+  color: #fff;
+}
+
+.badge-perf {
+  background: #ea580c;
+  color: #fff;
+}
+
+.badge-deps {
+  background: #64748b;
+  color: #fff;
+}
+
+.badge-release {
+  background: #7c3aed;
+  color: #fff;
+}
+
+/* v2.15.10: style: commit type for CSS/layout changes that affect
+ * what the user sees. Soft teal — visually distinct from feat
+ * (blue / new) and fix (green / repair), reads as "polish". */
+.badge-style {
+  background: #0d9488;
+  color: #fff;
+}
+
+.commit-message {
+  font-size: 10px;
+  line-height: 1.45;
+  opacity: 0.9;
+}
+
+/* Service-file-changed notice — shown above the manual command */
+.service-file-notice {
+  font-size: 10px;
+  line-height: 1.45;
+  padding: 6px 10px;
+  margin: 0 12px 4px;
+  border-radius: 3px;
+  border-left: 3px solid;
+}
+
+.container-dark .service-file-notice {
+  background: #3a2a14;
+  border-color: #f59e0b;
+  color: #fde68a;
+}
+
+.container-light .service-file-notice {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #78350f;
+}
+
+/* List of changed deploy/ artefacts shown inside the service-file-notice
+   when the in-app updater detects the installed copies have drifted from
+   upstream. Compact bullet list — each entry is a short file basename
+   wrapped in <code>. */
+.deploy-file-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.deploy-file-list li {
+  margin: 1px 0;
+}
+
+.deploy-file-list code {
+  font-family: monospace;
+  font-size: 10px;
+}
+
+/* Manual command area */
+.cmd-section {
+  padding: 6px 12px;
+  border-top: 1px solid;
+  flex-shrink: 0;
+}
+
+.container-dark .cmd-section {
+  border-color: #444;
+}
+
+.container-light .cmd-section {
+  border-color: #ccc;
+}
+
+.cmd-row {
+  display: flex;
+  /* Top-aligned so the Copy button doesn't drift to the vertical centre when
+     the command wraps onto multiple lines (the longest variants — needsManualUpgrade
+     and changedDeployFiles — are 130-180 chars, well past the modal width). */
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.cmd-code {
+  font-family: monospace;
+  font-size: 9px;
+  line-height: 1.5;
+  flex: 1;
+  min-width: 0;
+  /* Allow the command to wrap onto as many lines as it needs. The previous
+     single-line/ellipsis behaviour hid most of the recipe behind "…" — the
+     point of showing the command at all is so the user can read and verify
+     it before copying. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 3px 6px;
+  border-radius: 3px;
+}
+
+.container-dark .cmd-code {
+  background: #111;
+  color: #7dd3a8;
+}
+
+.container-light .cmd-code {
+  background: #dde3ea;
+  color: #1a5c3a;
+}
+
+.copy-button {
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  /* Padding bumped from 2/7 → 8/12 so the Copy tap target sits at
+   * ~30 px tall instead of the previous ~18 px — easier to hit on
+   * touch screens without overwhelming the compact cmd block it
+   * sits inside. Same rationale as the Skip/Update buttons below. */
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.container-dark .copy-button {
+  background: #444;
+  color: #e2e8f0;
+}
+
+.container-light .copy-button {
+  background: #ccd3da;
+  color: #1a2a3a;
+}
+
+.copy-button-copied {
+  opacity: 0.6;
+}
+
+.no-systemd-note {
+  font-size: 9px;
+  opacity: 0.55;
+  font-style: italic;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Server-side failure message (detached HEAD, wrong branch, local
+   changes, npm install failed, etc.). Shown above the action buttons
+   when /api/update returns an error. */
+.error-message {
+  font-size: 10px;
+  line-height: 1.4;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  border-left: 3px solid;
+}
+
+.container-dark .error-message {
+  background: #3a1a1a;
+  border-color: #dc2626;
+  color: #fecaca;
+}
+
+.container-light .error-message {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #7f1d1d;
+}
+
+.no-systemd-cmd {
+  font-family: monospace;
+  font-style: normal;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.container-dark .no-systemd-cmd {
+  background: #111;
+  color: #7dd3a8;
+}
+
+.container-light .no-systemd-cmd {
+  background: #dde3ea;
+  color: #1a5c3a;
+}
+
+/* Action buttons */
+.actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid;
+  flex-shrink: 0;
+}
+
+.container-dark .actions {
+  border-color: #444;
+}
+
+.container-light .actions {
+  border-color: #ccc;
+}
+
+.skip-button,
+.update-button {
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  /* Padding bumped from 4px → 10px vertical so the actionable area
+   * sits at ~36 px tall — close enough to Apple's 44 px touch-target
+   * guideline to be reliably tappable on the 7" Pi kiosk and on
+   * phones, without inflating the modal vertically on desktop.
+   * Reported by remote users hitting the "Update" + "Skip this
+   * version" buttons multiple times before they registered. */
+  padding: 10px 0;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+  transition: opacity 0.15s;
+}
+
+.skip-button:disabled,
+.update-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.container-dark .skip-button {
+  background: #3a3a3a;
+  color: #e2e8f0;
+}
+
+.container-light .skip-button {
+  background: #ccd3da;
+  color: #1a2a3a;
+}
+
+.update-button {
+  background: #2563eb;
+  color: #fff;
+}
+
+.update-button-failed {
+  background: #dc2626;
+}
+
+.update-button-stopped {
+  background: #16a34a;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Long-wavelength night-red palette overrides.
+ *
+ * Applied when the user is in v3 ambient mode AND has the
+ * `advanced.sleep.nightMode` flag on — the kiosk shifts to a deep-red
+ * scheme to preserve melatonin at night. The modal renders as a
+ * sibling of <AmbientLayers>, so we can't pick up the .ambientRoot
+ * CSS variables here; the values below mirror the nightRed tokens
+ * defined in src/ui/tokens.js. Override only the elements that
+ * visually scream "wrong palette": container fill, terminal-style
+ * cmd block, amber warning, blue update button. The rest inherits
+ * from .container-dark, which already lands close enough.
+ * ─────────────────────────────────────────────────────────────────── */
+.container-night-red .service-file-notice {
+  background: #2a0a0a;
+  border-color: #b04040;
+  color: #e08080;
+}
+
+.container-night-red .cmd-section {
+  border-color: rgba(176, 64, 64, 0.18);
+}
+
+.container-night-red .cmd-code {
+  background: #060000;
+  color: #c04848;
+}
+
+.container-night-red .copy-button {
+  background: #2a0a0a;
+  color: #c04848;
+  border: 1px solid rgba(176, 64, 64, 0.32);
+}
+
+.container-night-red .error-message {
+  background: #2a0a0a;
+  color: #e08080;
+  border-color: #b04040;
+}
+
+.container-night-red .no-systemd-cmd {
+  background: #060000;
+  color: #c04848;
+}
+
+.container-night-red .actions {
+  border-color: rgba(176, 64, 64, 0.18);
+}
+
+.container-night-red .skip-button {
+  background: #2a0a0a;
+  color: #c04848;
+}
+
+.container-night-red .update-button {
+  background: #c04040;
+  color: #100404;
+}
+
+.container-night-red .update-button-failed {
+  background: #b04030;
+}
+
+.container-night-red .update-button-stopped {
+  background: #783030;
+}

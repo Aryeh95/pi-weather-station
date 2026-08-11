@@ -1,0 +1,162 @@
+/* BottomDock — slab pinned at the bottom of the LayoutPi screen.
+ *
+ * The inner ControlButtons component brings its own flex layout for
+ * the icons; this wrapper just gives it a uniform background, padding,
+ * and a top border so the dock reads as separate from the content
+ * above it. Touch-friendly height: 52px target (44px icon + 8px
+ * padding above/below). */
+
+.dock {
+  background-color: var(--c-surface);
+  /* v3.2 framed layout: the dock is a rounded card inset in the gutter (the
+   * LayoutPi grid gap/padding provide the inset), matching the mockup's
+   * toolbar bar — a full border + radius rather than the old top-border-only
+   * full-bleed strip. */
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  /* `backdrop-filter: blur` homogenises the dock background by blurring
+   * the map / radar tiles that show through the surface's 15 % alpha.
+   * Without it, bright radar pixels (yellow / blue precipitation behind
+   * the dock) create variable-luminance patches under the text — the
+   * font's sub-pixel anti-aliasing then has to blend against a moving
+   * target and the group labels read as soft / blurry in palettes
+   * where the radar contrasts strongly with the dock surface (night
+   * dock is dark warm grey, the radar's blue/yellow patches pop
+   * through visibly). Day's cream surface and night-red's saturated
+   * red both absorb the radar's colour cast enough that this issue
+   * doesn't surface in those modes — but the blur is harmless there
+   * (radar still shows the geographic content, just frosted under the
+   * dock). Same pattern the synthesis design uses on the radar slider
+   * and hero overlays. */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  /* v2.16.5: reverted v2.16.2's safe-area-bottom padding. In iOS
+   * PWA standalone, `100dvh` < physical screen height, so the
+   * extra padding extended into a zone that the page doesn't
+   * actually paint — it landed in iOS's reserved area below the
+   * page bounds. v2.16.3's body bg fix covers that gap now (the
+   * palette bg fills any uncovered region). Keeping the symmetric
+   * 8 px top/bottom lets the dock icons sit at the real bottom of
+   * the visible page instead of getting pushed up by a buffer
+   * that never rendered. Side paddings keep the safe-area
+   * coverage in case landscape notches reach the controls. */
+  padding:
+    8px
+    max(14px, env(safe-area-inset-right))
+    8px
+    max(14px, env(safe-area-inset-left));
+  display: flex;
+  align-items: stretch;
+  min-height: 52px;
+  color: var(--c-text);
+
+  /* Override the ControlButtons hard-coded grey gradients via CSS
+   * custom properties so the dock buttons adapt to every Direction C
+   * palette (day / dusk / night / nightRed).
+   *
+   * Problem solved: in nightRed mode the grey button backgrounds
+   * (#5d5c5c) reduced contrast with the red icons (--c-text: #c04848)
+   * to ~1.24:1 — effectively invisible. Transparent buttons let the
+   * dark dock surface show through, giving icons ~4:1 contrast.
+   * In day mode the grey gradient clashed with the warm cream surface
+   * (#fffaf0) — transparent eliminates the colour mismatch entirely.
+   *
+   * The fallback values in ControlButtons/styles.css are untouched;
+   * the dock is the component's only mount point today. */
+  --ctrl-btn-bg: transparent;
+  /* `--ctrl-btn-active` (`:active` press flash) intentionally matches
+   * the dock background instead of `--c-accent-soft`. Two reasons:
+   *
+   * 1. On touchscreens, `:active` stays applied after the tap until
+   *    the next pointerdown elsewhere (Chromium / Firefox both — the
+   *    touch pointer has no natural "leave" event). With the previous
+   *    value `var(--c-accent-soft)` the just-tapped button kept an
+   *    accent-tinted background that looked identical to a real ON
+   *    toggle. Users read non-toggle buttons (refresh, recenter,
+   *    marker-toggle) as "stuck on" until they tapped somewhere else.
+   *
+   * 2. Same ambiguity the v2.14.74 comment below addresses for
+   *    `:hover` — when `.buttonDown` is the canonical accent signal
+   *    for "this toggle is ON", any other accent-tinted state in the
+   *    dock (hover, active) competes with it. Dropping the press
+   *    flash leaves `.buttonDown` as the sole accent signal.
+   *
+   * The toast that fires from `notify(...)` in every ControlButtons
+   * onClick handler already gives the user a "tap registered"
+   * confirmation, so removing the press flash doesn't leave them
+   * blind. */
+  --ctrl-btn-active: transparent;
+  --ctrl-btn-down: var(--c-accent-soft);
+  --ctrl-btn-border: var(--c-border-hybrid);
+  --ctrl-btn-border-l: transparent;
+}
+
+/* ControlButtons brings its own `display: flex; justify-content:
+ * space-evenly` and expects to fill its parent's width. Stretching
+ * here (instead of centring) lets the icons spread across the full
+ * dock width on desktop instead of clustering in the middle with
+ * empty rails on either side. The inner component limits its own
+ * height in its own stylesheet, so no fixed height is needed here. */
+.dock > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Narrow-portrait collapse — on a narrow viewport the dock can hold
+ * 13+ icons (ControlButtons row + refresh + update + 3 debug +
+ * HealthIndicator) and the rightmost ones (settings, health) overlap
+ * or push past the dock edge, making them un-tappable. Hide buttons
+ * flagged with `data-dock-priority="secondary"` in this configuration;
+ * widen the window (or rotate to landscape) to bring them back.
+ * Essentials kept visible in portrait: recenter, marker toggle,
+ * contrast, refresh, settings, and the health-indicator dot — plus any
+ * conditionally-shown buttons that don't carry the secondary flag
+ * (debug trio when isLocal, update when available, and — since the
+ * Phase 3 follow-up — the timeline/legend toggles while the mobile
+ * radar is maximized: ControlButtons drops their secondary flag in
+ * that state so the full-bleed radar's own controls stay reachable).
+ *
+ * Threshold is 600 px (was 479): the full dock stops fitting well below
+ * ~650 px, and a desktop browser resized to its ~500 px minimum width
+ * lands in that overcrowded band but never hit the old 479 px gate — so
+ * the settings gear silently fell off the edge on a narrowed desktop
+ * window. 600 px covers both the desktop-minimum case and every phone
+ * in portrait; the 800 px-wide 7" kiosk (landscape) never matches. */
+@media (max-width: 600px) and (orientation: portrait) {
+  .dock [data-dock-priority="secondary"] {
+    display: none !important;
+  }
+}
+
+/* Reach into the existing ControlButtons markup to bring its colour
+ * scheme in line with the warm-grey tokens. The component's own CSS
+ * paints the icons in cream/anthracite; without these overrides they
+ * would not pick up the Direction C accent. Scoped under .dock. */
+.dock :global(svg) {
+  color: var(--c-text);
+  /* Scale icons to fill the touch-target area (52px dock, 8px padding
+   * → 36px available). 24px gives a comfortably readable glyph
+   * without clipping at the top/bottom of the dock cell. Iconify
+   * renders SVG with width/height="1em", so font-size on the parent
+   * also scales them; setting both ensures consistency across
+   * browsers that may handle the em-unit differently. */
+  width: 24px;
+  height: 24px;
+}
+
+/* v2.14.74: hover color change removed entirely. The earlier
+ * approaches (media-query gate, then JS data-touched flag) addressed
+ * the post-tap "stuck brown icon" but didn't help the more general
+ * case the user flagged afterwards: even on a pure-mouse session,
+ * any time the pointer simply sits over a dock button the icon paints
+ * brown (warm-day accent) / amber (dark) / dim-red (nightRed), which
+ * the user reads as "this button is in some on-state". With multiple
+ * toggle buttons in the dock that DO use accent fill to signal their
+ * active state (`.buttonDown` → `--c-accent-soft`), a per-icon hover
+ * tint creates ambiguity between "I'm hovering this" and "this is
+ * on". Dropping the hover color leaves `.buttonDown` as the sole
+ * accent signal in the dock, removing the confusion. `:focus-visible`
+ * is kept for keyboard navigation. */
+.dock :global(div):focus-visible :global(svg) {
+  color: var(--c-accent);
+}

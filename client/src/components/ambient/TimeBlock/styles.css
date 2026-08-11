@@ -1,0 +1,151 @@
+/* TimeBlock — date / time slab (kitchen clock).
+ *
+ * Time numeral takes the visual weight (Geist Mono, large). Date is
+ * a small caps caption above. v3.1 Phase 2: the sun/moon chip row
+ * migrated to the hero's AstroMetaLine (B1·a) — the slab keeps its
+ * size, position and role. */
+
+.slab {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  /* Hybrid-mode severity strip — the clock was the only glance card missing
+   * it. Transparent when calm; picks up warn/danger during a serious alert,
+   * matching the Hero / AirCard so the severity "wall" is unbroken. */
+  box-shadow: inset 4px 0 0 var(--c-strip-color, transparent);
+}
+
+.date {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  color: var(--c-text-dim);
+  margin-bottom: 2px;
+}
+
+.time {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -1px;
+  line-height: 1;
+  color: var(--c-text);
+}
+
+.amPm {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text-dim);
+  margin-left: 6px;
+  vertical-align: 8px;
+}
+
+/* v2.15.6: mobile viewports (< 800 px wide — LayoutMobile path)
+ * scale up the inner typography so the time block matches the
+ * visual weight of the hero. On Pi 7" (800-1279 px) and desktop
+ * (≥ 1280 px) the slab stays at the compact original sizes.
+ *
+ * Verified at 390 px iPhone reference: "23:59" at 56 px Geist Mono
+ * is ~110 px wide and fits inside the rail content width. */
+@media (max-width: 799px) {
+  .date {
+    font-size: 12px;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+  }
+  .time {
+    font-size: 56px;
+    letter-spacing: -1.5px;
+  }
+  .amPm {
+    font-size: 22px;
+    margin-left: 8px;
+    vertical-align: 12px;
+  }
+}
+
+/* v2.15.13: Pi 7" + small desktop (800-1279 px). The 30 px clock
+ * size from the merged-hero experiment is retained — the stacked
+ * card has the full rail width to work with, so 12h "10:37 AM"
+ * fits inline easily. */
+@media (min-width: 800px) and (max-width: 1279px) {
+  .date {
+    font-size: 11px;
+    letter-spacing: 0.6px;
+    margin-bottom: 6px;
+  }
+  .time {
+    font-size: 30px;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  .amPm {
+    font-size: 13px;
+    margin-left: 5px;
+    vertical-align: 6px;
+  }
+}
+
+/* In-window seasonal countdown — its own line below the time (the tap
+ * trigger for the Saisons popover is the date caption above, not this
+ * line). Mono micro caps, dim — a "by the way" detail. */
+.solarEventMarker {
+  margin-top: 4px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+
+/* Slim Pi glance clock — big time beside a right-aligned 2-line meta column
+ * (date on top, next sun event below). Overrides the default stacked layout;
+ * drops the seasonal-countdown line. */
+.slab.compact {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 14px;
+}
+/* Right-aligned 2-line meta beside the big time: day/date/month on top, the
+ * sun time below. Replaces the old 3-children row where the date wrapped to
+ * three cramped lines. */
+.meta {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.dateCompact {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.3px;
+  color: var(--c-text-dim);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+/* Next sun event — sunset (daytime) or sunrise (overnight); the icon swaps
+ * with the event. Named `.sun`, not `.sunset`, since it shows both. */
+.sun {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+.sun svg {
+  width: 16px;
+  height: 16px;
+  /* Full accent, not accent-soft — the soft tint was near-invisible against
+   * the slab in every palette (maintainer-reported). Matches the metric-tile
+   * icon colour. */
+  color: var(--c-accent);
+}

@@ -1,0 +1,191 @@
+/* LayoutDesktop — full-bleed map background with floating overlays.
+ *
+ * Unlike LayoutPi's split grid, the desktop layout puts the radar
+ * behind everything and floats the hero band, right rail, and dock
+ * on top. The user reads the radar through translucent slabs — much
+ * more "ambient" than the partitioned dashboard look. */
+
+.layout {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  --c-rail-width: 320px;
+  /* Mirror of `--c-rail-width` for consumers that need to know how
+   * much horizontal room the rail is ACTUALLY OCCUPYING right now
+   * — not how wide the rail's box is declared. v2.14.70: the
+   * The radar timeline bar's right inset and the attribution strip
+   * use this so they stop at the visible (non-rail) area edge. The
+   * `.layout.focused` override below zeroes it when radar-focus mode
+   * hides the rail — without it the "full-width" bar stopped a rail's
+   * width short of the right edge in the one mode built to give the
+   * radar everything (review finding; the stale comment claiming a
+   * `.collapsed` override predates the focus-mode rename). The
+   * original `--c-rail-width` keeps its declared value so the rail's
+   * own width / off-screen translate math continues to work. */
+  --c-rail-visible-width: var(--c-rail-width);
+  --c-dock-height: 52px;
+  --c-edge-gap: 16px;
+}
+
+/* Radar-focus mode hides the rail entirely — the rail-aware insets
+ * (timeline bar, attribution) must follow it to zero. */
+.layout.focused {
+  --c-rail-visible-width: 0px;
+}
+
+@media (min-width: 1600px) {
+  .layout {
+    --c-rail-width: 360px;
+  }
+}
+
+/* Expandable rail (v2.14.39 ChartTabs, v2.14.47 AiSummaryInline) — when
+ * either of the two maximizable slabs in the rail emits its
+ * `data-{slab}-maximized="true"` flag, grow the rail width so the
+ * promoted slab has more of the viewport to work with. The HeroBand's
+ * `right` offset already references `--c-rail-width` via `calc()` and
+ * transitions on it (200 ms ease-out), so changing this single variable
+ * smoothly pushes the band leftward and pulls the rail+chevron toward
+ * the centre.
+ *
+ * Cap (`min(60vw, 960px)`) keeps the rail from getting absurdly wide on
+ * 4K/ultra-wide monitors but still pushes well past 50 % on mid-range
+ * displays — at 1920 px wide the rail reaches 960 px (50 %), at 2560 px
+ * it stays capped at 960 px (37 %), and at 1280 px it reaches 768 px
+ * (60 %). Past ~960 px the chart axis labels read fine and extra width
+ * just stretches the canvas without adding information density.
+ *
+ * Each maximizable slab uses its OWN data attribute (chart vs ai) rather
+ * than a shared `data-slab-maximized` so other rules can target the
+ * specific slab — e.g. ChartTabs's `.expanded` typography only fires on
+ * `[data-chart-maximized="true"]`. The rail-width grow rule below
+ * intentionally matches either via a comma-separated selector. */
+.layout:has([data-chart-maximized="true"]),
+.layout:has([data-ai-maximized="true"]) {
+  --c-rail-width: min(60vw, 960px);
+}
+
+/* Hide sibling rail slabs when any one card is maximized. The chart
+ * (or AI summary) becomes the focused content; everything else in the
+ * rail steps aside so the area below the maximized card reveals the
+ * radar through the transparent rail. Without this, MetricsGrid /
+ * IndoorBlock / AiSummaryInline (or others above/below the maximized
+ * card) keep rendering at the widened rail width, painting a tall
+ * dark area below the focused card — the "fond presque noir" user
+ * report (v2.14.56).
+ *
+ * `:not([data-{slab}-maximized="true"])` excludes the maximized slab
+ * itself from being hidden — it's the only one that stays visible. */
+.layout:has([data-chart-maximized="true"]) .rail > *:not([data-chart-maximized="true"]),
+.layout:has([data-ai-maximized="true"]) .rail > *:not([data-ai-maximized="true"]) {
+  display: none;
+}
+
+
+/* Map fills the entire area inside the dock — it's the background.
+ * Everything else absolute-positions over it. */
+.mapArea {
+  position: absolute;
+  inset: 0 0 var(--c-dock-height) 0;
+  /* z-index: 0 is load-bearing — it forces .mapArea into its own
+   * stacking context so Leaflet's internal panes (z-index up to 1000
+   * on its `.leaflet-top`/`.leaflet-bottom` controls) stay contained
+   * inside the map area. Without it, Leaflet's high-z-index controls
+   * leak up to the parent .layout stacking context and overlay the
+   * HeroBand and right rail (which sit at z-index 10 — far below
+   * Leaflet's 1000). User-visible symptom: HeroBand and rail
+   * completely invisible despite being in the DOM. */
+  z-index: 0;
+  background-color: var(--c-bg);
+  overflow: hidden;
+}
+
+/* Hero band — pinned to the top-left but offset rightward so Leaflet's
+ * zoom controls + our reset-map / marker buttons (top-left of the map)
+ * stay clickable. The 70 px clearance covers the 30 px control column
+ * plus 16 px outer gap and a 24 px breathing margin, so the controls
+ * read as a small floating group rather than tucked under the slab. */
+.heroSlot {
+  position: absolute;
+  top: var(--c-edge-gap);
+  left: calc(var(--c-edge-gap) + 70px);
+  /* The rail is `zoom: var(--c-font-scale)` so its visual width is
+   * rail-width × font-scale, not rail-width. The heroSlot needs to
+   * end before the rail's visual left edge — otherwise the date in
+   * the clock panel gets clipped by the rail at fontSize=L (320 px
+   * declared rail → 368 px visual at scale 1.15, while heroSlot.right
+   * stayed at 352 → 16 px overlap). Multiply the rail-width by the
+   * font-scale here so the gap holds at every preference. */
+  right: calc(var(--c-rail-width) * var(--c-font-scale, 1) + var(--c-edge-gap) * 2);
+  z-index: 10;
+  pointer-events: auto;
+  transition: right 200ms ease-out;
+  /* No `zoom` here. Earlier Phase 7 polish applied
+   * `zoom: var(--c-font-scale, 1)` to scale the hero text at fontSize=L,
+   * but \`zoom\` visually expands the box without updating the layout
+   * engine's geometry — at scale 1.15 the slot rendered ~968 px wide
+   * while its declared width stayed 842, and the right rail (also
+   * at zoom 1.15 → 368 px visual width vs 320 declared) marched left,
+   * producing a ~150 px overlap that clipped the clock.
+   * The hero band is already large enough at native size; leaving it
+   * unscaled keeps the right edge anchored to its declared position
+   * and the rail stays cleanly to its right. The rail itself still
+   * honours the font-size preference (its contents reads denser/
+   * sparser by user choice). */
+}
+
+/* Right rail — overlays the map on the right edge. Internally scrolls
+ * if its slab stack grows past the available height. */
+.rail {
+  position: absolute;
+  top: var(--c-edge-gap);
+  right: var(--c-edge-gap);
+  bottom: calc(var(--c-dock-height) + var(--c-edge-gap));
+  width: var(--c-rail-width);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Font-size preference — see LayoutPi/.rail for the rationale. */
+  zoom: var(--c-font-scale, 1);
+  /* min-height: 0 on the rail itself isn't needed here because the
+   * rail is absolutely positioned with explicit top + bottom, so its
+   * height is naturally constrained. overflow-y: auto engages
+   * normally. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* `width` joined the transition list in v2.14.39 so the rail
+   * smoothly widens when ChartTabs maximizes (see the
+   * `:has([data-chart-maximized="true"])` rule below). */
+  transition:
+    opacity 150ms ease-out,
+    transform 200ms ease-out,
+    width 200ms ease-out,
+    visibility 0s linear 0s;
+}
+
+/* BottomDock spans the full viewport width at the bottom. */
+.layout > :last-child {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--c-dock-height);
+  z-index: 10;
+}
+
+/* Focus mode (toggled by the RadarFocusControl Leaflet button) —
+ * hide everything that floats on top of the map so the radar fills
+ * the entire viewport. Rail + HeroBand both go; the Leaflet focus
+ * control itself stays visible (rendered by Leaflet at the topleft,
+ * outside this CSS module's scope) so the user can tap it again to
+ * restore the panels. The dock stays visible too — those are kiosk
+ * navigation, not data overlays. */
+.layout.focused .heroSlot,
+.layout.focused .rail {
+  display: none;
+}

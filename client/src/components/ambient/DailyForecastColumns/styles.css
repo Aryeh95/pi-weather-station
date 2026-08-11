@@ -1,0 +1,339 @@
+/* 5-day forecast strip. Five equal-width columns with day name,
+ * icon, high temp (bold), low temp (dim), and precipitation %
+ * when meaningful (≥ 30 %). Matches the Claude Design "Next 5
+ * days" panel.
+ *
+ * Lives inside ChartTabs's .chartArea — which has a fixed
+ * 140 px height for the line chart it normally hosts. The strip
+ * fills that area edge-to-edge. */
+
+.strip {
+  display: grid;
+  /* `minmax(0, 1fr)` instead of plain `1fr`: prevents a cell's
+   * min-content (icon + big mono-typeset temp) from pushing it wider
+   * than its share. Without this, on narrow viewports the maximized
+   * 5-day strip overflows on the right and clips the JEU column
+   * (observed on iPhone SE / 12 Pro portrait at fontSize=L). The
+   * mobile media query below also tightens the expanded layout's
+   * own padding / font sizes so the cells stay readable inside ~64 px. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Natural row height + center-aligned content. v2.14.55: with the
+   * maximized chartArea now fixed at 280 px the previous
+   * `align-items: stretch` + `justify-content: flex-start` on the
+   * column put day labels at the top of a tall cell with empty space
+   * below ("données justifiées au haut" — user report). Letting the
+   * row be auto-height and centring it vertically in the grid keeps
+   * the 5-day strip visually centred inside the 280-px chartArea
+   * just like HourlyForecastColumns does for its 3 rows. */
+  grid-auto-rows: auto;
+  gap: 4px;
+  height: 100%;
+  align-items: center;
+  align-content: center;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 2px;
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+}
+
+.day {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  color: var(--c-text-dim);
+}
+
+/* Icon block — sized identically to HeroCompact's `.iconBlock` so the
+ * Iconify wrapper inherits a known-good context (font-size sets the
+ * 1em-relative SVG, line-height: 1 prevents the parent's baseline
+ * leading from pushing the SVG out of the column). Pretty much the
+ * minimum container InlineIcon needs to render. */
+.iconRow {
+  font-size: 30px;
+  /* Was var(--c-accent) — switched to var(--c-text) after the icons
+   * remained invisible even with the HeroCompact-mirrored container
+   * shape. The active palette's accent token can land close to the
+   * surface fill on some palette/dark-mode combinations, which would
+   * read as "icon not rendering" even when the SVG paints. Text is
+   * the high-contrast token, guaranteed visible on every palette. */
+  color: var(--c-text);
+  line-height: 1;
+  text-align: center;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconPlaceholder {
+  font-size: 16px;
+  color: var(--c-text-dim);
+}
+
+/* High / low temperature pair. The high stays at the full text
+ * colour and font weight; the low drops one weight and uses the
+ * dimmed token so the eye picks up the daily range at a glance. */
+.tempMax {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text);
+  line-height: 1.1;
+}
+
+.tempMin {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--c-text-dim);
+  line-height: 1.1;
+}
+
+/* Precipitation %. The cool token (the same accent v2 uses for the
+ * blue precip line in the line chart) anchors the meaning. Empty
+ * string when below threshold so the column still aligns vertically
+ * without a placeholder dash. */
+.precip {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-cool);
+  min-height: 14px;
+  margin-top: 2px;
+}
+
+/* Expanded layout (v2.14.57, extended to LayoutPi in v2.14.60) — used
+ * when the 5-day card is maximized. Each cell pairs a day-icon with
+ * the max temp on row 1 and a night-icon with the min temp on row 2,
+ * then adds optional rows for precipitation probability and
+ * accumulation.
+ *
+ * The BASELINE styles below apply at every viewport width so the
+ * 7" Pi's narrow ~92 px maximized cells still get the day/night
+ * split and accumulation rows. The `@media (min-width: 1280px)`
+ * block at the bottom bumps icon and typography sizes for the wider
+ * LayoutDesktop rail (~180 px per cell at 60 vw / 5 cells).
+ *
+ * `align-items: start` so cells with the optional precipitation /
+ * accumulation rows still align their day labels with cells that
+ * don't have those rows. */
+.strip.expanded {
+  gap: 8px;
+  align-items: start;
+}
+
+.strip.expanded .column {
+  gap: 6px;
+  padding: 6px 4px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.strip.expanded .day {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  margin-bottom: 2px;
+}
+
+/* Two paired rows: day-icon ↔ max temp, night-icon ↔ min temp. Grid
+ * lays the icon on the left at a fixed column and the temperature
+ * on the right so all five days align vertically — eye sweeps the
+ * column of temps without zig-zagging around variable icon widths.
+ * Icon column narrower (24 px) at sub-1280 to leave room for the
+ * temp pair in the 92-px-wide cell. */
+.strip.expanded .dayNightRow {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  column-gap: 4px;
+  width: 100%;
+  padding: 0 2px;
+}
+
+/* Icon font-size drives the SVG dimensions (the InlineIcon JSX
+ * passes no explicit width/height so the SVG uses 1em sizing). */
+.strip.expanded .iconCell {
+  color: var(--c-text);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+/* Night icon dimmer than day — communicates that the min temp /
+ * overnight conditions are secondary information. */
+.strip.expanded .iconCellDim {
+  color: var(--c-text-dim);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  opacity: 0.85;
+}
+
+.strip.expanded .tempMax {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--c-text);
+  line-height: 1.1;
+  text-align: left;
+}
+
+.strip.expanded .tempMin {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text-dim);
+  line-height: 1.1;
+  text-align: left;
+}
+
+/* Precip probability + accumulation rows share the same visual
+ * grammar: small inline icon + value. Centered under the day/night
+ * pair so the cell reads as a balanced stack. */
+.strip.expanded .precipLine,
+.strip.expanded .rainLine,
+.strip.expanded .snowLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 1px;
+}
+
+.strip.expanded .precipLine {
+  color: var(--c-cool);
+}
+
+.strip.expanded .rainLine {
+  color: var(--c-cool);
+  opacity: 0.85;
+}
+
+.strip.expanded .snowLine {
+  color: var(--c-text-dim);
+}
+
+/* Iconify SVG inherits its size from font-size (1em) and colour from
+ * currentColor. The 14 px size pairs with the 11 px text on the same
+ * row — slightly larger than the surrounding label so the glyph reads
+ * as a clear category marker without dominating the value. */
+.strip.expanded .dropletIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Desktop overrides — wider rail (~180 px per cell) allows bigger
+ * icons and bolder temp typography. Spacing also bumps so the
+ * cluster reads more "premium" than the 7" Pi's tighter version. */
+@media (min-width: 1280px) {
+  .strip.expanded {
+    gap: 12px;
+  }
+
+  .strip.expanded .column {
+    gap: 8px;
+    padding: 10px 6px;
+  }
+
+  .strip.expanded .day {
+    font-size: 14px;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+
+  .strip.expanded .dayNightRow {
+    grid-template-columns: 36px 1fr;
+    column-gap: 8px;
+    padding: 0 4px;
+  }
+
+  .strip.expanded .iconCell {
+    font-size: 32px;
+  }
+
+  .strip.expanded .iconCellDim {
+    font-size: 26px;
+  }
+
+  .strip.expanded .tempMax {
+    font-size: 26px;
+  }
+
+  .strip.expanded .tempMin {
+    font-size: 18px;
+  }
+
+  .strip.expanded .precipLine,
+  .strip.expanded .rainLine,
+  .strip.expanded .snowLine {
+    gap: 6px;
+    font-size: 13px;
+    margin-top: 2px;
+  }
+
+  .strip.expanded .dropletIcon {
+    font-size: 16px;
+  }
+}
+
+/* Mobile-narrow overrides — LayoutMobile maximizes the chart slab to
+ * ~351-406 px wide (375-430 px viewport minus 24 px side padding),
+ * giving each of the 5 cells ~63-78 px. That's tighter than the
+ * baseline's 7" Pi assumption (~92 px per cell), so the icon column
+ * (24 px) + 4 px gap + mono "79°" (17 px bold) → ~67 px min-content
+ * per cell overflowed the slab and clipped the 5th day. Tighten icon
+ * column, gaps, and font sizes so the expanded layout fits inside
+ * ~64 px without losing the day/night-split richness. */
+@media (max-width: 799px) {
+  .strip.expanded {
+    gap: 4px;
+  }
+
+  .strip.expanded .column {
+    gap: 4px;
+    padding: 4px 1px;
+    min-width: 0;
+  }
+
+  .strip.expanded .dayNightRow {
+    grid-template-columns: 16px 1fr;
+    column-gap: 2px;
+    padding: 0;
+    min-width: 0;
+  }
+
+  .strip.expanded .iconCell {
+    font-size: 16px;
+  }
+
+  .strip.expanded .iconCellDim {
+    font-size: 13px;
+  }
+
+  .strip.expanded .tempMax {
+    font-size: 13px;
+  }
+
+  .strip.expanded .tempMin {
+    font-size: 11px;
+  }
+
+  .strip.expanded .precipLine,
+  .strip.expanded .rainLine,
+  .strip.expanded .snowLine {
+    font-size: 10px;
+    gap: 2px;
+  }
+
+  .strip.expanded .dropletIcon {
+    font-size: 11px;
+  }
+}

@@ -1,0 +1,265 @@
+/* LayoutPi — orchestrates the Pi 7"/10" composition.
+ *
+ * CSS Grid:
+ *   row 1 (1fr):    map | rail
+ *   row 2 (auto):   dock spans both columns
+ *
+ * The rail width animates between 300/340px and 0 when the user taps
+ * the Leaflet RadarFocusControl (topleft, under the zoom +/-) and the
+ * layout enters focus mode (.layout.focused). Width transitions on
+ * the grid template column drive the change; WeatherMap's MapResizer
+ * reacts to the shared `piRadarMaximized` flag and re-fits the
+ * Leaflet canvas afterward.
+ *
+ * The legacy right-edge chevron that previously drove this collapse
+ * was removed in the 2026-05-28 v3.1 consolidation — see LayoutPi/
+ * index.js for the migration note. */
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  grid-template-rows: 1fr auto;
+  width: 100%;
+  height: 100dvh;
+  box-sizing: border-box;
+  /* v3.2: the mockup frames each surface (map · rail · dock) as a rounded
+   * card inset from the screen edges with gutters between them. The gap +
+   * padding here create those gutters; the map/dock get their own
+   * border-radius below. MIN drops both to 0 so the radar fills the screen. */
+  gap: 10px;
+  padding: 10px;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  transition: grid-template-columns 200ms ease-out, grid-template-rows 200ms ease-out, padding 200ms ease-out, gap 200ms ease-out;
+}
+
+@media (min-width: 1280px) {
+  .layout {
+    grid-template-columns: 1fr 340px;
+  }
+}
+
+/* v3.2: the focus/MIN state is now one value of the `data-pi-state` enum
+ * on the root (set by LayoutPi from `piLayoutState`), not a `.focused`
+ * class. The base `.layout` rule above is the MID (split) geometry; the
+ * MAX (forecast-forward, map → thumbnail) override is added in a later
+ * step. MIN collapses the rail column to zero AND the dock row to zero
+ * (the dock itself slides out via the rule near the bottom of this file)
+ * so the radar truly fills the screen. */
+.layout[data-pi-state="min"] {
+  grid-template-columns: 1fr 0;
+  grid-template-rows: 1fr 0;
+  padding: 0;
+  gap: 0;
+}
+
+/* v3.2 MAX state — forecast-forward. The map collapses to a thumbnail
+ * (first column) and the rail takes the rest. The rail holds two
+ * children: `.midPanel` (the lean MID column) and `.forecastHost`
+ * (ChartTabs); MAX swaps which one is shown. The base 200 ms grid
+ * transition animates the morph; the thumbnail width is a custom
+ * property so a later step can tune it per panel density. */
+/* The full-rail "maximized" views — v3.2 MAX (forecast) plus the v3.3
+ * priority views (conditions, alert, ai). All share the same shell
+ * treatment: map shrinks to a thumbnail, the glance is hidden, the rail
+ * goes transparent. Each view's own host is then shown below. */
+.layout[data-pi-state="max"],
+.layout[data-pi-state="conditions"],
+.layout[data-pi-state="alert"],
+.layout[data-pi-state="ai"] {
+  grid-template-columns: var(--pi-max-map, 190px) 1fr;
+  /* Hide the dock in the maximized views too (it already hides in MIN):
+   * collapse its row so the maximized content reclaims the ~50-60px of
+   * height — precious on the 7". The dock lives on the glance; each view's
+   * minimize square is the guaranteed way back. */
+  grid-template-rows: 1fr 0;
+}
+.layout[data-pi-state="max"] .midPanel,
+.layout[data-pi-state="conditions"] .midPanel,
+.layout[data-pi-state="alert"] .midPanel,
+.layout[data-pi-state="ai"] .midPanel {
+  display: none;
+}
+.layout[data-pi-state="max"] .forecastHost {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.layout[data-pi-state="conditions"] .conditionsHost,
+.layout[data-pi-state="alert"] .alertHost {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+/* The IA host is mounted lazily (only present in the "ai" state), so it needs
+ * no data-pi-state guard — when in the DOM it always fills the rail. */
+.aiHost {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+/* Drop the rail's opaque background + border in the maximized views so the
+ * radar thumbnail reads cleanly beside the full-width content. */
+.layout[data-pi-state="max"] .rail,
+.layout[data-pi-state="conditions"] .rail,
+.layout[data-pi-state="alert"] .rail,
+.layout[data-pi-state="ai"] .rail {
+  background-color: transparent;
+  border-left-color: transparent;
+}
+
+/* MID lean column + forecast host. The rail is the scrolling flex
+ * column (gap/padding/overflow); `.midPanel` is a flex column for its
+ * cards; `.forecastHost` is hidden until MAX (kept mounted so ChartTabs'
+ * metric/period state survives the mid↔max round trip). */
+.midPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.forecastHost {
+  display: none;
+}
+/* v3.3 conditions + alert view hosts — mounted but hidden until the user
+ * opens them (same pattern as forecastHost: state survives the round trip). */
+.conditionsHost,
+.alertHost {
+  display: none;
+}
+
+.mapArea {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  background-color: var(--c-bg);
+  overflow: hidden;
+  /* v3.2: the radar is a framed rounded card (mockup parity) — the border
+   * defines the card edge against the dark gutter (the inset alone is
+   * invisible dark-on-dark). MIN drops both so the fullscreen radar reaches
+   * the screen edges. */
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+}
+.layout[data-pi-state="min"] .mapArea {
+  border: none;
+  border-radius: 0;
+}
+
+.rail {
+  grid-column: 2;
+  grid-row: 1;
+  /* `position: relative` is load-bearing for AiSummaryInline's maximize
+   * mode: the slab does `position: absolute; inset: 12px` to fill the
+   * rail when maximized, which only works if the rail itself is a
+   * positioned ancestor. Without this, the slab pinned against
+   * `.layout` instead — the inset was wrong, the slab stayed in its
+   * flex slot, and the text rendered without the expected full-rail
+   * background (read-through to the map below). LayoutDesktop already
+   * has `position: absolute` on its rail; LayoutPi used CSS grid for
+   * the map/rail split and never positioned the rail itself. */
+  position: relative;
+  /* min-height: 0 is load-bearing — without it the grid cell expands
+   * to fit content and `overflow-y: auto` never engages, so the
+   * AiSummaryInline (and bottom of ChartTabs) silently scrolls below
+   * the viewport with no visible scrollbar. CSS grid + flex children
+   * stack defaults to "shrink to content" not "constrain to cell". */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* v3.2 framed layout: the rail is a transparent column of cards sitting
+   * in the gutter (the `.layout` gap/padding provide the insets), so drop
+   * the panel padding, border-left and opaque background — each card
+   * carries its own surface, mockup-style. */
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: transparent;
+  /* `visibility` flips synchronously with `opacity` when expanding
+   * (delay 0s) so the rail's content becomes interactive instantly.
+   * When collapsing, visibility waits for the 150 ms opacity fade
+   * to finish (delay matches transition duration) so the rail stays
+   * visible during the fade but is fully removed from the paint
+   * tree once invisible — defends against children that create
+   * their own stacking context (transform / filter / will-change)
+   * and would otherwise bypass the parent `opacity: 0` and leak
+   * visible artefacts over the map. Seen on the 7" Pi kiosk with
+   * an active NWS alert: the AlertDetailInline header would remain
+   * painted over the radar even though the parent rail was at
+   * opacity 0. */
+  transition: opacity 150ms ease-out, visibility 0s linear 0s;
+  /* Font-size preference scopes its zoom to the rail subtree only —
+   * the map stays at native scale so Leaflet's pixel↔coordinate math
+   * remains correct. Falls back to 1 when no preference is set. */
+  zoom: var(--c-font-scale, 1);
+}
+
+.layout[data-pi-state="min"] .rail {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  /* Hold visibility until after the opacity fade completes so the
+   * collapse stays smooth. */
+  transition: opacity 150ms ease-out, visibility 0s linear 150ms;
+}
+
+/* BottomDock cell spans both columns.
+ *
+ * `position: relative` + `z-index: 1100` is load-bearing for the
+ * dock's toast layer (`ControlButtons/styles.css .toast`, z-index
+ * 1500 inline). Phase 1 v3.1 introduced `backdrop-filter: blur(8px)`
+ * on `.dock`, which per the CSS Filter Effects spec creates BOTH a
+ * containing block AND a stacking context. That confines the toast's
+ * z-index: 1500 to the dock's internal stacking context — the toast
+ * can no longer compete with Leaflet's panes (z-index up to 1000) or
+ * the radar scrubber (z-index 500) that sit in the root stacking
+ * context. So the dock itself has to climb above them in the root
+ * context for the confined toast to remain visible.
+ *
+ * 1100 wins against everything inside the map cell (Leaflet 1000,
+ * scrubber 500) while staying below SettingsPanel / DebugPanel
+ * (5000) so opening one of those overlays still covers the dock.
+ * Pre-Phase-1 the dock was statically positioned and the toast's
+ * 1500 won directly in the root stacking context — that path no
+ * longer applies. */
+.layout > :last-child {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  position: relative;
+  z-index: 1100;
+  transition: opacity 150ms ease-out, transform 200ms ease-out;
+}
+
+/* v3.2: hide the dock in MIN (radar fullscreen / at-rest). Slide it out
+ * + fade rather than display:none — the dock row is collapsed to 0 by the
+ * `[data-pi-state="min"]` grid-template-rows above, and `.layout`'s
+ * overflow:hidden clips the translated dock. Restoring MIN→MID brings it
+ * back. pointer-events:none so it's inert while hidden. */
+.layout[data-pi-state="min"] > :last-child,
+.layout[data-pi-state="max"] > :last-child,
+.layout[data-pi-state="conditions"] > :last-child,
+.layout[data-pi-state="alert"] > :last-child,
+.layout[data-pi-state="ai"] > :last-child {
+  opacity: 0;
+  transform: translateY(60px);
+  pointer-events: none;
+}
+
+/* v2.15.9-12 experimented with a merged hero row (TimeBlock +
+ * HeroCompact in a 2-column shared card) to save vertical space.
+ * Reverted in v2.15.13 after the 12h-format edge case forced too
+ * many overflow workarounds: the 5-char "10:37 AM" overflowed the
+ * narrow column, AM/PM had to stack on its own line, sunrise/
+ * sunset and the date both wrapped to 2 lines in the cramped
+ * columns. Net result was worse than the original stacked layout.
+ *
+ * The reduced typography from that pass (30 px clock / 30 px temp,
+ * see TimeBlock + HeroCompact media queries) is retained — the
+ * stacked cards are still meaningfully shorter than the v2.14
+ * baseline (56 px temp + 40 px clock), so the height-saving goal
+ * is mostly preserved without the layout-constraint pain. */

@@ -1,0 +1,515 @@
+/* ChartTabs — forecast slab, v3.1 Phase 5 ("Prévisions, nommées").
+ *
+ * Header (title · period pills · expand) + a labelled metric
+ * segmented control (Temp · Vent · Précip · Heures) replacing the
+ * pre-Phase-5 cryptic carousel dots (audit F9). Chart area keeps a
+ * fixed height so the slab doesn't reflow when Chart.js renders. */
+
+.slab {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 10px 12px 12px 12px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Maximized state — mirrors AiSummaryInline's maximize: the slab leaves
+ * the rail's flex flow and pins to the rail's TOP. v2.14.55 stopped
+ * stretching the slab to fill the entire rail height (the previous
+ * `inset: 12px` behaviour) — on tall viewports it left the chart
+ * canvas at a near-1:1 aspect ratio (read as unusual) and the columns
+ * views floated in a sea of empty space ("données justifiées au haut
+ * dans un cas et au milieu dans l'autre" — user report).
+ *
+ * Now the slab sizes to its natural content height capped by the
+ * chartArea's explicit height set below. The slab still covers what
+ * sits directly below it in the rail flow because z-index 5 stays in
+ * place; siblings further down become visible again, which is fine —
+ * the maximize affordance is "make this card bigger", not "take over
+ * the rail".
+ *
+ * `--c-bg` is the only token guaranteed 100 % opaque on every palette
+ * (`--c-surface` sits at 85 %, the radar would bleed through at this
+ * size). */
+.slab.slabMaximized {
+  position: absolute;
+  /* v2.16.5: pushed the maximized slab further down on iOS PWA
+   * portrait — `top: 12` placed the header buttons and the expand
+   * button inside iOS's Control-Centre swipe-down zone (top-right
+   * corner, ~84 px tall × ~30 % of viewport width on a notched
+   * iPhone in portrait). iOS intercepted the touches as
+   * Control-Centre opens, so the buttons looked unresponsive.
+   * The scroll container's padding-top already accounts for
+   * safe-area-inset-top; we just need ~30 px more clearance so the
+   * slab's top edge — and its top-right action button — sit below
+   * the swipe-gesture lock-out region. Falls back to 12 px on
+   * non-iOS / non-PWA contexts where env(safe-area-*) returns 0. */
+  top: max(12px, env(safe-area-inset-top, 0px));
+  left: 12px;
+  right: 12px;
+  bottom: auto;
+  z-index: 5;
+  background-color: var(--c-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* v3.2 Pi MAX (forecast-forward): unlike the Desktop/Mobile in-rail
+ * maximize above (.slabMaximized, absolute + top-pinned), on LayoutPi the
+ * slab sits IN FLOW inside `.forecastHost` — which LayoutPi flexes to
+ * fill the full-width rail — and the chart grows to use the height
+ * instead of leaving a strip of bare background below. Doubled class for
+ * the (0,1,1) reset, matching `.slab.slabMaximized`. */
+.slab.slabPiMax {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.slabPiMax .chartArea {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+/* The Hours/grid metric is intrinsically tall (24 cells); at the 7" 480 px
+ * screen height it can exceed the available chart area, so let it scroll
+ * rather than overflow / crowd the metric tabs above. */
+.slabPiMax .chartArea.chartAreaGrid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* Collapse the empty summary row on the grid tab in MAX only, giving the
+ * tall grid back its height. In MID/Desktop the empty wrap is intentionally
+ * kept for constant slab height (see ChartTabs JSDoc), so this is scoped. */
+.slabPiMax .summaryWrap:empty {
+  display: none;
+}
+
+/* ---- Header row: PRÉVISIONS · period pills · expand ----------------
+ *
+ * Specificity note: every button rule in this file is scoped under its
+ * parent container, bumping it to (0,2,0) so it beats the
+ * `.ambientRoot button` reset in ui/reset.css (0,1,1) — the documented
+ * trap that previously rendered the cycle dots and the 24h/5j tabs
+ * unstyled (v2.14.52 / v2.14.74 notes, same fix pattern). */
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.headerTitle {
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.periodPills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+/* Auto-select reason chip — shown only after the selector auto-switches
+ * the metric (opt-in). The SourceBadge (NWS/ECCC/FCST) carries the origin;
+ * the label echoes the metric. flex:none so it never steals tab/pill room. */
+.reasonChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.reasonChipLabel {
+  font-family: "Geist Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--c-text-dim);
+}
+
+.periodPills .periodPill {
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background-color: transparent;
+  border: 1px solid var(--c-border);
+  color: var(--c-text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.periodPills .periodPillActive {
+  background-color: var(--c-accent-soft);
+  color: var(--c-accent);
+  border-color: var(--c-accent);
+}
+
+.periodPills .periodPill:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 2px;
+}
+
+/* ---- Metric tabs — labelled segmented control (audit F9) ----------- */
+.metricTabs {
+  display: flex;
+  gap: 0;
+  background-color: var(--c-surface-hybrid, var(--c-surface));
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 3px;
+  margin-bottom: 10px;
+}
+
+.metricTabs .metricTab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 6px;
+  border: none;
+  background-color: transparent;
+  color: var(--c-text-dim);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.metricTabs .metricTab svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.metricTabs .metricTab:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 1px;
+}
+
+.metricTabs .metricTabActive {
+  background-color: var(--c-accent-soft);
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.metricTabs .metricTabActive svg {
+  opacity: 1;
+  color: var(--c-accent);
+}
+
+.chartArea {
+  height: 140px;
+  position: relative;
+}
+
+/* Grid metric (Heures/Jours): natural height — the icon grid is taller
+ * than the chart heights (compact 2×4 ≈ 160 px, expanded 3×8 ≈ 330 px)
+ * and clipping forecast cells is worse than the slab growing a little
+ * on this one tab. min-height keeps the floor so a short daily strip
+ * doesn't shrink the slab below its chart-tab size. */
+.chartArea.chartAreaGrid {
+  height: auto;
+  min-height: 140px;
+}
+
+.slabMaximized .chartArea.chartAreaGrid {
+  height: auto;
+  min-height: 240px;
+}
+
+@media (min-width: 1280px) {
+  .slabMaximized .chartArea.chartAreaGrid {
+    min-height: 320px;
+  }
+}
+
+/* When the slab is maximized, the chartArea grows to a sensible fixed
+ * height. Two breakpoints (v2.14.61 after field test on remote Pi):
+ *
+ *   - sub-1280 (LayoutPi, 7" / small Pis): 240 px. v2.14.60's 280 px
+ *     made the slab total ~406 px (chrome ~126 + chartArea 280),
+ *     which exceeded the visible rail on the user's remote Pi
+ *     viewport — the chart card needed scrolling to see the bottom.
+ *     240 px brings the slab to ~366 px, which fits even on shorter
+ *     viewports / higher font-scales.
+ *
+ *   - ≥ 1280 (LayoutDesktop): 320 px. The hourly columns at EXPANDED
+ *     desktop typography (~93 px per row × 3 + gaps ≈ 295 px) need
+ *     the extra space so 12-13 px top/bottom margins survive. Line
+ *     charts get a near-3:1 aspect on the desktop rail width
+ *     (~924 × 320 = 2.9:1), the conventional time-series ratio. */
+.slabMaximized .chartArea {
+  height: 240px;
+  flex: 0 0 auto;
+}
+
+@media (min-width: 1280px) {
+  .slabMaximized .chartArea {
+    height: 320px;
+  }
+}
+
+.slabMaximized .chartArea canvas {
+  max-height: 100%;
+}
+
+/* Action button (maximize / restore) at the right end of the header.
+ * v2.16.4: 44×44 (Apple HIG minimum) — see the parallel comment in
+ * AiSummaryInline/styles.css for the iOS-PWA portrait-mode
+ * unresponsiveness diagnostic; the hit area must NOT shrink below
+ * 44 px (Phase 5 design review D8 — the visual restyle below adopts
+ * the reference's bordered-surface look at the full hit size).
+ * Bracket-icon pair (expand/restore) shared with the radar focus
+ * toggle and the mobile maximize button — one icon vocabulary. */
+.headerRow .actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  margin-left: 4px;
+  padding: 0;
+  background-color: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--c-text-dim);
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+/* The VISIBLE box is a centred 28×28 pseudo-element (the reference's
+ * expand-btn size) while the button keeps the full 44 px hit area —
+ * painting the whole hit box read as a huge square dominating the
+ * slim header (maintainer-reported). */
+.headerRow .actionButton::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 6px;
+  background-color: var(--c-surface-hybrid, var(--c-surface));
+  border: 1px solid var(--c-border);
+}
+
+.headerRow .actionButton .actionIcon {
+  position: relative;
+}
+
+.headerRow .actionButton:active {
+  color: var(--c-accent);
+  transform: scale(0.96);
+}
+
+.headerRow .actionButton:active::before {
+  background-color: var(--c-accent-soft);
+}
+
+.headerRow .actionButton:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -4px;
+}
+
+.headerRow .actionButton[aria-pressed="true"] {
+  color: var(--c-text);
+}
+
+.headerRow .actionButton[aria-pressed="true"]::before {
+  background-color: var(--c-accent-soft);
+  border-color: var(--c-accent);
+}
+
+.actionIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* ---- Summary pills + precip-overlay chip under the chart ----------- */
+.summaryWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+  min-height: 22px;
+}
+
+.summaryRow {
+  display: flex;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+  font-size: 9.5px;
+  color: var(--c-text-dim);
+  letter-spacing: 0.04em;
+}
+
+.summaryPill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.summaryPill strong {
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--c-text);
+  letter-spacing: -0.005em;
+}
+
+/* Line-style key pills ("— trait : vitesse · pointillé : rafales",
+ * "··· probabilité") — accent-tinted so they read as a legend, not a
+ * measurement. */
+.summaryPillAccent,
+.summaryPillAccent strong {
+  color: var(--c-accent);
+  font-size: 9.5px;
+}
+
+/* Optional precipitation overlay toggle (temp/wind tabs) — the
+ * maintainer-chosen continuation of the old paired charts. Checkbox
+ * grammar so the on/off nature is obvious at a glance. */
+.summaryWrap .overlayChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--c-border);
+  background-color: transparent;
+  color: var(--c-text-dim);
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.summaryWrap .overlayChipBox {
+  width: 11px;
+  height: 11px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 8px;
+  line-height: 1;
+}
+
+.summaryWrap .overlayChipActive {
+  color: var(--c-accent);
+  border-color: var(--c-accent);
+  background-color: var(--c-accent-soft);
+}
+
+.summaryWrap .overlayChip:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 2px;
+}
+
+/* Columns view wrapper — the chart component ships its own onClick on
+ * `.container`, but DailyForecastColumns and HourlyForecastColumns
+ * don't, so we wrap them in a div that owns the tap-to-cycle gesture.
+ * Sized to fill the chartArea so the tap zone covers the full column
+ * strip rather than only the columns themselves. */
+.columnsClickable {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.columnsClickable:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* The chart components ship a wrapper `.container` originally sized
+ * for v2's 255 px panel — force it to fill the chartArea so Chart.js
+ * measures the real available width (axis labels were truncating at
+ * fontSize=L otherwise). Column layout so MetricChart's optional
+ * wind-direction row stacks under the canvas without overflowing the
+ * fixed chartArea height. */
+.chartArea > div {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chartArea canvas {
+  max-height: 100%;
+}
+
+/* Sub-1280 rails (LayoutPi 300 px) — the mock's 7" tab compaction:
+ * smaller type + tighter padding so four labelled tabs fit the rail
+ * at every font-size preference. */
+@media (max-width: 1279px) {
+  .metricTabs .metricTab {
+    font-size: 10px;
+    padding: 6px 4px;
+    gap: 3px;
+    /* Flex children refuse to shrink below min-content without this —
+     * the active "Heures" pill was escaping the tab container on the
+     * 300 px rail (maintainer-reported). */
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .metricTabs .metricTab svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  /* The title is decorative on narrow rails — the metric tabs already
+   * say what the card is, and the title was the element starving the
+   * header (truncating to "PRÉ…" at fontSize M, worse at L where the
+   * rail's zoom shrinks the effective width further). Period pills
+   * take over the left edge; the expand button stays right. */
+  .headerTitle {
+    display: none;
+  }
+
+  .periodPills {
+    margin-right: auto;
+  }
+}

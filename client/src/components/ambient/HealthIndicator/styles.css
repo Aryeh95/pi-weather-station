@@ -1,0 +1,516 @@
+/* HealthIndicator — small colour-coded dot inside the BottomDock.
+ * Renders as a 44×44 button (Apple HIG touch target) with a 10 px
+ * coloured circle inside; the popover floats above the dock when
+ * the dot is tapped. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Stay at the right edge of the dock even when ControlButtons
+   * is packed with icons (debug mode adds 3 extra, plus the
+   * refresh + update buttons can push the row past the iPhone SE
+   * width). Without flex-shrink:0 the dot button collapsed under
+   * the rightmost ControlButtons icon and the green dot painted
+   * on top of the bot. */
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.dotButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 36×36 instead of the 44 px Apple-HIG minimum: the dot is a
+   * secondary surface (status indicator + popover trigger), not a
+   * primary action, and the smaller footprint buys back room in
+   * the dock for the icon row on narrow viewports. The hit-area
+   * still clears 36 px which is comfortable for thumb taps. */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background-color: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Only fill the button on @media (hover: hover) so touch devices
+ * don't paint a sticky background after the tap (iOS / Android
+ * keep :hover active until the user taps elsewhere — read as
+ * "the button stayed pressed"). The dot itself carries its own
+ * box-shadow ring, so the resting state is already visible
+ * without a background. */
+@media (hover: hover) {
+  .dotButton:hover {
+    background-color: var(--c-accent-soft);
+  }
+}
+
+.dotButton:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -2px;
+}
+
+/* While the popover is open, fill the button so the user sees
+ * the dot is the "source" of the open dialog. Drops back to
+ * transparent the moment aria-expanded flips to false. */
+.dotButton[aria-expanded="true"] {
+  background-color: var(--c-accent-soft);
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  /* Subtle highlight ring so the green dot is still visible on
+   * the warm-cream day palette (cream-on-cream would otherwise
+   * read as a beige blob). */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Popover — floats above the dock when the dot is tapped. Pinned
+ * to the dock's right edge so the list reads against the dock's
+ * surface rather than disappearing off-screen on narrow viewports.
+ * Position: absolute relative to .wrap. */
+.popover {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  min-width: 260px;
+  max-width: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background-color: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  padding: 10px 12px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  z-index: 1600;
+}
+
+.popoverHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.popoverDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.popoverSummary {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+
+.popoverEmpty {
+  color: var(--c-text-dim);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.issueList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.issueItem {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: var(--c-surface);
+  border-left: 3px solid var(--c-text-dim);
+}
+
+.issueItem.issueCritical {
+  border-left-color: #e60000;
+}
+
+.issueService {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.issueDetail {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--c-text-dim);
+}
+
+/* ============================================================
+ * UPSTREAM PROVIDER STATUS SECTION
+ * ------------------------------------------------------------
+ * Optional section appended to the popover when /api/health
+ * includes a `providerStatus` object. Currently only GitHub
+ * (Git Operations) is surfaced — the rationale is in
+ * healthCtrl.js. Information-only: does not affect the chip
+ * color. Each row has a colour-coded dot keyed by the statuspage
+ * indicator + a name + a localised status string.
+ * ============================================================ */
+
+.providerSection {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}
+
+.providerHeader {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  margin-bottom: 6px;
+}
+
+.providerList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.providerItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: var(--c-surface);
+  font-size: 12px;
+}
+
+.providerDot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.providerName {
+  font-weight: 500;
+  /* Provider name takes whatever room is left after the dot and
+   * the right-aligned status string. */
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.providerStatus {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--c-text-dim);
+  flex-shrink: 0;
+}
+
+/* Indicator-keyed dot colours. The same hex palette used by the
+ * chip's main DOT_COLORS, extended with two additional tiers for
+ * the statuspage taxonomy (`major` = orange, `maintenance` =
+ * blue). Kept inline rather than tying to palette tokens because
+ * these communicate a universal status semantic that shouldn't
+ * shift with the day/night/nightRed palette. */
+.providerIndicator-none .providerDot      { background-color: #5cb85c; }
+.providerIndicator-minor .providerDot     { background-color: #f0c000; }
+.providerIndicator-major .providerDot     { background-color: #ee7710; }
+.providerIndicator-critical .providerDot  { background-color: #e60000; }
+.providerIndicator-maintenance .providerDot { background-color: #6090c0; }
+.providerIndicator-unknown .providerDot   { background-color: #888; }
+
+/* ============================================================
+ * CHIP MODE — pill button used by v3 BottomDock (Phase 1 of the
+ * v3.1 synthesis design). Coloured icon disc + short status label.
+ * The text CSS-hides on narrow docks so the coloured disc still
+ * reads as a glanceable signal even when the chip collapses.
+ * ============================================================ */
+
+/* `.wrapChip` is added to .wrap when chip mode is on so the
+ * margin-left:auto rule can claim the remaining toolbar width
+ * and push the chip to the right edge — matching the design's
+ * status-chip placement. */
+.wrapChip {
+  margin-left: auto;
+}
+
+/* Doubled-class trick (`.chipButton.chipButton`) to win the specificity
+ * war against `reset.css`'s `.ambientRoot button { padding: 0;
+ * background: transparent; border: 0; font: inherit; color: inherit; }`
+ * rule (specificity 0,1,1). A single `.chipButton` is (0,1,0) — loses
+ * outright on every property the reset touches (padding, background,
+ * border, font-family/size, color). Same documented pattern that
+ * `FloatingMiniBanner` uses for the exact same reason (see its
+ * styles.css for the full explanation). Without this fix the pill
+ * collapsed to a tight icon+text with no inner padding, no fill, and
+ * no border — readable but completely invisible as a "chip". */
+.chipButton.chipButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* Exact padding from the v3.1 synthesis design (Claude Design):
+   * `5px 11px 5px 8px`. Asymmetric horizontal — the left side hosts
+   * the 18 px coloured disc which carries its own visual mass, so
+   * 8 px there balances against 11 px on the right where the bare
+   * text needs more breathing room from the pill edge. */
+  padding: 5px 11px 5px 8px;
+  border-radius: 999px;
+  /* Palette-aware elevated surface using `color-mix` — blends 8 % of
+   * `--c-accent` (the palette's warm-hue token) into `--c-bg`. Matches
+   * the design's `surface-2` step (#f3ecd9 — a warm cream that's
+   * specifically more yellow than the cream `surface`, not just darker).
+   * Mixing with `--c-text` instead gave a flat grey because text is a
+   * near-neutral dark brown — the result lost the warm cast that
+   * makes the design's tan feel like cream, not concrete. `--c-accent`
+   * is warm in every palette (day amber-brown, night amber, nightRed
+   * crimson), so 8 % of it tints the chip in the direction the design
+   * intended in every mode. Semantically `--c-accent` is the brand
+   * accent — using it as a baseline tint reads as "branded surface",
+   * a fair characterisation of the dock's status chip. Fallback
+   * `var(--c-bg)` is for browsers without `color-mix` (none of the
+   * supported targets, but defence-in-depth). */
+  background-color: var(--c-bg);
+  background-color: color-mix(in oklab, var(--c-bg) 92%, var(--c-accent) 8%);
+  /* Single 1 px border in `--c-border-hybrid` — matches the design's
+   * `rgba(216,207,184,0.65)` tan border (a visible-but-soft outline
+   * that defines the pill shape without competing with the fill). */
+  border: 1px solid var(--c-border-hybrid, var(--c-border, rgba(255, 255, 255, 0.18)));
+  /* No drop shadow — the synthesis design carries the chip's "elevated
+   * pill" feel purely through the fill colour and the border, no
+   * shadow layer. A lone inset highlight stays for dark palettes where
+   * the fill contrast alone could read as flat; it's near-invisible on
+   * the cream day palette. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Dark palettes (dusk, night, night-red) need a STRONGER mix percentage
+ * than day to stay visibly elevated above the dock.
+ *
+ * Why: the dock's `--c-surface` is 85 % alpha over `--c-bg`, which on a
+ * dark bg adds ~16 RGB units of perceived lift to the dock surface (the
+ * surface colour itself is markedly lighter than bg in dark palettes).
+ * That leaves a smaller dynamic range above the dock for the chip to
+ * rise into. On day the inverse holds: the dock barely shifts above the
+ * cream bg (~9 RGB units), so even 8 % mix lands the chip clearly below
+ * dock.
+ *
+ * Bumping to 18 % accent in dark palettes gives the chip a ~15-20 RGB
+ * unit lift above the dock — clearly visible without going gaudy.
+ * Inset highlight also bumped to 8 % white so the top edge reads as
+ * "lifted" against the dark fill. */
+[data-palette="dusk"] .chipButton.chipButton,
+[data-palette="night"] .chipButton.chipButton,
+[data-palette="nightRed"] .chipButton.chipButton {
+  background-color: color-mix(in oklab, var(--c-bg) 82%, var(--c-accent) 18%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--c-text-dim, var(--c-text));
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* All chip state rules use the doubled-class trick — same reason as the
+ * main `.chipButton.chipButton` rule (winning over `.ambientRoot button`
+ * reset). Without doubling, the resting state's background/border would
+ * win on these states only when their own specificity happened to match,
+ * leading to an erratic "sometimes the chip fills on hover, sometimes
+ * not" behaviour. */
+@media (hover: hover) {
+  .chipButton.chipButton:hover {
+    background-color: var(--c-accent-soft);
+    border-color: var(--c-accent, var(--c-text));
+  }
+}
+
+.chipButton.chipButton:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 2px;
+}
+
+.chipButton.chipButton[aria-expanded="true"] {
+  background-color: var(--c-accent-soft);
+  border-color: var(--c-accent, var(--c-text));
+}
+
+.chipIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  /* Subtle ring so the disc reads against both warm-cream day
+   * surfaces and the dark dock. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
+  /* `color` drives the SVG glyph (✓ or !) inside the coloured disc
+   * via `stroke`/`fill="currentColor"` on the path elements. Default
+   * white is readable on every status-tier disc (green / yellow /
+   * red). The night-red override below substitutes a dark colour
+   * because in that palette the disc itself becomes red (see the
+   * `--c-text` override below) and a white glyph on red breaks the
+   * "preserve night vision" intent — the design uses a dark glyph
+   * on the red disc in that mode. */
+  color: #ffffff;
+}
+
+/* In night-red mode the entire palette is intentionally red (sleep
+ * stage 1 — preserves night vision). A bright-green "OK" dot or a
+ * yellow "degraded" dot break that constraint visually, reading as a
+ * hot UI element against the otherwise red-only field. Tint the disc
+ * to the palette's text colour (which IS the red).
+ *
+ * `!important` overrides the inline `background-color: <green|yellow|red>`
+ * coming from `DOT_COLORS` in `index.js`. Inline styles normally beat
+ * any class selector — this is the textbook case where !important
+ * is the correct tool. */
+[data-palette="nightRed"] .chipIcon {
+  background-color: var(--c-text) !important;
+}
+
+/* Popover header dot — same palette-harmonisation issue as the chip
+ * disc: the inline `backgroundColor: dotColor` (green / yellow / red)
+ * set in `index.js` clashes with the otherwise-red night-vision
+ * palette. Mirror the chip's behaviour and tint to `--c-text` so the
+ * dot reads as part of the red field, with the text-summary next to
+ * it carrying the semantic content. `!important` for the same
+ * inline-style override reason as the chip rule above. */
+[data-palette="nightRed"] .popoverDot {
+  background-color: var(--c-text) !important;
+}
+
+/* Glyph (check / exclamation) colour in night-red mode. Two layers
+ * worth explaining:
+ *
+ *   1. Target the SVG elements directly (`svg path`, `svg line`,
+ *      `svg circle`) instead of relying on `color: var(--c-bg)` on
+ *      the chipIcon span + `stroke="currentColor"` inheritance.
+ *      Firefox has a long-standing inconsistency resolving
+ *      `currentColor` when the inherited `color` is itself a CSS
+ *      custom property reference — the stroke either renders the
+ *      fallback or fails to repaint when the variable updates.
+ *      Setting `stroke`/`fill` directly with the variable bypasses
+ *      that path entirely.
+ *
+ *   2. Use a clearly contrasted dark colour rather than `var(--c-bg)`
+ *      (#100404 — near-black with a red tint). On the disc's
+ *      saturated `--c-text` red (#d05050), the near-black gets read
+ *      as "shadow inside the disc" rather than a distinct mark.
+ *      `rgba(0, 0, 0, 0.85)` is unambiguously a dark glyph and the
+ *      slight transparency lets the underlying red bleed through
+ *      the stroke edges — softens the contrast just enough to keep
+ *      the night-vision-friendly feel the palette is built for. */
+[data-palette="nightRed"] .chipIcon svg path,
+[data-palette="nightRed"] .chipIcon svg line {
+  stroke: rgba(0, 0, 0, 0.85);
+}
+[data-palette="nightRed"] .chipIcon svg circle {
+  fill: rgba(0, 0, 0, 0.85);
+}
+
+.chipIcon svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.chipText {
+  /* Discrete weight + dim colour inherited from the `.chipButton`
+   * (`color: var(--c-text-dim)`). Original draft pushed the text
+   * to `font-weight: 600` + bright `--c-text` for emphasis, but
+   * the design intentionally keeps the chip's text understated —
+   * the coloured disc is the primary signal, the label is a
+   * secondary cue you only read if you care to. Inherits both
+   * color and weight from the button, so this rule is mostly a
+   * documentation anchor + a hook for the narrow-viewport
+   * `display: none` rule below. */
+  font-weight: 400;
+}
+
+/* Dark palettes — chip text needs MORE contrast than day to match
+ * the dock-label brightness perceptually. The chip's 18 % accent-mix
+ * fill (see `.chipButton.chipButton` dark-palette rule) is brighter
+ * than the dock surface around it, so the same dim text colour
+ * (`--c-text-dim` inherited from the button) ends up with LESS
+ * contrast on the chip than the same colour on the dock — the eye
+ * reads the chip text as "darker / softer" than the dock labels even
+ * though both use the same hex. Bumping chip text to full `--c-text`
+ * in dark palettes restores parity. Day stays inherited because the
+ * day chip is barely lifted (8 % mix) and the surrounding context
+ * already balances. */
+[data-palette="dusk"] .chipText,
+[data-palette="night"] .chipText,
+[data-palette="nightRed"] .chipText {
+  color: var(--c-text);
+}
+
+/* On every non-desktop dock the chip collapses to icon-only. Drops
+ * the right padding too so the disc sits centred in a square
+ * footprint. Doubled-class on the selector for the same reset-war
+ * reason as the main rule.
+ *
+ * Threshold is 1279 px — the exact complement of the AmbientLayers
+ * desktop breakpoint (`min-width: 1280px`). So the full "Services ·
+ * OK" text shows ONLY on LayoutDesktop; every LayoutPi / LayoutMobile
+ * dock (800-1279 px) gets the glanceable dot. This was 980 px, tuned
+ * for the 7" official screen (~932 px), but it left the group labels
+ * AND the full-text chip both visible on the 10.1" HMIRaspi kiosk,
+ * which — rotated to landscape with DISPLAY_SCALE=1.25 — renders at
+ * 1024 px CSS (LayoutPi, just above the old gate). With the debug
+ * trio present (isLocal via RPi Connect + DEBUG=true) the dock's
+ * button row overflowed under the chip and the rightmost System
+ * button (debug) painted behind "Services · OK". Collapsing the chip
+ * across the whole Pi band frees the ~100 px the row needed. The
+ * group labels stay (maintainer's choice — they carry the dock's
+ * three-category rhythm); the chip text is the nicety that yields. */
+@media (max-width: 1279px) {
+  .chipButton.chipButton {
+    padding: 4px;
+    gap: 0;
+  }
+  .chipText {
+    display: none;
+  }
+}
+
+/* Phone portrait — chip becomes a transparent disc-only target,
+ * matching the design's mobile collapse behaviour. */
+@media (max-width: 479px) and (orientation: portrait) {
+  .chipButton.chipButton {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+}
+

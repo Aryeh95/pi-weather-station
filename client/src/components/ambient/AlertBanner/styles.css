@@ -1,0 +1,403 @@
+/* Direction C AlertBanner — v3.1 Phase 4 head row.
+ *
+ * Two layouts in this file:
+ *   1. `.govAlert` — full Phase 4 head (severity chip + title +
+ *      chevron + meta chips), tappable to toggle the detail body.
+ *      Left-edge severity strip in the alert's tier colour.
+ *   2. Radar-derived banner (no `.govAlert` class) — keeps the
+ *      pre-4 chips-row + title visual. No expansion mechanism.
+ *
+ * The strip is the visual "loud" element across both layouts;
+ * the rest stays calm against the warm-grey surface. */
+
+.banner {
+  position: relative;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 12px 14px 12px 18px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  padding-right: 36px;
+}
+
+/* Severity strip — absolute-positioned along the left edge so the slab
+ * itself stays a uniform colour. 4px wide on touchscreen, comfortably
+ * visible at a glance without dominating the slab. */
+.banner::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 8px 0 0 8px;
+  background-color: var(--c-cool);
+}
+
+/* Yellow (advisory) strip — only ever rendered when the user opts into
+ * advisory alerts. Uses the alert-gold `--c-advisory` token (#f0c000,
+ * the same gold the WeatherMap alert-zone polygon paints, so the strip
+ * and the map zone agree), which collapses to red in night-red like the
+ * other severity strips. NOT `--sev-low-ink`: that's the dark text-ink
+ * colour and rendered as a muddy olive here. Without any rule the strip
+ * fell back to the neutral `--c-cool` (blue). */
+.tier-yellow::before { background-color: var(--c-advisory); }
+.tier-orange::before { background-color: var(--c-warn); }
+.tier-red::before    { background-color: var(--c-danger); }
+
+/* ============================================================
+ * GOV-ALERT LAYOUT — Phase 4 head row
+ * ============================================================
+ *
+ * The `.govAlert` modifier swaps the banner's content from the
+ * pre-4 "chips row + title" stack into the Phase 4 head:
+ *   - top row: severity chip + title (truncated) + chevron
+ *   - bottom row: meta chips (source · freshness · expiration)
+ *
+ * The whole head is a single tappable surface (the `<div role=
+ * "button">` in JSX). The chevron rotates 180° when expanded
+ * via the `[data-state="expanded"]` attribute on the banner.
+ */
+.govAlert {
+  padding: 0;
+  /* The clickable head supplies its own padding so the hit area
+   * matches the visible chip row exactly. */
+}
+
+.govAlert .head {
+  /* Right padding 44 px (was 16) reserves room for the absolutely-
+   * positioned dismiss ✕ button at `right: 6px` (width 28 + 6 px
+   * inset = 34 px occupied) plus a 10 px breathing margin. Without
+   * this, the chevron at the end of the topRow flex sat at the
+   * head's right edge — directly under the dismiss button, both
+   * visually invisible AND triggering dismiss instead of expand
+   * when the user aimed for it. */
+  padding: 14px 44px 12px 18px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.govAlert .head:hover {
+  background-color: var(--c-surface-hybrid, var(--c-surface));
+}
+
+.govAlert .head:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -2px;
+}
+
+.topRowBadges {
+  /* Source badge + severity chip cluster — same 6px rhythm as the
+   * radar branch's .chips row below. min-width:0 + wrap give the
+   * cluster shrink capacity on the ~250px Pi rail: the chip's own
+   * nowrap/flex-shrink:0 styles would otherwise push the row past
+   * the container in FR ("AVERTISSEMENT" + ECCC badge) — the same
+   * crowding class that forced the title onto its own row in the
+   * 2026-05-28 Saskatoon case. Wrapping drops the severity chip to
+   * a second line instead of overflowing. */
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  /* Badge + chip cluster on the left, chevron flush right. Title used to live
+   * here too but has been promoted to its own row below so it
+   * gets the full container width — see the JSDoc / comment in
+   * AlertBanner/index.js for the 2026-05-28 Saskatoon case that
+   * triggered the change. */
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Meta row — wraps `AlertMetaChips` and the optional cycle pill on
+ * the same horizontal line. AlertMetaChips renders its own internal
+ * flex wrap, so this outer row only needs to align its two slots
+ * (chips on the left, cycle pill flush right via margin-left:auto
+ * on the pill itself). When there's no cycle pill, AlertMetaChips
+ * just expands to the natural width and the row reads exactly the
+ * same as a bare chip row. */
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Tight to the head's bottom edge — the row's intrinsic height
+   * is driven by the meta-chips and cycle pill (~20 px tall). */
+}
+
+/* The counter, when present, lives at the right end of `.metaRow`.
+ * `margin-left: auto` pushes it past the meta chips so the row stays
+ * balanced even when there are no chips at all (e.g. a source with
+ * no sentAt / expiresAt). */
+.metaRow .counter {
+  margin-left: auto;
+}
+
+.govAlert .title {
+  /* Title sits on its own row below `.topRow` (chip + chevron)
+   * since 2026-05-28, so it gets the full container width
+   * instead of competing with the chip / chevron / dismiss
+   * button on a narrow rail. `margin-top` gives it a visual
+   * gap from the chip row; with the new layout it doesn't need
+   * `flex: 1` or any width constraint. */
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--c-text);
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+  /* Defensive: `overflow-wrap: anywhere` lets an upstream-supplied
+   * single unbreakable token (rare in alert titles but possible
+   * for product codes) break at any character if the title still
+   * exceeds the container. `-webkit-line-clamp: 3` caps at 3 lines
+   * — generous enough that any reasonable NWS / ECCC title fits in
+   * full (3 lines × ~30 chars at 15 px = ~90 chars), while still
+   * preventing a pathological 200-char upstream title from
+   * blowing up the head height. */
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--c-text-dim);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+[data-state="expanded"] .chevron {
+  transform: rotate(180deg);
+}
+
+/* v3.1 Phase 4c — passive counter that replaces the pre-4c cycle
+ * pill. Same position in the meta-chips row (right-aligned via
+ * margin-left:auto), but renders as plain text now: no border,
+ * no background fill, no cursor. The user sees the compact "1 / 3"
+ * form as factual context (the verbose "1 / 3 active alerts" stays
+ * on the aria-label so it doesn't overflow the narrow Pi rail) —
+ * the actual navigation lives in the `AlertMiniCards` list rendered
+ * below the banner. */
+.counter {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--c-text-dim);
+  flex-shrink: 0;
+  /* No pointer-events / cursor — the counter is purely
+   * informational. Tapping it does nothing, which the lack of
+   * any button styling signals at a glance. */
+}
+
+/* ============================================================
+ * v3.2 COMPACT gov card — 7" Pi MID rail (.banner.govAlert on Pi)
+ * ============================================================
+ * Swaps the Phase-4 stacked head for a single tight row. Two SIBLING
+ * tap zones live in `.compactRow` (NOT nested — the cycle button can't
+ * sit inside the role="button" expand zone): `.headCompact` (chip +
+ * source + ellipsized title, taps to expand) and `.cycleCounter` (the
+ * "1 / N" doubling as the next-alert control, sized to a real touch
+ * target). No dismiss ✕ on Pi (it relocates to the detail footer), so
+ * the row's whole width goes to the title + a comfortable counter. */
+.compactRow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 7px 12px;
+}
+
+/* v3.3 priority glance — 2-line compact gov card. Row 1: severity + source
+ * tags and the maximize ⤢ (pushed right); row 2: the alert title on its own
+ * full-width line + the cycle counter. Gives the title room the single row
+ * never had, and the card finally carries the ⤢ square like its siblings. */
+.compactCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+}
+.compactTop {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.compactMax {
+  margin-left: auto;
+}
+.compactBottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Counter on row 2 must NOT stretch the row — it inherits align-self: stretch
+ * + min-height 34px from the shared .cycleCounter (sized for the v3.2 single
+ * row), which padded ~18px of dead space above/below the title. Centre it and
+ * shrink to a compact-but-tappable height so row 2 hugs the title. */
+.compactBottom .cycleCounter {
+  align-self: center;
+  min-height: 24px;
+}
+
+.headCompact {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 8px;
+}
+
+.headCompact:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -2px;
+}
+
+/* Single-line title — ellipsizes under pressure; the full description is
+ * a tap away (AlertDetailInline), matching the minimal-glance budget. */
+.titleCompact {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--c-text);
+  letter-spacing: -0.005em;
+}
+
+/* Cycle counter — "1 / N" doubling as the next-alert control, the whole
+ * multi-alert nav surface on Pi (mini-cards dropped). Sized as a real
+ * touch target (min 34px tall, stretches to the row) — accent-soft fill +
+ * chevron reads as a button (vs the passive desktop .counter). */
+.cycleCounter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex-shrink: 0;
+  align-self: stretch;
+  min-height: 34px;
+  min-width: 44px;
+  padding: 0 9px;
+  background: var(--c-accent-soft);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--c-accent);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cycleCounter:active { transform: scale(0.96); }
+
+.cycleCounter:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 2px;
+}
+
+/* nightRed: accent collapses toward red; keep the counter legible by
+ * falling back to the primary text colour for the count + chevron. */
+[data-palette="nightRed"] .cycleCounter { color: var(--c-text); }
+
+.cycleCount {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.cycleChevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* v3.3: the glance compact gov card escalates a notch for an EXTREME alert
+ * (Tornado / Hurricane) — a red wash + a thicker strip so it stands apart
+ * from an ordinary red-tier (severe) alert, echoing the Alert view's red
+ * band. Pi compact card only (the class is added only when isPi). */
+.compactExtreme {
+  background-color: color-mix(in srgb, var(--c-danger) 16%, var(--c-surface-hybrid, var(--c-surface)));
+}
+.compactExtreme::before {
+  width: 6px;
+}
+
+/* ============================================================
+ * RADAR-DERIVED LAYOUT — unchanged from v3.0
+ * ============================================================ */
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.banner > .title:not(.govAlert .title) {
+  display: block;
+  min-height: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--c-text);
+}
+
+/* ============================================================
+ * Dismiss button (shared by both layouts)
+ * ============================================================ */
+.dismissBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background-color: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+}
+
+.dismissBtn:hover {
+  color: var(--c-text);
+  background-color: var(--c-accent-soft);
+}
+
+.dismissBtn:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -2px;
+}
+
+/* ============================================================
+ * Narrow-viewport tweaks — 7" Pi and phone landscape
+ * ============================================================ */
+@media (max-width: 980px) {
+  /* Same logic as the base rule — preserve a 44 px right cushion
+   * so the chevron clears the dismiss button on narrow rails too. */
+  .govAlert .head { padding: 12px 44px 10px 16px; gap: 6px; }
+  .govAlert .title { font-size: 13.5px; }
+  .counter { font-size: 9px; }
+}
+
+@media (max-width: 479px) {
+  .govAlert .title { font-size: 13px; }
+}

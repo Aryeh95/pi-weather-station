@@ -1,0 +1,15 @@
+/* Root container for the Direction C surface. Just a flex root that
+ * lets LayoutPi (and eventually LayoutDesktop) fill the viewport and
+ * pulls in the active palette via CSS custom properties set by the
+ * inline style. All visual treatment lives in the layout/component
+ * stylesheets — this file intentionally stays minimal. */
+
+.container {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}

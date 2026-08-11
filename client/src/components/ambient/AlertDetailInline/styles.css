@@ -1,0 +1,391 @@
+/* AlertDetailInline — body slab pinned under AlertBanner in v3.1
+ * Phase 4. The pre-4 toggle-button-at-the-top is gone (the banner
+ * is now the user-facing toggle); this component just renders the
+ * description body + QR footer when the banner is expanded.
+ *
+ * v3.1 Phase 4b: the body can render in two modes:
+ *   - **structured**: alertParser detected NWS asterisks or ECCC
+ *     headings → render each section as an icon + lead + detail
+ *     2-column block, with a divider between sections.
+ *   - **fallback**: parser returned only intro → split on `\n\n`
+ *     and render as plain paragraphs (the pre-4b behaviour).
+ *
+ * Earlier (v2 / PR #103) the container carried a
+ * `max-height: calc(100vh - 280px)` cap with an internal scroll
+ * area so long alerts wouldn't push the QR off the bottom of the
+ * rail. User feedback (May 2026) reframed the priority: ECCC
+ * alerts deserve the room to display in full, and pushing the
+ * sibling cards (MetricsGrid / ChartTabs / AiSummaryInline) down
+ * inside the already-scrollable rail is the correct behaviour. So
+ * the cap is gone and the body lays out at natural height.
+ * Collapse (via the banner toggle) hides the slab entirely. */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+}
+
+.scrollArea {
+  /* Natural-height area — the rail (LayoutPi / LayoutDesktop)
+   * already provides outer scrolling, and on LayoutMobile the
+   * scroll container handles it. Long alerts grow the slab; the
+   * user scrolls the rail to read the rest. */
+  padding: 12px 14px;
+}
+
+/* Fallback rendering — plain paragraphs (used when alertParser
+ * returned only an intro section, i.e. the upstream description
+ * had no parsable structure). Also used for the leading paragraphs
+ * inside `.intro` when the parser DID find structure but the alert
+ * had prose before the first heading.
+ *
+ * `.text + .text` mirrors the `.section + .section` divider rule
+ * lower in this file: between any two consecutive `<p>` paragraphs,
+ * add the same border-top + padding + margin that separates two
+ * structured sections. This way an unstructured alert (e.g. an
+ * ECCC English advisory with no `*WHAT...` keywords or French
+ * `Dangers :` headings) still reads as visually segmented rather
+ * than a wall of prose — matches the cohesion users expect from
+ * the structured rendering. The dividers carry no semantic load
+ * (no icon, no lead row) — they're purely a rhythm cue. */
+.text {
+  font-size: 13px;
+  line-height: 1.55;
+  /* Defensive: `overflow-wrap: anywhere` lets an upstream-supplied
+   * single unbreakable token wrap at any character — NWS description
+   * bodies embed bare URLs (e.g. `http://www.weather.gov/safety/...`)
+   * that have no break opportunity and otherwise overflow the slab
+   * width and clip at the right edge. Same treatment AlertBanner
+   * applies to its title; the detail body never got it. Inherited,
+   * so it also covers the `<p>` children of `.sectionDetail` /
+   * `.groupBody` below. */
+  overflow-wrap: anywhere;
+}
+
+.text + .text {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--c-border);
+}
+
+.empty {
+  color: var(--c-text-dim);
+  font-style: italic;
+  padding: 12px 14px;
+}
+
+/* ============================================================
+ * STRUCTURED SECTIONS (v3.1 Phase 4b)
+ * ============================================================
+ *
+ * `.intro` block carries the leading prose before the first
+ * structured heading — no icon, no lead row, just paragraphs.
+ * Sits at the top of the scrollArea with a small bottom margin
+ * separating it from the icon-led sections below. */
+.intro {
+  margin-bottom: 16px;
+}
+
+.intro .text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--c-text);
+}
+
+/* Group header — an NWS Level-1 (dash-underlined) section like
+ * NEW INFORMATION / POTENTIAL IMPACTS / PRECAUTIONARY-PREPAREDNESS
+ * ACTIONS. These group the `* ` bullet sections beneath them, so
+ * they render as a full-width eyebrow divider (no icon column) and
+ * the icon-led `.section` blocks that follow read as subordinate
+ * (their content starts past the 16 px icon column, the group label
+ * starts at x=0 — the offset reads as a light indent without
+ * needing an explicit one, too tight on the 7" rail). The stronger
+ * top rule + larger gap distinguish a group break from the hairline
+ * that separates two sibling sections. */
+.groupHeader {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--c-border);
+}
+
+/* First block in the scroll area (no intro, alert opens straight on
+ * a group header): drop the top rule so it doesn't read as a stray
+ * line at the very top of the slab. */
+.groupHeader:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.groupLabel {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  font-weight: 500;
+  /* Accent eyebrow — same role the `.sectionIcon` accent plays, so a
+   * group header reads as a labelled divider rather than a content
+   * row missing its content. */
+  color: var(--c-accent);
+}
+
+[data-palette="nightRed"] .groupLabel {
+  /* In night-red `--c-accent` IS the muddy palette red against the
+   * dark slab — lift to the bright `--c-text` red, mirroring the
+   * `.sectionIcon` override. */
+  color: var(--c-text);
+}
+
+.groupBody {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--c-text-dim);
+  line-height: 1.55;
+  /* See `.text` — a group body (e.g. SITUATION OVERVIEW / NEXT
+   * UPDATE prose) can also carry a bare upstream URL; break it. */
+  overflow-wrap: anywhere;
+}
+
+/* A `* ` bullet section directly under a group header is that
+ * group's first child — drop the inter-section hairline so it reads
+ * as attached to the header above, not separated from it. (Children
+ * after the first keep the normal `.section + .section` divider.) */
+.groupHeader + .section {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* `.section` — icon column + content column for each parsed
+ * heading. Mirrors the design's `.ap-section` 2-column grid
+ * layout: 16 px fixed icon column, content takes the rest. */
+.section {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+/* Divider between adjacent sections — same warm border colour as
+ * the slab itself, on top. Mirrors the synthesis design's
+ * "horizontal rule between every section" treatment. */
+.section + .section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--c-border);
+}
+
+.sectionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  /* Use `--c-accent` at full opacity — NOT `--c-accent-soft`, which
+   * is a 16-18 % alpha tint designed for filled chip backgrounds
+   * and reads as a barely-visible wash when applied to a foreground
+   * SVG. Day: warm orange-brown icon on cream slab. Night/Dusk:
+   * amber icon on dark slab. Both keep the icon as a clear visual
+   * anchor without competing visually with the lead text — the
+   * lead is `var(--c-text)` (full strength), the icon is `--c-accent`
+   * (palette accent), the detail is `var(--c-text-dim)` (dimmer),
+   * so the three roles get three distinct intensities in every
+   * palette. */
+  color: var(--c-accent);
+  margin-top: 2px;
+}
+.sectionIcon svg { width: 16px; height: 16px; }
+
+[data-palette="nightRed"] .sectionIcon {
+  /* In night-red mode `--c-accent` IS the palette red — same hue
+   * as `--c-text-dim` and visually muddied against the dark slab.
+   * Override to full `--c-text` (the bright red) so the icon
+   * stays crisp. Same per-mode override pattern HealthIndicator
+   * uses for the chip glyph. */
+  color: var(--c-text);
+}
+
+.sectionContent {
+  min-width: 0;
+  /* Allow inner paragraphs to wrap; the grid's `1fr` column does
+   * the heavy lifting but `min-width: 0` is required so flex/grid
+   * children with long words don't push the container wider than
+   * the rail. */
+}
+
+.sectionLead {
+  font-size: 13px;
+  color: var(--c-text);
+  font-weight: 500;
+  margin-bottom: 4px;
+  line-height: 1.4;
+  /* Localized via `alert.section{Type}` keys (e.g. "What's
+   * happening" / "Ce qui se passe"). Falls back to the upstream
+   * source heading text for unrecognised types. */
+}
+
+.sectionDetail {
+  font-size: 12.5px;
+  color: var(--c-text-dim);
+  line-height: 1.55;
+  /* See `.text` — break bare upstream URLs so they wrap instead of
+   * overflowing the section's content column. */
+  overflow-wrap: anywhere;
+}
+
+.sectionPara {
+  margin: 0 0 6px;
+}
+
+.sectionPara:last-child {
+  margin-bottom: 0;
+}
+
+/* Bulleted lists for NWS `- ` sub-items (storm coordinates under
+ * STORM INFORMATION, the per-impact bullets under FLOODING RAIN …).
+ * `splitBody` (alertParser) extracts them; rendering a real `<ul>`
+ * gives each item its own line + marker instead of folding them into
+ * a run-on paragraph. Two variants mirror the two paragraph classes:
+ * `.sectionList` inherits the dim 12.5 px detail look from its
+ * `.sectionDetail` / `.groupBody` parent; `.textList` matches the
+ * brighter 13 px intro / fallback `.text`. */
+.sectionList,
+.textList {
+  margin: 4px 0;
+  padding-left: 18px;
+  /* Break bare upstream URLs inside a bullet too — see `.text`. */
+  overflow-wrap: anywhere;
+}
+
+.textList {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.sectionList li,
+.textList li {
+  margin: 0 0 4px;
+}
+
+.sectionList li:last-child,
+.textList li:last-child {
+  margin-bottom: 0;
+}
+
+/* On phones, drop the icon column to save horizontal room — the
+ * section lead alone carries enough semantic weight without the
+ * 16 px + 12 px gap eating into the content width. */
+@media (max-width: 479px) {
+  .section {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .sectionIcon { display: none; }
+}
+
+/* Action footer — sits above the QR footer when the user has the
+ * detail expanded. Phase 4d (2026-05-28). Two buttons:
+ *   - "Réduire" — always present, collapses the detail slab back
+ *     so the radar map underneath reclaims focus.
+ *   - "Voir sur la carte" — only renders when the current alert
+ *     carries `geometry`; toggles the GeoJSON overlay on the
+ *     WeatherMap.
+ * Flex with `gap: 8px`; on narrow viewports the buttons wrap to
+ * keep both readable. Border-top mirrors the QR footer's border
+ * pattern so the section rhythm reads consistently. */
+.actionFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--c-border);
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  /* `flex: 1 1 auto` lets the pair sit side-by-side on a wide rail
+   * (each button claims half the available width), and wrap to a
+   * vertical stack on narrow viewports where the row can't fit them
+   * — in that case each wrapped button takes the full row width so
+   * its label never has to wrap internally. Replaces the prior
+   * inline-flex behaviour where buttons stayed at their natural
+   * content width and the longer label ("MASQUER DE LA CARTE") wrapped
+   * mid-text on the 7" Pi rail, leaving the second word visually
+   * detached from the icon. */
+  flex: 1 1 auto;
+  padding: 6px 12px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--c-text);
+  background-color: transparent;
+  border: 1px solid var(--c-border-hybrid, var(--c-border));
+  border-radius: 4px;
+  cursor: pointer;
+  /* Same Chromium-tactile defence pattern documented in
+   * `incident_hover_gate_insufficient_chromium_touch.md` — neutralise
+   * every CSS state that could paint a fill. Active state is signalled
+   * by `.actionButtonActive` (className React-driven), not by
+   * pseudo-classes. */
+  -webkit-tap-highlight-color: transparent;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.actionButton:focus {
+  outline: none;
+  background-color: transparent;
+}
+
+.actionButton:focus-visible {
+  outline: 2px dashed var(--c-accent);
+  outline-offset: 2px;
+}
+
+.actionButton:active {
+  background-color: transparent;
+}
+
+/* React-driven active state (the "Voir sur la carte" button when
+ * the overlay is currently shown). Filled with accent-soft + accent
+ * border so the user sees "this is engaged"; label flips to
+ * "Cacher de la carte" via i18n in the JSX. */
+.actionButtonActive {
+  background-color: var(--c-accent-soft);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.actionButton svg {
+  width: 12px;
+  height: 12px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--c-border);
+}
+
+.qrCaption {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--c-text-dim);
+  max-width: 180px;
+}

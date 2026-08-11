@@ -1,0 +1,172 @@
+/* MetricsGrid — compact stat cells (Wind / Gust / UV / Humidity, plus
+ * Pressure / Visibility when `extended`). Each cell is its own mini-slab so
+ * the grid reads as a cluster of chips rather than one chunky block. The
+ * GLANCE keeps the strict 2×2 (no setting may break it, §3); the wide
+ * Conditions view opts into the 3-column variant below via `columns={3}`. */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* 3-column variant — the wide Conditions view, where the 6 extended tiles
+ * read as two themed rows (Wind/Gust/UV · Humidity/Pressure/Visibility). */
+.cols3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.cell {
+  /* `position: relative` is load-bearing for DetailsPopover —
+   * the popover uses `position: absolute; right: 0; top: 100%`
+   * to anchor against the cell. Without this it'd resolve
+   * against .grid (or further up), breaking placement. */
+  position: relative;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 10px 12px 8px 12px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 58px;
+  text-align: left;
+  /* Hybrid-mode severity strip — propagates from AmbientLayers root. */
+  box-shadow: inset 3px 0 0 var(--c-strip-color, transparent);
+}
+
+/* Interactive cell (UV) — full-surface tap target. Zero hover on
+ * kiosk surfaces ("drop, don't gate" — field incidents); the pressed
+ * state is the affordance feedback, paired with the chevron. */
+.cellInteractive {
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cellInteractive:active {
+  background: var(--c-accent-soft);
+  transform: scale(0.985);
+}
+
+.cellInteractive:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: -2px;
+}
+
+/* Tap-for-details affordance — SVG chevron in the top-right corner
+ * of interactive cells (F6: replaces the timid ⓘ). Dim so it doesn't
+ * compete with the value. */
+.cellChevron {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 15px;
+  color: var(--c-text-dim);
+  pointer-events: none;
+}
+
+/* Top row: icon INLINE with the value (mockup parity) — keeps each tile to
+ * two rows (value + label) so the 2×2 stays compact. */
+.topRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.icon {
+  flex: none;
+  display: inline-flex;
+  font-size: 16px;
+  color: var(--c-accent);
+}
+
+.valueGroup {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+}
+
+.value {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-dim);
+}
+
+.label {
+  font-size: 11px; /* normative micro base (P2 type scale) */
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--c-text-dim);
+  margin-top: auto;
+}
+
+/* Severity qualifier — tier wording shown under the label for the UV
+ * cell. Colour comes from the `--mx-cat-*` tier classes below (token
+ * per palette — in nightRed all four collapse to red and the word
+ * carries the tier). Slightly heavier weight than the dim grey label
+ * above so the colour reads without competing with the value. */
+.qualifier {
+  font-size: 11px; /* normative micro base (P2 type scale) */
+  /* 500, not 600 — only Geist 400/500/700 are self-hosted; 600 would
+   * render as a synthesized fake weight (house font rule). */
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-top: 2px;
+}
+
+/* Tier colour classes — shared by the qualifier line and the popover
+ * value wording. */
+.cat-good  { color: var(--mx-cat-good); }
+.cat-mod   { color: var(--mx-cat-mod); }
+.cat-bad   { color: var(--mx-cat-bad); }
+.cat-vhigh { color: var(--mx-cat-vhigh); }
+
+/* DetailsPopover content typography — label/value pairs stacked
+ * with a slight indent so the popover reads as a structured
+ * mini-table rather than a paragraph. */
+.detailRow {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 8px;
+}
+
+.detailRow:last-child {
+  margin-bottom: 0;
+}
+
+.detailLabel {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--c-text-dim);
+}
+
+.detailValue {
+  font-size: 13px;
+  /* 500, not 600 — house font rule (no synthesized weights). */
+  font-weight: 500;
+}
+
+.detailGuidance {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--c-text);
+}

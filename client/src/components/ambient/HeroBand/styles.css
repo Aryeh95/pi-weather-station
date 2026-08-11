@@ -1,0 +1,268 @@
+/* HeroBand — v3.1 Phase 2: two floating cards (hero + clock) over
+ * the full-bleed map.
+ *
+ * The hero card interior follows the P2 pyramid — micro place row,
+ * dominant 72 px temperature with condition + feels-like beside it,
+ * sun/moon meta-line under a hairline. The clock card keeps the
+ * date/time role (kitchen clock, §5) without the astro chips.
+ *
+ * Both cards share the warm-grey translucent surface; the drop
+ * shadow lifts them off the radar tiles, the inset strip picks up
+ * the hybrid severity colour when a serious alert is active. */
+
+.band {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  color: var(--c-text);
+  /* At ultra-wide viewports the heroSlot can be 2100+ px wide — cap
+   * the band so the cards stay content-sized instead of stretching
+   * into a "désert". */
+  max-width: 1600px;
+}
+
+.hero-card,
+.clock-card {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  box-shadow:
+    inset 4px 0 0 var(--c-strip-color, transparent),
+    0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.hero-card {
+  padding: 14px 18px;
+  position: relative;
+}
+
+/* ── Tier 1 — place micro-row ───────────────────────────────────── */
+
+.place-row {
+  display: flex;
+  align-items: center;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 500;
+  /* Micro base 11px. The heroSlot is excluded from the rail `zoom`
+   * (Phase 7 decision), so the S/M/L preference reaches this micro
+   * text via calc() — HeroBand only mounts on LayoutDesktop, no
+   * double-scale risk. */
+  font-size: calc(11px * var(--c-font-scale, 1));
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  margin-bottom: 10px;
+  position: relative;
+}
+
+/* LocationName brings its own pin icon — keep its container inline so
+ * the row stays a single line in both the <button> and <div> paths. */
+.place-row > div > div,
+.place-row > button > div > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Popover-trigger variant of the place row: reset the native button
+ * chrome so the visual matches the non-clickable <div>, add the
+ * dotted-underline tap affordance + pressed state (zero hover —
+ * kiosk rule), and extend the hit area to ≥ 44 px via an invisible
+ * pseudo-element. Doubled selector (.x.x → 0,2,0) on purpose: the
+ * `.ambientRoot button` reset (0,1,1) sets `border: 0; padding: 0`
+ * and would strip the dotted underline from a mono-class rule
+ * (P3/P5 lesson). */
+.place-button.place-button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dotted var(--c-text-dim);
+  border-radius: 3px;
+  padding: 2px 2px 1px;
+  margin: -2px -2px -1px;
+  text-align: left;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.place-button::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: -16px;
+  bottom: -16px;
+}
+
+.place-button:active {
+  background: var(--c-accent-soft);
+  border-bottom-color: transparent;
+}
+
+.place-button:focus-visible {
+  outline: 1px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* ── Tier 2 — focal ─────────────────────────────────────────────── */
+
+.focal {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+/* Temp block — MétéoMédia / TWN-style alignment: huge number + small
+ * unit "badge" attached to the top-right of the digit (settled
+ * treatment, kept from the pre-P2 band). */
+.temp-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.temp-value {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* Normative P2 base: 72 px, Geist Mono 500, tabular digits. */
+  font-size: 72px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -2px;
+  line-height: 1;
+}
+
+.temp-unit {
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--c-text-dim);
+}
+
+/* Condition column — icon, condition text, feels-like line stacked
+ * beside the digits, vertically centred against the digit body. */
+.cond-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.cond-icon {
+  font-size: 30px;
+  color: var(--c-accent);
+  line-height: 1;
+}
+
+.cond-text {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* ── Clock card — C1 three-tier grammar (desktop band only) ─────── */
+/* Mirrors the hero card's tiers so tier 1 (eyebrow / place-row) and
+ * the bottom hairline land on the same lines across the band: same
+ * paddings (14/18 · 18/24 @≥1600), same eyebrow margin-bottom (10),
+ * same hairline padding-top/margin-top (10). The time tier carries
+ * `margin-bottom: auto` to push the date meta to the card's bottom,
+ * so the hairline aligns with the hero meta-line regardless of the
+ * height difference between the 72 px temp and the 44 px clock. The
+ * B1 migration still holds: no astro chips here — date + time only,
+ * plus the C2 seasonal countdown when in window. */
+
+.clock-card {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-width: 132px;
+}
+
+/* Tier 1 — weekday eyebrow. Mirrors the hero place-row exactly
+ * (micro mono uppercase, margin-bottom 10) — it carries a real
+ * datum (the most-glanced clock info), not decorative structure. */
+.clock-eyebrow {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 500;
+  font-size: calc(11px * var(--c-font-scale, 1));
+  /* Match the hero place-row's effective line box (LocationName
+   * `.primary` is line-height 1.1) so tier 1 is the same height in
+   * both cards and the bottom hairlines stay pixel-aligned. */
+  line-height: 1.1;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  margin-bottom: 10px;
+}
+
+.clock-time {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 44px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  line-height: 1;
+  /* Push the date meta to the card's bottom so its hairline aligns
+   * with the hero meta-line's hairline across the band. */
+  margin-bottom: auto;
+}
+
+.clock-am-pm {
+  font-size: 16px;
+  color: var(--c-text-dim);
+  margin-left: 6px;
+  vertical-align: 8px;
+}
+
+/* Tier 3 — date meta behind the shared hairline. Mirrors the hero
+ * meta-line (meta mono, padding-top + margin-top 10, 1px border).
+ * Single line (the band's shared hairline never wraps); the C2
+ * countdown segment rides inline after the date. */
+.clock-date-meta {
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--c-border);
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 500;
+  font-size: calc(12px * var(--c-font-scale, 1));
+  /* Match the hero meta-line's deterministic 1.25 line box so both
+   * tier-3 blocks are the same height and the shared band hairline
+   * lands on the same line in both cards (the meta-line's box is
+   * inflated by its 1.2em moon glyph — see AstroMetaLine). */
+  line-height: 1.25;
+  letter-spacing: 0.5px;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+/* C2 — seasonal countdown text riding inline after the date inside the
+ * Seasons trigger (the trigger affordance + popover live in Seasons/).
+ * Same dim ink as the date, no accent: ambient calendar info. */
+.clock-countdown {
+  color: var(--c-text-dim);
+}
+
+/* ── Bigger content on wider viewports ──────────────────────────── */
+/* Keeps the band proportional on 1080p/4K displays rather than puny
+ * in the corner — same scaling intent as the pre-P2 band. */
+@media (min-width: 1600px) {
+  .temp-value { font-size: 88px; }
+  .temp-unit { font-size: 34px; }
+  .cond-icon { font-size: 38px; }
+  .cond-text { font-size: 17px; }
+  .hero-card { padding: 18px 24px; }
+
+  /* Padding bumps with the hero so the tier-1 top and the hairline
+   * stay aligned; the eyebrow/date-meta bases follow `--c-font-scale`
+   * via calc() (parity with the hero's place-row + meta-line, which
+   * carry no 1600 bump either). */
+  .clock-card { padding: 18px 24px; }
+  .clock-time { font-size: 56px; }
+  .clock-am-pm { font-size: 20px; }
+}

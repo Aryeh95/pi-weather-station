@@ -1,0 +1,223 @@
+/* AiSummaryInline — collapsible AI weather summary slab.
+ *
+ * Default state expanded so the user sees the summary on first load
+ * (most useful content, motivates the feature). Chevron flips
+ * direction when collapsed; collapsed state preserves slab height so
+ * the surrounding layout doesn't jump. */
+
+.slab {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Maximized state — the slab leaves the rail's flex flow and pins to
+ * the rail's inner bounds, so the body has the entire rail height
+ * minus the header. Restores v2's "AI takes over the panel" feel.
+ *
+ * `position: absolute` resolves against the nearest positioned
+ * ancestor; in both LayoutDesktop and LayoutPi the rail itself is
+ * `position: absolute`, so the slab pins against the rail. The
+ * `inset: 12px` matches the rail's own padding so the maximized
+ * slab visually replaces the contents without bumping against the
+ * rail border. z-index is the slab's only stacking concern —
+ * BottomDock and HeroBand live in their own positioned layers
+ * outside the rail and aren't affected. */
+.slab.slabMaximized {
+  position: absolute;
+  /* v2.16.5: top pushed past iOS PWA Control-Centre swipe zone —
+   * see the parallel comment in ChartTabs/styles.css. The inset
+   * shorthand is expanded so we can set top independently. */
+  top: max(12px, env(safe-area-inset-top, 0px));
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  max-height: none;
+  min-height: 0;
+  /* Fully opaque fill in maximize mode. `--c-surface` (rest state)
+   * sits at 85 % so the slab reads as a translucent layer over the
+   * radar. `--c-surfaceHybrid` (96 %) wasn't enough either — the
+   * residual 4 % transparency was still picking up white-sky /
+   * yellow-rain / dark-water patches from the map in light mode,
+   * making the AI text's contrast inconsistent line by line.
+   * `--c-bg` is the only token guaranteed 100 % opaque on every
+   * palette, so use it for maximize. The blur stays as a safety
+   * net in case `--c-bg` is ever redefined with transparency. */
+  background-color: var(--c-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* The slab is the *last* flex item in the rail's vertical column.
+ * When expanded (body present), claim the remaining vertical space
+ * (`flex: 1 1 0`) so the slab height is "rail height − everything
+ * above" rather than its natural content height. Without this, the
+ * slab grew to fit its body's max-height, then overflowed past the
+ * rail's viewport — which is what made the previous cap-based fix
+ * look broken (the body did scroll, but the bottom of the body —
+ * including the scrollbar end — was hidden behind the rail's clip
+ * rect, so scrolling stopped a few lines short of the actual content
+ * end).
+ *
+ * `min-height: 0` is load-bearing for the inner overflow:scroll to
+ * engage — flex items default to `min-height: auto` (= content
+ * height), which would override the parent's height constraint.
+ * `max-height` caps growth on tall displays so we don't get a 600 px
+ * tall AI slab on a 1440p kiosk; below the cap, the slab follows
+ * the rail.
+ *
+ * Gated on `:has(.body)` so the collapsed state — where only the
+ * toggle renders inside the slab — keeps its natural ~40 px height
+ * and doesn't balloon into a giant empty box. */
+.slab:has(.body) {
+  flex: 1 1 0;
+  min-height: 160px;
+  /* No max-height cap: with `flex: 1 1 0` the slab naturally claims
+   * all remaining rail space, so it can't overflow upward. The cap
+   * previously sat at 360 px to "keep the AI slab from dominating
+   * the rail on tall displays", but in practice it just truncated
+   * the 3rd paragraph on common layouts (1280×800 Mac, where the
+   * rail offers ~480 px to the slab, all of which 3 paragraphs of
+   * typical French response would gladly use). Min-height stays as
+   * a floor so the slab keeps a usable footprint on very tall
+   * peer-content layouts. */
+}
+
+/* Header row carries the title on the left and a single action
+ * button (maximize / restore) on the right. The expand/collapse
+ * chevron was removed in 2.14.3 — once the dedicated maximize button
+ * existed, the chevron added a second toggle for a behaviour
+ * (hide the body) that nobody asked for. The body always renders
+ * now; hiding the slab entirely is handled by collapsing the rail
+ * at the layout level. */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 14px;
+  color: var(--c-text-dim);
+}
+
+/* v2.16.4: bumped to 44×44 from 28×28 — Apple HIG minimum touch
+ * target. The smaller box was tappable on the kiosk's mouse pointer
+ * but user-reported as unresponsive in iOS PWA standalone portrait
+ * mode (works in landscape). iOS standalone mode reserves a top
+ * "edge swipe" zone for system gestures (notification centre swipe-
+ * down); a small button sitting near that zone has its touches
+ * intercepted. 44×44 + the existing position keeps the tap area
+ * clear of the system zone. */
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background-color: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--c-text-dim);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.actionButton:hover {
+  color: var(--c-text);
+  background-color: var(--c-accent-soft);
+}
+
+.actionButton:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 1px;
+}
+
+.actionButton[aria-pressed="true"] {
+  color: var(--c-text);
+  background-color: var(--c-accent-soft);
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.chevron {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.body {
+  padding: 4px 14px 14px 14px;
+  border-top: 1px solid var(--c-border);
+  /* `flex: 1 1 auto` + `min-height: 0` lets the body shrink to whatever
+   * space the slab gives it (after the toggle's ~40 px), then scrolls
+   * internally for anything past that. Combined with the slab's
+   * `flex: 1 1 0` claim on remaining rail space, the body's bottom
+   * edge — and therefore the bottom of its scrollbar — always sits
+   * inside the rail's visible viewport. The user can drag the
+   * scrollbar all the way down and actually reach the end of the
+   * "Analyse radar" paragraph.
+   *
+   * `overflow-y: scroll` (not auto) keeps the scrollbar visible at
+   * all times — the affordance is the whole point of an inner-scroll
+   * box. `overscroll-behavior: contain` stops mousewheel/swipe leak
+   * into the rail once the body hits its top/bottom, so the user can
+   * scroll the AI text without accidentally scrolling the rail. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-text-dim) transparent;
+}
+
+.body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.body::-webkit-scrollbar-thumb {
+  background-color: var(--c-text-dim);
+  border-radius: 4px;
+}
+
+.body::-webkit-scrollbar-thumb:hover {
+  background-color: var(--c-text);
+}
+
+/* Prefix `.body` on both `.text` rules to escape the global
+ * `.ambientRoot p { margin: 0 }` reset. That reset has specificity
+ * (0,1,1) — class + element — which beats a bare `.text` selector
+ * at (0,1,0); the result was that `margin-top: 16px` silently never
+ * applied and the user saw all "paragraphs" with line-spacing-only
+ * gaps. `.body .text` lands at (0,2,0) so it wins, without needing
+ * !important. */
+.body .text {
+  font-size: 13px;
+  line-height: 1.55;
+  /* 16 px gap between paragraphs reads as a proper paragraph break.
+   * 10 px was the original value and felt like extra line-spacing
+   * rather than a paragraph boundary, so when Claude returns the
+   * three-paragraph response (current / period / radar) the radar
+   * paragraph visually ran into the period paragraph — the user
+   * couldn't tell where one ended and the next began. */
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+.body .text:first-child {
+  /* No top margin on the first paragraph — the slab body already
+   * provides 4 px of padding-top, which is enough breathing room
+   * below the toggle's border-bottom without the previous 12 px
+   * extra that made the first sentence look orphaned from the
+   * RÉSUMÉ IA title. */
+  margin-top: 0;
+}

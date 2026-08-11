@@ -1,0 +1,8 @@
+.settings-container {
+  position: absolute;
+  z-index: 5000;
+}
+
+.hide-mouse{
+  cursor: none !important;
+}

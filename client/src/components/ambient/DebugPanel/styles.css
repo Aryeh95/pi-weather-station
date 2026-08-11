@@ -1,0 +1,1561 @@
+/* DebugPanel — Direction C variant A (vertical tab rail).
+ *
+ * Two-column layout under the header: 96 px nav rail on the left,
+ * scrollable content pane on the right. Palette tokens are mirrored
+ * from the SettingsPanel's own root inline style — both overlays
+ * compute their own copy because they're siblings of AmbientLayers
+ * in the App tree and CSS custom properties don't propagate to
+ * siblings. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Persistent action toolbar (Phase 7) ──────────────────────────
+ * Replaces the old title header. Lives at the top of the content
+ * column (.main), beside the rail, and never scrolls with .pane.
+ * The exit action moved to the bottom of the rail (.railClose), and
+ * Export CSV / Check-update moved into the About bucket — so the
+ * toolbar carries only the live-status timestamp + Refresh. */
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  /* The header used to own the top-edge safe-area inset (Dynamic
+   * Island / notch). With it gone, the toolbar owns the right side
+   * and the rail owns the left side. */
+  padding:
+    max(10px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right))
+    10px
+    16px;
+  border-bottom: 1px solid var(--c-border);
+  background-color: var(--c-surface);
+}
+
+.toolbarStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbarDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  /* Same hardcoded green as `.tag-ok` — a live-status dot kept stable
+   * across palettes rather than tracking the accent. */
+  background-color: #2e7d52;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #2e7d52 22%, transparent);
+  flex-shrink: 0;
+}
+
+.toolbarLive {
+  font-size: 11px;
+  color: var(--c-text-dim);
+}
+
+.toolbarTime {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--c-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbarSpacer {
+  flex: 1;
+  min-width: 10px;
+}
+
+/* Shared button: toolbar Refresh + About-bucket Check-update / Export
+ * CSV. Same visual recipe as the old header action button. */
+.toolButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: var(--c-accent-soft);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  color: var(--c-text);
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toolButton:hover:not(:disabled),
+.toolButton:focus-visible {
+  background-color: var(--c-surface-hybrid);
+  color: var(--c-accent);
+  outline: none;
+}
+
+.toolButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Spinner on the Refresh / Check icon while a request is in flight. */
+.spin {
+  animation: debug-spin 0.8s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes debug-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* About-bucket maintenance actions row (Check updates + Export CSV). */
+.metaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── Vertical tab rail ─────────────────────────────────────────── */
+
+.rail {
+  width: 96px;
+  flex-shrink: 0;
+  background-color: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  /* The rail now reaches the top edge (header removed in Phase 7), so
+   * it owns the top + left safe-area insets on a notched PWA. */
+  padding:
+    max(8px, env(safe-area-inset-top))
+    4px
+    8px
+    max(4px, env(safe-area-inset-left));
+  gap: 2px;
+}
+
+@media (min-width: 1280px) {
+  .rail {
+    width: 120px;
+  }
+}
+
+/* ── Rail multi-select affordances (F25) ──────────────────────────
+ * Counter header + per-entry corner checkbox so the multi-select
+ * nature of the rail is visible instead of implied. */
+.railHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 2px 8px;
+  border-bottom: 1px solid var(--c-border-hybrid);
+  margin-bottom: 4px;
+}
+
+.railHeaderTitle {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+
+.railHeaderCounter {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  background-color: var(--c-accent-soft);
+  color: var(--c-accent);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+/* Corner checkbox on each bucket entry. Empty ring when unpinned;
+ * fills with the accent + white ✓ when pinned. Deliberately NO hover
+ * treatment — the rail already dropped hover fills entirely after the
+ * sticky-fill saga on Pi Chromium (see the .railButton comment). */
+.railCheck {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--c-text-dim) 55%, transparent);
+  background-color: var(--c-surface);
+  display: grid;
+  place-items: center;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.railCheckMark {
+  width: 8px;
+  height: 8px;
+  color: #fff;
+  opacity: 0;
+}
+
+.railCheckOn {
+  background-color: var(--c-accent);
+  border-color: var(--c-accent);
+}
+
+.railCheckOn .railCheckMark {
+  opacity: 1;
+}
+
+/* ── Small-screen (7" kiosk, max-height: 520px) compact mode ──────
+ * The overlay has zoom:1 on this form factor (JS-gated, see
+ * DebugPanel/index.js) so pixel values here are true CSS pixels.
+ * Goal: fit the full panel — header + rail chips + content — into
+ * 480 px height without vertical overflow or horizontal crowding. */
+@media (max-height: 520px) {
+  /* Tighter toolbar — drop vertical padding, keep status + button legible. */
+  .toolbar {
+    padding: 6px 12px;
+  }
+
+  /* Icon-only Refresh in the toolbar — text label hidden; `title` attr
+   * keeps it accessible. The About-bucket buttons (Check / Export) keep
+   * their labels: they live in scrollable content, not the toolbar. */
+  .toolbar .toolLabel {
+    display: none;
+  }
+
+  .toolbar .toolButton {
+    padding: 5px 7px;
+    gap: 0;
+  }
+
+  /* Narrower rail — frees more width for the content pane. */
+  .rail {
+    width: 76px;
+    padding: 6px 2px;
+  }
+
+  /* Tighter multi-select affordances on the 7" kiosk. */
+  .railHeader {
+    padding: 1px 1px 6px;
+    margin-bottom: 3px;
+  }
+
+  .railCheck {
+    top: 2px;
+    right: 3px;
+    width: 11px;
+    height: 11px;
+  }
+
+  .railCheckMark {
+    width: 7px;
+    height: 7px;
+  }
+
+  /* Tighter rail chips — reduce vertical padding so all 5 chips fit. */
+  .railButton {
+    padding: 7px 2px;
+    gap: 3px;
+  }
+
+  /* Slightly smaller icon + label inside rail chips. */
+  .railIcon {
+    font-size: 18px;
+  }
+
+  .railLabel {
+    font-size: 8px;
+    letter-spacing: 0.8px;
+  }
+
+  /* Tighter content pane padding. */
+  .pane {
+    padding: 10px 12px 16px 12px;
+  }
+}
+
+.railButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+  position: relative;
+}
+
+/* Hover background on rail tabs is intentionally NOT painted —
+ * even with `(hover: hover) and (pointer: fine)` gating, observed
+ * on the Pi 7" kiosk 2026-05-28: a sticky residual fill persisted
+ * on previously-tapped (but now inactive) tabs after navigating
+ * SERVEUR → SERVICES → À PROPOS, even after commit cecb320 added
+ * the compound media gate and 654f027 reset the user-agent `:focus`
+ * default. The pattern matches what happened to the BottomDock
+ * dock buttons (commit faef3c3): Chromium kiosques can falsely
+ * match `(pointer: fine)` for a few frames after a synthetic
+ * mouse-emulation event, which is enough to paint the hover fill
+ * which then never gets a pointer-leave to clear it.
+ *
+ * Dropping the hover affordance entirely aligns with how the
+ * BottomDock + HealthIndicator chip already handle this:
+ *   - `.railButtonActive` (left-edge accent bar + accent-soft
+ *     fill) remains the canonical "this tab is active" indicator.
+ *   - Hover would have been a courtesy on desktop only, but the
+ *     left-edge bar already says "tap me to engage this bucket",
+ *     so the loss is minor.
+ *
+ * Hover on `:active`-class buttons elsewhere (action buttons in
+ * the header, etc.) is preserved — only the rail tabs are
+ * affected by this change. */
+.railButton:active {
+  /* Defense in depth: some Pi Chromium configurations also paint a
+   * user-agent default :active fill that can linger on touch.
+   * Explicitly resetting closes that last remaining hole. */
+  background-color: transparent;
+}
+
+/* Focus — handle the plain `:focus` case explicitly to neutralise
+ * Chromium's user-agent default, which can paint a faint
+ * background on a tapped <button> that lingers until focus moves
+ * elsewhere. On Pi tactile that "elsewhere" only happens at the
+ * next tap, so a previously-tapped (and now inactive) rail tab
+ * keeps a subtly lit fill — visible against the cream day
+ * palette as the bug the maintainer reported 2026-05-28 where
+ * an inactive SERVEUR tab still looked partially pressed even
+ * after switching to SERVICES + À PROPOS.
+ *
+ * The React handler also calls `e.currentTarget.blur()` on
+ * onClick, but the blur fires AFTER the focus is applied, and on
+ * some Chromium-on-Pi configurations a single re-render frame
+ * appears to be enough for the user to perceive the residual
+ * fill. Resetting both the background and the outline in CSS is
+ * belt-and-braces — `:focus-visible` then layers the dashed
+ * keyboard-focus outline back on top for keyboard nav. */
+.railButton:focus {
+  background-color: transparent;
+  outline: none;
+}
+
+/* Keyboard focus — a dashed outline OUTSIDE the tab's box. The
+ * dash pattern + positive offset makes it visually unambiguous as
+ * a keyboard-focus indicator, not a pressed state (which uses an
+ * inset background + left strip). User repro'd a case where
+ * pressing then unpressing a tab via mouse left it looking pinned
+ * because the inset solid outline read as an inset "card border"
+ * = pressed treatment. */
+.railButton:focus-visible {
+  outline: 2px dashed var(--c-accent);
+  outline-offset: 2px;
+  background-color: transparent;
+}
+
+.railButtonActive {
+  color: var(--c-text);
+  background-color: var(--c-accent-soft);
+}
+
+/* When a button is BOTH pressed AND focused, keep the pressed
+ * background and overlay the dashed outline — both signals stay
+ * visible without one being mistaken for the other. */
+.railButtonActive:focus-visible {
+  background-color: var(--c-accent-soft);
+  outline: 2px dashed var(--c-accent);
+  outline-offset: 2px;
+}
+
+.railButtonActive::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background-color: var(--c-accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.railIcon {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--c-accent);
+}
+
+.railLabel {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* ── Rail exit (Phase 6 grammar, reused in Phase 7) ────────────────
+ * Pinned to the bottom of the rail. margin-top:auto floats it to the
+ * far end; a top divider + dim text keep it from reading as a 6th
+ * selectable section, and it never receives `.railButtonActive`.
+ *
+ * NB: this block MUST come after `.railButton` in source order.
+ * `.railButton` sets `border: 0` (and `padding: 10px 4px`) as
+ * shorthands; at equal specificity (both single-class) the later rule
+ * wins the conflicting longhands. Defined earlier, `.railButton`'s
+ * `border: 0` silently flattened this `border-top` and the divider
+ * vanished in the Debug panel (Settings already ordered them this
+ * way, which is why it showed there but not here). */
+.railClose {
+  margin-top: auto;
+  padding-top: 12px;
+  /* Hybrid border (≈2× the --c-border alpha): --c-border at ~0.10 is
+   * below the visibility floor on the cream day surface, leaving the
+   * divider invisible. The separator must actually read. Kept in sync
+   * with the SettingsPanel rail exit. */
+  border-top: 1px solid var(--c-border-hybrid);
+  color: var(--c-text-dim);
+}
+
+.railClose .railIcon {
+  color: var(--c-text-dim);
+}
+
+/* Hover/focus brighten the COLOR only (never a background fill) — the
+ * same lingering-fill caution the rail tabs follow. */
+.railClose:hover,
+.railClose:focus-visible {
+  color: var(--c-text);
+}
+
+.railClose:hover .railIcon,
+.railClose:focus-visible .railIcon {
+  color: var(--c-text);
+}
+
+/* "MAJ" update badge on the About rail entry (Phase 7). */
+.railBadge {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 1.3;
+  background-color: var(--c-warn);
+  color: var(--c-bg);
+  padding: 1px 4px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+/* ── Content pane ─────────────────────────────────────────────── */
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  /* min-height:0 lets the pane scroll internally now that it's a flex
+   * child of the column .main (toolbar + pane). Without it the pane
+   * grows to content height and pushes the persistent toolbar instead
+   * of keeping it fixed at the top. */
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 24px 20px;
+}
+
+.bucket {
+  max-width: 880px;
+  /* No container-type here: Chrome has a bug where inline-size
+   * containment on a direct ancestor prevents block children from
+   * stretching to the parent's width. container-type: inline-size
+   * lives on .stackColumn instead — .netList is 3 levels deep
+   * there and escapes the bug. */
+}
+
+/* ── Multi-select stack ───────────────────────────────────────── */
+
+/* Masonry-style layout: each top-level `.stackColumn` is a flex
+ * column holding a JS-assigned subset of pinned buckets. The
+ * distributor (`distributeBuckets` in index.js) places each bucket
+ * into the currently-shortest column based on an approximate height
+ * table, giving a balanced 2-column look even when one bucket (e.g.
+ * Services with its quota grid) is much taller than the others.
+ *
+ * Earlier iterations used CSS Grid auto-fit (row-flow couldn't move
+ * the tall item out of column 2) then CSS multi-column (couldn't
+ * either, because `break-inside: avoid` prevented item reordering).
+ * Both produced 200-500 px height deltas in worst cases. */
+.stack {
+  display: flex;
+  gap: 16px 20px;
+  align-items: flex-start;
+}
+
+.stackOneCol {
+  flex-direction: column;
+}
+
+.stackTwoCol {
+  flex-direction: row;
+}
+
+.stackColumn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stackItem {
+  /* Each pinned bucket gets a thin left accent and a soft surface
+   * tint so it reads as a distinct module when multiple are open.
+   * Without this the stacked sections blur together — the original
+   * single-bucket variant didn't need separation because only one
+   * was ever visible at a time. */
+  padding: 12px 16px;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-accent);
+  border-radius: 6px;
+}
+
+.stackHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.stackHeaderIcon {
+  font-size: 14px;
+  color: var(--c-accent);
+}
+
+.stackHeaderLabel {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--c-text);
+}
+
+.placeholder {
+  padding: 32px 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--c-text-dim);
+  line-height: 1.5;
+  max-width: 480px;
+  margin: 24px auto 0;
+  border: 1px dashed var(--c-border);
+  border-radius: 8px;
+  background-color: var(--c-accent-soft);
+}
+
+.sectionTitle {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  margin: 0 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.sectionTitleGap {
+  margin-top: 22px;
+}
+
+.gridTwo {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+/* Two-column KV layout — applied via JS .gridTwoWide class.
+ * Condition: single masonry column (columnCount === 1) AND
+ * viewport ≥ 1080 px. This avoids container-type: inline-size
+ * entirely — Chrome (desktop, newer builds) has a bug where
+ * inline-size containment on any ancestor makes block descendants
+ * unable to stretch to their parent's width, collapsing .netList
+ * URLs to near-zero width. Pi Chromium (older) doesn't exhibit
+ * the bug, so hardware was fine but Mac DevTools sim was broken. */
+.gridTwoWide {
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+.gridQuota {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+/* Quota grid columns — viewport-based (no container-type).
+ * 700 px: 7" kiosk (800 px) and above → 3-col quotas.
+ * 1400 px: wide desktop → 4-col quotas. */
+@media (min-width: 700px) {
+  .gridQuota { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (min-width: 1400px) {
+  .gridQuota { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ── KV row ────────────────────────────────────────────────────── */
+
+.kv {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--c-border);
+}
+
+.kvKey {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  /* Was 110 px — at the boosted panel zoom (1.32 × at L) that became
+   * ~145 px, so short keys like `os` / `init` / `branch` were padded
+   * out and pushed values toward the column edge. 80 px is the
+   * tightest the longest realistic French label (`disponibilité` etc.)
+   * needs to render without wrapping. Flex layout still grows the
+   * column as needed for translated long labels via flex-shrink 0. */
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.kvValue {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--c-text);
+  font-variant-numeric: tabular-nums;
+  flex: 1;
+  /* `min-width: 0` lets this flex child shrink below its intrinsic
+   * content width — without it, long values force the parent to
+   * grow and clip happens at the panel edge instead of wrapping. */
+  min-width: 0;
+  /* Allow wrapping so long debug values (full commit SHAs, GitHub
+   * repo URLs, multi-token versions like "pi-weather-station
+   * v2.18.1 · 260df42") spread across 2-3 lines on narrow viewports
+   * instead of being clipped with an ellipsis. Earlier this rule
+   * used `white-space: nowrap; overflow: hidden; text-overflow:
+   * ellipsis` to keep the table strictly scannable, but on the 7"
+   * Pi (where there's no mouse to hover for a tooltip and no CSV
+   * export at hand) the clipped values hid useful diagnostic data —
+   * the user reported the commit hash and repo URL being cut off in
+   * the field. `overflow-wrap: anywhere` defends against single
+   * unbreakable tokens (long URLs without spaces) by allowing a
+   * break at any character if no whitespace is available. Normal
+   * whitespace handling otherwise, so breakable strings (e.g.
+   * `v2.18.1 · 260df42`) split at the obvious whitespace first
+   * before any character-level break is considered. Row heights
+   * become slightly variable as a result; that's acceptable for a
+   * debug panel where completeness beats grid regularity. */
+  overflow-wrap: anywhere;
+}
+
+/* ── Tag ───────────────────────────────────────────────────────── */
+
+.tag {
+  display: inline-block;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 8.5px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.tag-ok { background-color: #2e7d52; color: #fff; }
+
+/* ── Status pill (F26) ─────────────────────────────────────────────
+ * Dot + uppercase word for boolean-ish states. Tinted background +
+ * coloured border instead of Tag's solid block; the dot inherits
+ * currentColor so each variant only sets `color`. The green is the
+ * same #2e7d52 family the toolbar live-dot and tag-ok already use
+ * (hardcoded — the palette has no green token), lightened to #3e9d68
+ * so the word stays readable on the dark night surfaces too. */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+.statusPillDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+.statusPill-on {
+  color: #3e9d68;
+  background-color: color-mix(in srgb, #3e9d68 12%, transparent);
+  border-color: color-mix(in srgb, #3e9d68 32%, transparent);
+}
+
+.statusPill-off {
+  color: var(--c-text-dim);
+  background-color: transparent;
+  border-color: var(--c-border-hybrid);
+}
+
+.statusPill-warn {
+  color: var(--c-warn);
+  background-color: color-mix(in srgb, var(--c-warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--c-warn) 32%, transparent);
+}
+.tag-warn { background-color: var(--c-warn); color: #fff; }
+.tag-err { background-color: var(--c-danger); color: #fff; }
+.tag-info { background-color: var(--c-accent-soft); color: var(--c-accent); border: 1px solid var(--c-accent); }
+.tag-neutral { background-color: var(--c-accent-soft); color: var(--c-text-dim); }
+
+/* ── Lists / rows ─────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 6px 8px;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.rowMono {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--c-text);
+}
+
+/* `.rowDim` lives on the same flex line as the Tag + rowName when the
+ * comment is short (the typical "OK", "OK (cached)", "200 ms" case).
+ * For long comments — chiefly the 429 / 500 / 503 error bodies that
+ * an upstream service can return as a full sentence — the parent
+ * row's `flex-wrap: wrap` lets the comment drop onto its own line
+ * below, preserving the service name's readability. `max-width: 100%`
+ * caps it to the parent, and `overflow-wrap: anywhere` lets a single
+ * unbreakable token (rare but possible — long URLs, base64) wrap on
+ * any character rather than blowing out the row width.
+ */
+.rowDim {
+  color: var(--c-text-dim);
+  font-size: 10px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.rowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Quota ─────────────────────────────────────────────────────── */
+
+.quotaItem {
+  padding: 6px 8px;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  /* Lock min-height so all cards in a row line up — the cap-less
+   * ones (just a "N reqs" line) used to be 6 px shorter than the
+   * ones with a QuotaBar, which made the grid look ragged at the
+   * baseline. */
+  min-height: 46px;
+}
+
+.quotaName {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--c-text);
+  margin-bottom: 4px;
+  /* Long names like "TOMORROW.IO · CURRENT" need to truncate on
+   * narrow cards (when Services is in a 4-col grid at ~140 px). */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quotaBar { width: 100%; }
+
+.quotaRow {
+  display: flex;
+  justify-content: space-between;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  color: var(--c-text-dim);
+  letter-spacing: 0.6px;
+}
+
+.quotaPct { font-variant-numeric: tabular-nums; }
+
+.quotaPct-accent { color: var(--c-accent); }
+.quotaPct-warn { color: var(--c-warn); }
+.quotaPct-danger { color: var(--c-danger); }
+
+/* Server-KPI CPU-temp colour escalation (thresholds + rationale: see the
+ * CPU_TEMP_* constants in index.js, aligned to the CM5 fan trip points).
+ * Neutral below trip 2 → no class; amber across the fan-ramp band; red
+ * at/above trip 4. No green "good" tier — the night-red palette is
+ * intentionally mono-red. */
+.kvValueWarn { color: var(--c-warn); }
+.kvValueCrit { color: var(--c-danger); font-weight: 600; }
+
+.quotaTrack {
+  height: 4px;
+  background-color: var(--c-accent-soft);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.quotaFill {
+  height: 100%;
+  transition: width 200ms ease-out;
+}
+
+.quotaFill-accent { background-color: var(--c-accent); }
+.quotaFill-warn { background-color: var(--c-warn); }
+.quotaFill-danger { background-color: var(--c-danger); }
+
+/* ── Notices ──────────────────────────────────────────────────── */
+
+.emptyNote {
+  font-size: 11px;
+  color: var(--c-text-dim);
+  font-style: italic;
+  padding: 6px 0;
+}
+
+.copyCoordRow {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.copyCoordButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background-color: var(--c-accent-soft);
+  border: 1px solid var(--c-border);
+  border-radius: 3px;
+  color: var(--c-text);
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.copyCoordButton:hover,
+.copyCoordButton:focus-visible {
+  background-color: var(--c-surface-hybrid);
+  color: var(--c-accent);
+  outline: none;
+}
+
+/* Log tail block — last N server lines, monospace + line-by-line so
+ * cache and security lines can colour-code via classed divs (matches
+ * v2). Bounded height with internal scroll so a long tail doesn't push
+ * the rest of the bucket below the fold. */
+.logBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  background-color: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.logLine {
+  color: var(--c-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.logLineCache {
+  color: var(--c-text-dim);
+}
+
+.logLineSecurity {
+  color: var(--c-danger);
+}
+
+/* Radar AI snapshots — collapsible per-entry, with input radar text
+ * and resulting summary in a monospace block. */
+.snapshotsHeader {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.snapshotsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snapshot {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.snapshotSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.snapshotBody {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snapshotLabel {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  margin-top: 4px;
+}
+
+.snapshotPre {
+  margin: 0;
+  padding: 8px 10px;
+  background-color: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--c-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Vulnerability scan notice — Dependabot live URL, not a stale npm-audit dump. */
+.vulnNotice {
+  padding: 10px 12px;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vulnText {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--c-text-dim);
+}
+
+/* Vulnerability CTA (F28) — button-styled link replacing the raw URL.
+ * Same visual recipe as .toolButton so the About bucket's actions read
+ * as one family. */
+.vulnCtaWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.vulnCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background-color: var(--c-accent-soft);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  color: var(--c-text);
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vulnCta:hover,
+.vulnCta:focus-visible {
+  background-color: var(--c-surface-hybrid);
+  color: var(--c-accent);
+  outline: none;
+}
+
+.vulnCtaMeta {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.6px;
+  color: var(--c-text-dim);
+}
+
+/* Power status flags — row of tag chips for current issues, optional
+ * "since reboot" footnote when a flag occurred but cleared. */
+.powerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+}
+
+.powerSince {
+  color: var(--c-text-dim);
+  font-style: italic;
+}
+
+/* Quota tables (per-service: hour / today / month + TOTAL row).
+ * Columns laid out via grid so they align across rows even with
+ * variable endpoint name lengths. */
+.quotaTable {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.quotaTableHead,
+.quotaTableRow {
+  display: grid;
+  grid-template-columns: 1fr repeat(3, minmax(85px, max-content));
+  gap: 10px;
+  padding: 4px 8px;
+  align-items: baseline;
+}
+
+.quotaTableHead {
+  color: var(--c-text-dim);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 6px;
+}
+
+.quotaTableRow {
+  color: var(--c-text);
+}
+
+.quotaTableRow:nth-child(odd of .quotaTableRow) {
+  background-color: color-mix(in srgb, var(--c-surface) 50%, transparent);
+}
+
+.quotaTableEp {
+  color: var(--c-accent);
+}
+
+.quotaTableTotal {
+  margin-top: 4px;
+  border-top: 1px solid var(--c-border);
+  padding-top: 6px;
+  font-weight: 600;
+}
+
+.quotaCellWarn {
+  color: var(--c-warn);
+}
+
+.quotaCellErr {
+  color: var(--c-danger);
+  font-weight: 600;
+}
+
+/* Section title row with inline metadata (e.g. "last fetch: HH:MM:SS"). */
+.sectionTitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sectionMeta {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--c-text-dim);
+}
+
+/* FPS colour ramp — mirrors v2 thresholds (50+ green, 30+ warn, else err). */
+.fpsGood {
+  color: var(--c-cool);
+  font-weight: 600;
+}
+
+.fpsWarn {
+  color: var(--c-warn);
+  font-weight: 600;
+}
+
+.fpsErr {
+  color: var(--c-danger);
+  font-weight: 600;
+}
+
+/* Network block: stacked LAN URLs + Internet connectivity badge.
+ * Mirrors the v2 header's right-column layout but lives inside the
+ * Server bucket since v3 buckets pin via the rail (no shared header).
+ *
+ * Layout note: `.netList` uses display: block (not flex) so that each
+ * `.netUrl` block stretches to the full containing-block width without
+ * being constrained by flex min-content sizing. The `container-type:
+ * inline-size` on the parent `.bucket` can cause flex containers to
+ * miscalculate their cross-axis width on Chrome 124+; block layout
+ * avoids that ambiguity entirely. Gap is handled via margin-bottom. */
+.netList {
+  display: block;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+}
+
+.netUrl {
+  display: block;
+  color: var(--c-accent);
+  overflow-wrap: break-word;
+  margin-bottom: 6px;
+}
+
+.netUrl:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Connectivity hero card (F27) ─────────────────────────────────
+ * Coloured LED + plain-words state + ping values + the dual TCP/HTTPS
+ * scales, leading the Server bucket. Replaces the former `.netConn`
+ * "Internet: ONLINE · …" line. The LED greens reuse the #3e9d68 family
+ * of the status pills (no green palette token). */
+.netHero {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.netHeroLed {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.netHeroIcon {
+  width: 18px;
+  height: 18px;
+}
+
+.netHeroLedOk {
+  background-color: #3e9d68;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #3e9d68 18%, transparent);
+}
+
+.netHeroLedWarn {
+  background-color: var(--c-warn);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-warn) 18%, transparent);
+}
+
+.netHeroLedErr {
+  background-color: var(--c-danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-danger) 18%, transparent);
+}
+
+.netHeroBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.netHeroState {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text);
+  margin-bottom: 2px;
+}
+
+.netHeroPing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--c-text-dim);
+  letter-spacing: 0.4px;
+}
+
+.netHeroTarget {
+  color: var(--c-text-dim);
+}
+
+/* Inline colour-coded latency values, embedded in the hero's ping
+ * line. Three tiers tied to a "raw link latency" mental model
+ * (see tcpLatencyTier helper in index.js). Bold to lift the tag
+ * out of the surrounding mono text. */
+.netLatencyGreen  { color: #5cb85c; font-weight: 700; }
+.netLatencyYellow { color: #f0c000; font-weight: 700; }
+.netLatencyRed    { color: #e60000; font-weight: 700; }
+.netLatencyUnknown { color: var(--c-text-dim); }
+
+/* Container for the stacked TCP + HTTPS scales. Each row is a
+ * label + a `.latencyScale` so the user can tell which marker
+ * belongs to which metric. The two scales use the same .latencyScale
+ * geometry but different segment percentages — TCP on a 0-1000 ms
+ * domain, HTTPS on a 0-2000 ms domain (HTTPS thresholds 400/800,
+ * with extra red headroom up to 2 s where /api/update starts
+ * approaching its 90 s timeout's lower edge). */
+.latencyScales {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.latencyScaleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.latencyScaleLabel {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.6px;
+  color: var(--c-text-dim);
+  text-transform: uppercase;
+  /* Fixed width so both labels (`TCP`, `HTTPS`) align their bars
+   * to the same column — without this the TCP scale starts at
+   * x ≈ 28 px and HTTPS at x ≈ 40 px, breaking the marker-
+   * positioning analogy between rows. */
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* Mini latency scale — three coloured segments laid out as a 6 px
+ * horizontal bar with a vertical marker pointing at the current
+ * latency value. Helps the user internalise the threshold scale
+ * visually (the tag's "yellow" label says "this value is in the
+ * yellow tier" but not "and here's where yellow sits in the
+ * broader scale"). The two TCP / HTTPS rows share this geometry. */
+.latencyScale {
+  position: relative;
+  /* 14 px so the marker overhang above + below the track has room
+   * to read on a cream / dark background. The track itself stays
+   * at 6 px. */
+  height: 14px;
+  /* `max-width` keeps the bar readable inside narrow Pi cells
+   * without forcing it to fill an entire wide-desktop column.
+   * `flex: 1` lets the bar shrink with the row on narrow viewports. */
+  flex: 1 1 auto;
+  max-width: 240px;
+  min-width: 0;
+}
+
+.latencyScaleTrack {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  /* Centred vertically inside the 14 px container so the marker
+   * symmetrically overhangs top + bottom. */
+  margin-top: 4px;
+  border-radius: 3px;
+  overflow: hidden;
+  /* Subtle outline so the segments read on both dark and cream
+   * palette backgrounds without crashing into the panel surface. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18) inset;
+}
+
+/* TCP scale segment widths on a 0–1000 ms domain: 0-200 (20 %,
+ * green), 200-500 (30 %, yellow), 500-1000+ (50 %, red — the red
+ * segment absorbs any value above the displayed scale top). The
+ * colours match the .netLatency tag tiers so the marker on the
+ * bar agrees visually with the inline tag's colour. */
+.latencyScaleGreen  { flex: 0 0 20%; background-color: #5cb85c; }
+.latencyScaleYellow { flex: 0 0 30%; background-color: #f0c000; }
+.latencyScaleRed    { flex: 1 0 auto; background-color: #e60000; }
+
+/* HTTPS scale segment widths on a 0-2000 ms domain. Thresholds
+ * are 400 / 800 ms (vs. TCP's 200 / 500) because HTTPS includes
+ * the TLS handshake which routinely adds 200-300 ms on a healthy
+ * link. Segments: 0-400 (20 %, green), 400-800 (20 %, yellow),
+ * 800-2000+ (60 %, red — same "absorbs everything beyond" semantics
+ * as the TCP scale's red segment). The 2 s domain top is chosen
+ * because /api/update's 90 s exec timeout starts feeling tight
+ * once individual HTTPS probes routinely exceed 2 s. */
+.latencyScaleHttpsGreen  { flex: 0 0 20%; background-color: #5cb85c; }
+.latencyScaleHttpsYellow { flex: 0 0 20%; background-color: #f0c000; }
+.latencyScaleHttpsRed    { flex: 1 0 auto; background-color: #e60000; }
+
+/* Marker — a chunky vertical strip with a contrasting halo,
+ * centred at the position calculated inline (left: x %, transform:
+ * translateX(-50%)). Sized to overhang the 6 px track top + bottom
+ * by 4 px on each side so it reads against all three segment
+ * colours regardless of palette. Original 2 px width was too
+ * subtle on a cream background — observed live on macOS dev
+ * 2026-05-27 where the marker effectively disappeared into the
+ * left edge of the green segment. */
+.latencyScaleMarker {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 14px;
+  /* Solid black core for maximum contrast against any palette
+   * background; the outline gives it a pale edge that lifts it
+   * off both the cream-day surface and the dark-night track. */
+  background-color: #111;
+  outline: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  /* Smooth slide when the latency value updates on a refresh —
+   * mirrors the gentle motion the rest of v3 uses for state
+   * changes. 250 ms ease is short enough to read as immediate. */
+  transition: left 250ms ease-out;
+}
+
+/* Radar-compression KPI row — flex layout so the stat string, the
+ * inline export button, and the transient confirmation message sit
+ * on a single line at desktop width and wrap on the Pi 7". */
+.compRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--c-text);
+}
+
+.compExportButton {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background-color: var(--c-surface);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.compExportButton:hover:not(:disabled) {
+  background-color: var(--c-accent-soft);
+  border-color: var(--c-accent);
+}
+
+.compExportButton:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 2px;
+}
+
+.compExportButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.compExportMsg {
+  font-size: 11px;
+  color: var(--c-text-dim);
+}
+
+/* Update-action row inside BucketAbout. Surfaces an "Install update"
+ * button when refreshUpdateCheck reports updateAvailable, so the user
+ * doesn't have to close Debug → reopen Settings → find the button.
+ * needsManualUpgrade swaps the button for an instruction note. */
+.updateActionRow {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.updateInstallButton {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background-color: var(--c-warn);
+  color: var(--c-bg);
+  border: 1px solid var(--c-warn);
+  border-radius: 6px;
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.updateInstallButton:hover {
+  filter: brightness(1.08);
+}
+
+.updateInstallButton:focus-visible {
+  outline: 2px dashed var(--c-text);
+  outline-offset: 2px;
+}
+
+.updateNote {
+  margin: 0;
+  padding: 10px 12px;
+  background-color: color-mix(in srgb, var(--c-warn) 14%, transparent);
+  border: 1px solid var(--c-warn);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--c-text);
+  line-height: 1.45;
+}
+
+.updateNote code {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  background-color: var(--c-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin: 0 2px;
+}
+
+.deferNote {
+  margin-top: 18px;
+  padding: 10px 12px;
+  background-color: var(--c-accent-soft);
+  border: 1px dashed var(--c-border);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--c-text-dim);
+  line-height: 1.45;
+}
+
+.deferNote code {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--c-text);
+  background-color: var(--c-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin: 0 2px;
+}
+
+.errorBox {
+  background-color: color-mix(in srgb, var(--c-danger) 14%, transparent);
+  border: 1px solid var(--c-danger);
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--c-text);
+  font-size: 12px;
+}
+
+.errorMessage {
+  margin-top: 6px;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--c-text-dim);
+}
+
+.loadingBox {
+  padding: 24px;
+  text-align: center;
+  color: var(--c-text-dim);
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}

@@ -1,0 +1,254 @@
+/* Lightweight CSS reset, scoped to the Ambient Layers root.
+ *
+ * Still scoped under `.ambientRoot` rather than promoted to a global
+ * reset: every mount is inside that root today, so the scope costs
+ * nothing and dropping it is a separate, independently-testable change.
+ *
+ * Targets just the things that bite us on Pi-class hardware:
+ *   - box-sizing globally (the single biggest source of off-by-one
+ *     layout bugs)
+ *   - margin zero on heading + paragraph + figure so slab spacing comes
+ *     from layout containers, never inherited browser defaults
+ *   - button reset (kiosk doesn't want the OS chrome on touch targets)
+ *   - tap-highlight removal (Chromium on Pi flashes a grey rect on every
+ *     touch by default, which is awful on the kiosk)
+ *   - prevent iOS-style font-size bumps if anyone ever runs this in a
+ *     mobile browser (cheap safety net)
+ */
+
+.ambientRoot,
+.ambientRoot *,
+.ambientRoot *::before,
+.ambientRoot *::after {
+  box-sizing: border-box;
+}
+
+.ambientRoot h1,
+.ambientRoot h2,
+.ambientRoot h3,
+.ambientRoot h4,
+.ambientRoot h5,
+.ambientRoot h6,
+.ambientRoot p,
+.ambientRoot figure,
+.ambientRoot blockquote {
+  margin: 0;
+}
+
+.ambientRoot button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ambientRoot {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Leaflet built-in controls — zoom buttons, attribution strip, and any
+ * custom anchor controls — ship with hardcoded #fff backgrounds and
+ * #000 text that read as visual outsiders in dark / nightRed mode.
+ * Override with the active palette tokens so they auto-tint with the
+ * rest of the UI. */
+/* Leaflet's stylesheet ships with `!important` rules on the zoom
+ * control anchor's `background-color: #fff` and `color: #000`, plus
+ * a `text-shadow` that pushes the +/- glyphs to high-contrast even
+ * if we override `color` alone. To win the specificity war without
+ * giving up the CSS-variable approach, we match Leaflet's selector
+ * structure (`.leaflet-bar a`, `.leaflet-touch .leaflet-bar a`) and
+ * add !important on the color rules. Plus we kill the text-shadow,
+ * which exists for the white-bg case and reads as halo otherwise. */
+.ambientRoot .leaflet-bar a,
+.ambientRoot .leaflet-bar a:link,
+.ambientRoot .leaflet-bar a:visited,
+.ambientRoot .leaflet-touch .leaflet-bar a {
+  background-color: var(--c-surface) !important;
+  color: var(--c-text) !important;
+  border-bottom-color: var(--c-border) !important;
+  text-shadow: none !important;
+}
+
+/* Hover / focus-visible — NO visual change from the resting state.
+ *
+ * Earlier iterations tried (1) accent-soft background, (2) accent
+ * icon colour. Both painted a distinct visual on hover that the
+ * cursor's natural resting position over a just-tapped button
+ * latched onto — user-reported as "the button stayed selected"
+ * for both. Any visible hover-vs-rest difference reads as a
+ * stuck active state on desktop where the cursor doesn't move
+ * unless something is done.
+ *
+ * Trade-off: desktop users lose the hover affordance. Acceptable
+ * for a kiosk-first app where the buttons carry tooltips (title
+ * attribute) and the primary interaction surface is touch.
+ * :focus-visible is still inside the selector so a keyboard
+ * focus ring would still apply via the browser's default outline
+ * (not painted by these rules). */
+.ambientRoot .leaflet-bar a:hover,
+.ambientRoot .leaflet-bar a:focus-visible,
+.ambientRoot .leaflet-touch .leaflet-bar a:hover {
+  background-color: var(--c-surface) !important;
+  color: var(--c-text) !important;
+}
+
+/* The `.radar-focus-active` Leaflet-anchor rules that lived here were
+ * removed with v3.1 Phase 3: the radar-focus toggle is no longer a
+ * Leaflet bar control — it's a standalone module-scoped button (see
+ * WeatherMap/RadarFocusControl.js + `.radar-focus-btn` in the
+ * WeatherMap stylesheet), with its active state painted via
+ * [aria-pressed="true"]. */
+
+/* v3.1 Phase 3 — zoom buttons restyled to the design's 40 × 40 px
+ * touch targets (Leaflet ships 26–30 px, below the touch threshold —
+ * audit finding on the kiosk). Radius 10 on the bar to match the
+ * other floating radar controls, and an :active accent state as the
+ * kiosk's feedback channel (hover is deliberately a no-op, see the
+ * block above). 36 px on the mobile layout per the design. */
+.ambientRoot .leaflet-control-zoom.leaflet-bar {
+  border: 1px solid var(--c-border) !important;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.ambientRoot .leaflet-control-zoom a,
+.ambientRoot .leaflet-touch .leaflet-control-zoom a {
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+/* Both selectors needed: during a touch press Chromium applies :hover
+ * AND :active simultaneously, and the no-op hover rule above peaks at
+ * (0,4,1) via its `.leaflet-touch` variant — the touch-qualified
+ * :active here matches that specificity and, being later in the
+ * sheet, wins. Without it the pressed state never paints on the
+ * kiosk (review finding).
+ *
+ * Pressed fill is an OPAQUE accent tint (accent mixed into the page
+ * bg), not `--c-accent-soft` directly: accent-soft is an ~18 % alpha
+ * and the Leaflet anchors carry their own surface (unlike the mock,
+ * where the bar held it) — swapping the surface for accent-soft made
+ * the pressed button go see-through over the map (Pi 7" field
+ * report). */
+.ambientRoot .leaflet-control-zoom a:active,
+.ambientRoot .leaflet-touch .leaflet-control-zoom a:active {
+  background-color: color-mix(in srgb, var(--c-accent) 18%, var(--c-bg)) !important;
+  color: var(--c-accent) !important;
+}
+
+/* Leaflet's stylesheet puts margin: 10px on every control — combined
+ * with the 16 px corner offset above, the zoom bar landed at 26/26
+ * instead of the design's 16/16, broke the single top-left guide
+ * line, and pushed the bar's bottom edge under the standalone
+ * radar-focus button on LayoutPi (review finding). Zero it: the
+ * corner offset is the whole inset now. */
+.ambientRoot .leaflet-top.leaflet-left .leaflet-control {
+  margin: 0;
+}
+
+.ambientRoot[data-layout="mobile"] .leaflet-control-zoom a,
+.ambientRoot[data-layout="mobile"] .leaflet-touch .leaflet-control-zoom a {
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  font-size: 16px;
+}
+
+/* Push Leaflet's top-left control stack (zoom +/-) down + right to
+ * line up with the cards' top-left edge — by default Leaflet anchors
+ * at top: 10px / left: 10px, but the ambient cards sit at the
+ * edge-gap inset (16 px). Aligning them gives the kiosk a single
+ * visual "guide line" at the top-left corner instead of two slightly-
+ * offset anchors. */
+.ambientRoot .leaflet-top.leaflet-left {
+  top: var(--c-edge-gap, 16px);
+  left: var(--c-edge-gap, 16px);
+}
+
+.ambientRoot .leaflet-bar {
+  border-color: var(--c-border) !important;
+}
+
+.ambientRoot .leaflet-control-attribution {
+  background-color: var(--c-surface) !important;
+  color: var(--c-text-dim) !important;
+}
+
+.ambientRoot .leaflet-control-attribution a {
+  color: var(--c-text) !important;
+}
+
+/* Hide the Ukrainian-flag SVG inside Leaflet's default attribution
+ * prefix when the nightRed palette is active. The flag's yellow
+ * stripe reads disruptively against the dark-red basemap; every
+ * other palette (day / dusk / night) keeps the flag visible as the
+ * humanitarian gesture Leaflet's maintainers added in v1.9.3.
+ * Using `data-palette="nightRed"` on .ambientRoot (set by AmbientLayers
+ * from the time-of-day hook) rather than a JS toggle on the
+ * AttributionControl prop — that approach (v2.14.65) caused the
+ * control to remount and the tile-layer attribution strings to
+ * duplicate on each palette switch.
+ *
+ * The trailing-space adjustment hides the rendered " Leaflet" by
+ * also hiding the leading space — without this the flag is gone but
+ * a stray leading space precedes "Leaflet". `display: none` on the
+ * SVG also collapses the whitespace it would have occupied. */
+.ambientRoot[data-palette="nightRed"] .leaflet-attribution-flag {
+  /* `!important` is required to override Leaflet's own
+   * `display: inline !important` in leaflet.css. */
+  display: none !important;
+}
+
+/* Location marker — Leaflet renders this DivIcon from
+ * buildLocationMarkerIcon() in WeatherMap/index.js. We override its
+ * defaults here (not in WeatherMap/styles.css) because that file is a
+ * CSS Module: its class names would be hashed and the literal class
+ * name `weather-station-target` Leaflet writes into the DOM wouldn't
+ * match. Using `--c-accent` means the marker auto-tints with the
+ * active palette — soft amber on day, deeper amber on dusk, copper
+ * on night, deep red on nightRed — so it never sits as a foreign
+ * blue dot on the radar tiles. The 22 × 22 footprint pairs visually
+ * with the radar rings without competing with them.
+ *
+ * The default Leaflet `.leaflet-div-icon` ships a 1-px white border
+ * around its container; we zero that out so only the ring + dot
+ * inside contribute to the visible marker. */
+.leaflet-div-icon.weather-station-target {
+  background: transparent;
+  border: 0;
+}
+
+.weather-station-target__ring {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--c-accent, #b85a18);
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+  position: relative;
+  /* Subtle outer halo so the marker reads cleanly on cluttered
+   * radar tiles (where the precipitation colour palette can run
+   * close to the accent). */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.weather-station-target__dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--c-accent, #b85a18);
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+

@@ -1,0 +1,481 @@
+.container {
+  height: 100%;
+  display: flex;
+  justify-content: space-evenly;
+  position: relative;
+}
+
+.container > div {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  align-items: center;
+  /* Disable Chromium's default tap-highlight overlay
+   * (`rgba(0, 0, 0, 0.12)` by default). On tactile devices, tapping
+   * an interactive element paints that grey translucent rectangle
+   * for a short moment — on the Pi kiosk Chromium that overlay can
+   * persist until the next pointerdown elsewhere (no natural
+   * pointer-leave on touch), so the just-tapped button reads as
+   * "stuck in a hover state" even when no actual `:hover` /
+   * `:active` rule is firing. Reproducible on Pis regardless of
+   * Multitouch DSI mode or USB-mouse presence — the highlight is
+   * browser-level, not CSS-level. Desktop browsers (macOS Chrome /
+   * Firefox) don't paint it because mouse events don't trigger the
+   * touch-highlight code path. Same pattern HealthIndicator already
+   * uses on `.dotButton` and `.chipButton`. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.show-mouse.container > div{
+  cursor: pointer;
+}
+
+.container.dark > div {
+  /* --ctrl-btn-bg / --ctrl-btn-border / --ctrl-btn-border-l are
+   * intentionally left unset here — they resolve to their fallback
+   * values in v2 contexts and are overridden by BottomDock for the
+   * Direction C wrapper (see ambient/BottomDock/styles.css). */
+  background: var(--ctrl-btn-bg, linear-gradient(#5d5c5c, #4e4e4e));
+  border-right: 1px solid var(--ctrl-btn-border, #4c4c4c);
+  border-left: 1px solid var(--ctrl-btn-border-l, #757575);
+}
+
+.container.dark > div:active {
+  background: var(--ctrl-btn-active, linear-gradient(#4e4e4e, #5d5c5c));
+}
+
+.container.light > div {
+  background: var(--ctrl-btn-bg, linear-gradient(#d6d6d6, #c7c7c7));
+  border-right: 1px solid var(--ctrl-btn-border, #bdbdbd);
+  border-left: 1px solid var(--ctrl-btn-border-l, #dadada);
+}
+
+.container.light > div:active {
+  background: var(--ctrl-btn-active, linear-gradient(#d7d7d7, #e6e6e6));
+}
+
+.container.light > div:first-child {
+  border-left: none;
+}
+
+.light .button-down {
+  background: var(--ctrl-btn-down, linear-gradient(#E4E4E4, #F3F3F3)) !important;
+}
+
+.dark .button-down {
+  background: var(--ctrl-btn-down, linear-gradient(#686868, #777676)) !important;
+}
+
+/* v2.14.74 — slot-reserving "disabled" state. Used by the direction-
+ * arrows button when `radarAnalysisEnabled` is false: the button stays
+ * in the flex row (no horizontal layout shift when the debug "radar
+ * rings" toggle flips) AND remains visually present so the user can
+ * see "this control exists but is currently inactive — turn the rings
+ * on to enable it". Reduced opacity + `pointer-events: none` + default
+ * cursor communicates the disabled state without painting an empty
+ * cell. `.svg` opacity intentionally NOT set separately; the wrapping
+ * div's opacity already cascades to the inline icon. */
+/* `pointer-events` intentionally NOT disabled here — the click handler
+ * in index.js intercepts taps on a disabled button to surface a short
+ * toast hint ("Active the radar rings first") rather than silently
+ * doing nothing. Cursor stays default so the button doesn't read as
+ * an active control. */
+.button-disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Update button */
+.update-button {
+  position: relative;
+}
+
+/* Remote-viewer variant of the update indicator. No pointer cursor,
+ * reduced opacity, and an active state that explicitly does not
+ * change on press — communicates "you're seeing this for awareness,
+ * not as a button you can press from here". */
+.update-button-remote {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.show-mouse .update-button-remote {
+  cursor: not-allowed;
+}
+
+/* Neutralise the press feedback so the remote indicator doesn't look
+ * pressable. Higher specificity than the `.container.dark > div:active`
+ * rule above via the explicit class-chain, and !important as a belt-
+ * and-braces in case the container variant gets restyled later. */
+.container.dark > div.update-button-remote:active,
+.container.light > div.update-button-remote:active {
+  background: inherit !important;
+}
+
+.update-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f97316;
+  /* Finite pulse, NOT `infinite`. `update-pulse` animates `transform` +
+   * `opacity` — both composited properties, so on the Pi's V3D GPU an
+   * infinite run kept the Chromium GPU process recompositing every vsync
+   * for as long as an update was pending (which, between releases, is most
+   * of the time across the fleet). That pinned the kiosk at ~20 % GPU /
+   * ~67 °C with the fan cycling on a trip point. The badge now pulses 4×
+   * (~8 s) when it first mounts — enough to catch the eye when the update
+   * is detected — then `forwards` holds the 100 % keyframe (a steady dot)
+   * so the compositor falls back to idle. A static orange dot still flags
+   * "update available". */
+  animation: update-pulse 2s ease-in-out 4 forwards;
+}
+
+@keyframes update-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.75); }
+}
+
+/* v2.14.74 — transient toast above the dock. Floats above the tapped
+ * button (anchored via inline `left` + `bottom` set by the React
+ * component) and fades in/out across a 2.5 s window driven by
+ * `TOAST_TIMEOUT` in ControlButtons/index.js. Pointer-events disabled
+ * so the toast never intercepts a follow-up tap.
+ *
+ * v2.14.75: `position: fixed` (was `absolute`). LayoutPi's `.layout`
+ * root has `overflow: hidden`, and the 7" Pi screen + any browser
+ * window resized below ~1280 px renders LayoutPi. The previous
+ * absolute toast was clipped by that overflow — only a 1-2 px sliver
+ * of the border was visible, leaving users to see "a small hint that
+ * something happened" with no readable text. Fixed positioning
+ * escapes every ancestor's overflow clip.
+ *
+ * Specificity fix: `.container > div` above sets `width: 100%; height:
+ * 100%; display: flex` on every direct div child, which would make the
+ * toast span the entire dock and centre its text in the middle. The
+ * compound selector `.container > div.toast` (specificity 0,2,1) beats
+ * the wildcard (0,1,1) so the toast keeps its intrinsic content width.
+ *
+ * The toast is centred on its anchor point via `translateX(-50%)`. The
+ * inline `left` + `bottom` set in index.js place the anchor at the
+ * centre of the tapped button, 8 px above its top edge — viewport
+ * coordinates because the element is fixed. `max-width` + ellipsis
+ * keeps long messages contained on narrow viewports. The defaults
+ * below (`left: 50%`, `bottom: 60px`) only activate in the defensive
+ * "no event provided" fallback path. */
+.container > div.toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  width: auto;
+  height: auto;
+  display: block;
+  /* Bumped from 280 → 360 (v2.16.x) to give the longer remote-
+   * update notice room on viewports between ~400 px and ~720 px,
+   * where the previous 280 px cap forced 3-4 line wraps for
+   * 50-75 char strings. On narrower viewports `calc(100vw - 24px)`
+   * still wins so the toast never extends past the screen edges. */
+  max-width: min(360px, calc(100vw - 24px));
+  /* Frosted-glass look: translucent surface + backdrop blur. User
+   * preferred the lighter "ice" effect over the accent-soft tint that
+   * was tried briefly — keeps the toast visually distinct from the
+   * dock without competing with the button states. */
+  background-color: var(--c-surface, rgba(30, 30, 32, 0.85));
+  color: var(--c-text, #f0f0f0);
+  border: 1px solid var(--c-border-hybrid, var(--c-border, rgba(255, 255, 255, 0.18)));
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  /* `white-space: normal` (instead of `nowrap`) lets longer toasts
+   * wrap to a second line — the remote-update notice in EN/FR/ES
+   * runs 50-75 chars, which doesn't fit on a single 280 px line at
+   * 13 px Geist. Short toasts ("Marker shown", "Light mode on")
+   * stay on one line naturally because their content is shorter
+   * than the max-width. text-align centres both single- and multi-
+   * line content under the tapped button. Line-height 1.3 gives
+   * enough breathing room for two lines without enlarging the
+   * single-line case visibly. */
+  white-space: normal;
+  line-height: 1.3;
+  text-align: center;
+  pointer-events: none;
+  /* v2.14.76: z-index lifted from 20 → 1500 to clear the radar timeline
+   * (z-index 500) and Leaflet's internal controls (z-index up to 1000)
+   * that paint into the same root stacking context on LayoutPi. The
+   * dock's static `.container` doesn't form its own stacking context,
+   * so the toast competes directly with map siblings — 20 lost. On
+   * LayoutDesktop the dock is `position: absolute` so its descendants
+   * had their own context already, masking the problem there. Still
+   * below SettingsPanel / DebugPanel (5000) so an open overlay covers
+   * any stray toast that fires during overlay transitions. */
+  z-index: 1500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  /* CSS variable holds the X-axis translate so the keyframes can pair
+   * vertical motion with horizontal centring without overriding `left`. */
+  --toast-tx: -50%;
+  transform: translateX(var(--toast-tx));
+  animation: toast-pop 2500ms ease-out forwards;
+}
+
+@keyframes toast-pop {
+  0%   { opacity: 0; transform: translate(var(--toast-tx), 4px); }
+  10%  { opacity: 1; transform: translate(var(--toast-tx), 0); }
+  85%  { opacity: 1; transform: translate(var(--toast-tx), 0); }
+  100% { opacity: 0; transform: translate(var(--toast-tx), -2px); }
+}
+
+/* ============================================================
+ * GROUPED MODE — used by the v3 BottomDock (Phase 1 of the v3.1
+ * synthesis design). The flat-row CSS above is preserved for the
+ * legacy v2 InfoPanel; everything below activates only when the
+ * container carries `.grouped`.
+ *
+ * Layout: three flex groups with a small gap, a hairline
+ * separator between groups, optional uppercase labels left of
+ * each group (hidden on the 7" Pi and on phones), and a chip
+ * pushed to the right via the HealthIndicator's own
+ * `margin-left: auto` rule.
+ *
+ * Crucially, the `.container > div` background / border rules
+ * from the flat layout target direct children of the container.
+ * In grouped mode the direct children are the `.group` wrappers,
+ * which DO match `.container.dark > div` etc. We strip those
+ * inherited rules below so the group wrappers stay transparent
+ * and only the buttons (now grandchildren) carry the dock styles.
+ * ============================================================ */
+.container.grouped {
+  /* Override `space-evenly`: groups should pack from the left so
+   * the status chip's `margin-left: auto` can claim the remaining
+   * width and float to the right. */
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0;
+  /* The dock parent already pads us; keep inner padding minimal so
+   * the groups can use most of the available width. */
+  padding: 0;
+}
+
+/* Strip the inherited dark/light gradients from the group wrappers
+ * (they're not buttons — they hold buttons). Higher specificity
+ * than `.container.dark > div` via the extra `.grouped` class. */
+.container.grouped.dark > div.group,
+.container.grouped.light > div.group {
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+}
+.container.grouped.dark > div.group:active,
+.container.grouped.light > div.group:active {
+  background: transparent;
+}
+
+.container.grouped .group {
+  display: flex;
+  align-items: center;
+  /* 2 px gap matches the design's tight in-group rhythm — the
+   * separators between groups carry the visual break, not the
+   * intra-group spacing. */
+  gap: 2px;
+  /* 6 px padding on the sides creates room for the absolutely-
+   * positioned hairline separators added below. */
+  padding: 0 6px;
+  position: relative;
+  /* Buttons inside use `width: 100%` from the .container > div
+   * rule; in grouped mode we don't want them to stretch — let
+   * each button take its intrinsic 40 px width. */
+  flex-wrap: nowrap;
+  /* Override `.container > div { width: 100%; height: 100% }` (the
+   * flat-mode rule scoped to direct children of `.container`). Without
+   * this each group inherits `width: 100%` and the flex algorithm
+   * distributes them evenly across the dock instead of letting the
+   * `justify-content: flex-start` on the parent pack them at the
+   * left. Setting `flex: 0 0 auto` + `width: auto` makes each group
+   * content-sized; height auto so the group doesn't stretch
+   * vertically beyond what its inner 40 px buttons need. */
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+}
+
+/* Hairline separator between adjacent groups. Drawn as an
+ * absolutely-positioned 1 px column on the leading edge of every
+ * group except the first one (the `+ .group` sibling combinator
+ * scopes the rule to "this group comes after another group"). The
+ * 8 px insets at top / bottom keep the line shorter than the
+ * dock height so it reads as a separator, not a full border. */
+.container.grouped .group + .group::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--c-border-hybrid, var(--c-border, rgba(255, 255, 255, 0.18)));
+  opacity: 0.7;
+}
+
+.container.grouped .groupLabel {
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  /* Use `--c-text-dim` at full opacity rather than `--c-text-dim` +
+   * `opacity: 0.7`. The opacity trick reads as a soft-edged / blurry
+   * label because the browser renders the glyphs opaque first and then
+   * multiplies the entire layer by alpha — sub-pixel anti-aliasing
+   * happens on the opaque pass, not on the final composited pixels,
+   * so glyph edges no longer blend correctly with the dock surface.
+   * Matching the design's approach (a directly dim token, no alpha)
+   * gives crisp glyph edges + better contrast against the dock. */
+  color: var(--c-text-dim, var(--c-text));
+  margin-right: 6px;
+  padding-left: 4px;
+  white-space: nowrap;
+  /* Don't let the label react to flex sizing — its width is its
+   * content's intrinsic width. */
+  flex: 0 0 auto;
+  /* No pointer-events: the label isn't a control. Keeps tap
+   * targets clear when a finger lands on the cap text by mistake. */
+  pointer-events: none;
+}
+
+/* Per-button styles in grouped mode. We want the existing button
+ * states (`.buttonDown` active fill, `.buttonDisabled` greyed out,
+ * `.updateButton` badge) to still work, but the resting state
+ * should be a compact 40×40 cell with rounded corners — not the
+ * full-height gradient slab of the flat layout. */
+.container.grouped .group > div {
+  /* Override the flat `width: 100%` so each button takes its
+   * intrinsic size. */
+  width: 40px;
+  height: 40px;
+  /* Re-establish the icon-centring rules that `.container > div`
+   * provides for the flat layout. In grouped mode the buttons are
+   * grandchildren of `.container` (nested inside `.group`), so they
+   * don't inherit the flat-mode centring — without these declarations
+   * the InlineIcon SVGs would sit at the top-left of each 40×40 cell. */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  flex: 0 0 auto;
+  /* Reset the flex `space-evenly`-driven stretch to a tight icon
+   * cell. The inner icon is centred via the existing flex rules. */
+  padding: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.container.grouped .group > div:active {
+  background: transparent;
+}
+
+/* Hover affordance — gated behind BOTH `(hover: hover)` AND
+ * `(pointer: fine)`. The double guard is load-bearing:
+ *
+ * `(hover: hover)` alone falsely matches on some Pi kiosk Chromium
+ * configurations even on a pure touchscreen — observed on Pis with
+ * Multitouch DSI active AND no USB mouse plugged in, so the trigger
+ * isn't tied to peripheral state or platform settings the maintainer
+ * can adjust. (The earlier "sticky hover" symptom on the Pi was
+ * actually `-webkit-tap-highlight-color` painting Chromium's default
+ * grey overlay on tap — fixed in commit 8a229df by setting it to
+ * transparent. With that out of the way, this CSS-level :hover can
+ * be reintroduced, but a stricter gate keeps any residual misfire
+ * from re-painting an overlay that lingers on touch.)
+ *
+ * Adding `(pointer: fine)` requires the PRIMARY input pointer to be
+ * precise (mouse / trackpad). A Pi tactile kiosk reports `pointer:
+ * coarse` even if a USB mouse is plugged in (touch stays primary),
+ * so this combination matches only real desktop sessions. macOS
+ * dev (Chrome, Firefox, Safari) is unaffected — the hover overlay
+ * paints on cursor-over, fades on cursor-leave like before.
+ *
+ * Background tint MUST NOT use `--c-accent-soft`: that token already
+ * signals `.button-down` (toggle-ON state). Neutral 8% text overlay
+ * keeps hover visibly distinct from a stuck toggle-ON appearance
+ * even if a hover event accidentally fires. */
+@media (hover: hover) and (pointer: fine) {
+  .container.grouped .group > div:hover {
+    background-color: color-mix(in oklab, var(--c-text) 8%, transparent);
+  }
+}
+
+/* `.buttonDown` active-toggle fill — same accent-soft surface as
+ * the existing pattern but with grouped specificity so it wins
+ * over the resting transparent background. */
+.container.grouped.dark .group > div.button-down,
+.container.grouped.light .group > div.button-down {
+  background: var(--c-accent-soft) !important;
+}
+
+/* Narrow viewports — hide group labels and tighten gaps. The
+ * design CSS hides labels at 7" + mobile sizes; the same threshold
+ * here (≤ 980 px) covers both the 7" Pi (932 px) and any phone
+ * landscape orientation. Group labels eat ~70 px each (3 = ~210
+ * px) which a 932-px-wide dock can't afford. */
+@media (max-width: 980px) {
+  .container.grouped .groupLabel {
+    display: none;
+  }
+  .container.grouped .group {
+    padding: 0 4px;
+  }
+}
+
+/* On phones in portrait the BottomDock already collapses secondary
+ * buttons (see BottomDock/styles.css `data-dock-priority="secondary"`).
+ * Keep the group spacing extra-tight in that range so the remaining
+ * essentials fit. */
+@media (max-width: 479px) and (orientation: portrait) {
+  .container.grouped .group {
+    padding: 0 2px;
+    gap: 0;
+  }
+  .container.grouped .group + .group::before {
+    /* Move the separator further out on the leftmost edge to
+     * preserve some breathing room around the first icon. */
+    left: -2px;
+  }
+  .container.grouped .group > div {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* Nearby-alerts toggle — relative so the count badge can pin to its
+   corner. The badge is a small tier-coloured bubble; its background and
+   ink are set inline at runtime from the worst tier currently in range
+   (red > orange > yellow), so only the geometry lives here. The
+   box-shadow cuts it out from the dock surface in any palette without
+   needing a palette-specific border colour. */
+.alert-toggle {
+  position: relative;
+}
+.alert-count-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+

@@ -1,0 +1,47 @@
+node_modules/
+settings.json
+server/key.pem
+server/cert.pem
+npm-audit.log
+server/weather-cache.json
+server/geolocation-cache.json
+server.log
+server/request-counts.json
+ssh.key
+ssh.key.pub
+
+# Office lock files (created when a .pptx/.docx is open in PowerPoint/Word)
+~$*
+# Radar prompt-compression reports (generated on-demand from Debug panel)
+report/
+
+# Python bytecode cache (e.g. from running tools/*.py)
+__pycache__/
+*.pyc
+
+# macOS Finder metadata — should never be tracked
+.DS_Store
+.claude/
+
+# Security remediation work-orders (list unfixed vulns — never publish to the public repo)
+security-remediation-*.md
+server/ca-key.pem
+server/ca-cert.pem
+server/ca-cert.srl
+server/leaf.csr
+server/leaf-ext.conf
+settings.json.bak
+settings.json.tmp
+settings.json.*.tmp
+
+# GitHub traffic archiver (tools/track-traffic.sh) — local-only artefacts.
+# The SCRIPT itself stays tracked on purpose (maintainer tool, like the rest of
+# tools/); what must never land in the repo is its state. Defensive by design:
+# the defaults all live outside the working tree (~/.config, ~/.local/share),
+# but GH_TOKEN_FILE and OUT are overridable, so a redirected run must not be
+# able to stage a PAT. The launchd plist is machine-specific (absolute paths).
+gh-token
+gh-token.*
+traffic-history.csv
+track-traffic.log
+com.pi-weather-station.traffic.plist
