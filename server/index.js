@@ -47,20 +47,6 @@ const proxyCtrl = require("./proxyCtrl");
 const debugCtrl = require("./debugCtrl");
 const { getBrightness, setBrightness } = require("./brightnessCtrl");
 const { getDisplayScale, setDisplayScale, relaunchKiosk } = require("./displayScaleCtrl");
-const aiSummaryCtrl = require("./aiSummaryCtrl");
-const { getSenseHatData } = require("./sensehatCtrl");
-const { postKioskLocation } = require("./kioskLocationCtrl");
-const {
-  getSenseHatAvailable,
-  getSenseHatMode,
-  setSenseHatMode,
-  getClockBrightness,
-  setClockBrightness,
-  getRadarBrightness,
-  setRadarBrightness,
-  applySenseHatModeOnBoot,
-} = require("./sensehatModeCtrl");
-const { initIndoorTemperature, getIndoorTemperature } = require("./indoorTempCtrl");
 const { registerService } = require("./serviceStatus");
 
 /**
@@ -75,25 +61,13 @@ const { registerService } = require("./serviceStatus");
  */
 function registerKnownServices() {
   [
-    "Tomorrow.io (current)",
-    "Tomorrow.io (hourly)",
-    "Tomorrow.io (daily)",
     "Mapbox",
     "LocationIQ",
     "ipapi.co",
     "sunrise-sunset.org",
-    "RainViewer (analyzer)",
-    "RainViewer (risk)",
-    "Claude (AI summary)",
-    "Homebridge",
-    "Environment Canada (AQHI)",
-    "MELCC RSQAQ (Quebec)",
-    "MELCC RSQA (Montreal)",
-    "EPA AirNow",
-    "OpenAQ",
+    "IEM (radar)",
     "NWS (severe weather alerts)",
     "Environment Canada (severe weather alerts)",
-    "Open-Meteo (pollen)",
   ].forEach(registerService);
 }
 
@@ -117,11 +91,10 @@ ensureSecurePermissions();
 // full settings copy incl. the API keys — see settingsCtrl).
 sweepOrphanSettingsTmp();
 const { getCoords } = geolocationCtrl;
-const { reverseGeocode: proxyReverseGeocode, mapTile, weatherCurrent, weatherHourly, weatherDaily, sunriseSunset, saveCacheToDisk } = proxyCtrl;
+const { reverseGeocode: proxyReverseGeocode, mapTile, sunriseSunset } = proxyCtrl;
 const { responseTimerMiddleware } = require("./responseTimer");
 const { recordClient } = require("./clientTracker");
 const { getDebugInfo, getCpuTemp, getFanSpeed, logSecurityEvent, initServerInfo } = debugCtrl;
-const { getWeatherSummary } = aiSummaryCtrl;
 const { checkForUpdate, clearCache: clearUpdateCache } = require("./updateChecker");
 const rateLimit = require("express-rate-limit");
 const { socketPeerKeyGenerator } = require("./rateLimitKey");
@@ -617,12 +590,7 @@ const openInBrowserIfDev = async (url) => {
 if (sslOptions) {
   https.createServer(sslOptions, app).listen(HTTPS_PORT, HOST, async () => {
     initServerInfo(HTTPS_PORT, "https");
-    initIndoorTemperature();
     registerKnownServices();
-    // Re-apply the persisted Sense HAT display mode (weather/clock).
-    // No-op on hosts without a Sense HAT. Fire-and-forget; the call
-    // does its own logging.
-    applySenseHatModeOnBoot().catch(() => undefined);
     await openInBrowserIfDev(`https://localhost:${HTTPS_PORT}`);
     console.log(`${appName} v${ver} has started on port ${HTTPS_PORT} (HTTPS, bound to ${HOST})`);
   });
@@ -642,9 +610,7 @@ if (sslOptions) {
   }
   app.listen(PORT, httpHost, async () => {
     initServerInfo(PORT, "http");
-    initIndoorTemperature();
     registerKnownServices();
-    applySenseHatModeOnBoot().catch(() => undefined);
     await openInBrowserIfDev(`http://localhost:${PORT}`);
     console.log(`${appName} v${ver} has started on port ${PORT} (HTTP, bound to ${httpHost})`);
   });
@@ -712,34 +678,21 @@ app.get("/api/cert.pem", (req, res) => {
 app.get("/api/reverse-geocode", apiLimiter, proxyReverseGeocode);
 app.get("/api/tiles/:style/:z/:x/:y", tileLimiter, mapTile);
 
-app.get("/api/weather/current", apiLimiter, weatherCurrent);
-app.get("/api/weather/hourly", apiLimiter, weatherHourly);
-app.get("/api/weather/daily", apiLimiter, weatherDaily);
+// Tomorrow.io forecast routes (/api/weather/current|hourly|daily) and the
+// Claude weather summary (/api/weather-summary) were removed in the radar
+// rework — this install is a radar viewer and forecasting is handled by a
+// separate epaper display. `/api/sunrise-sunset` stays: it drives the
+// auto dark-mode palette switch, which a kiosk still needs.
 app.get("/api/sunrise-sunset", apiLimiter, sunriseSunset);
 
-app.get("/api/weather-summary", apiLimiter, getWeatherSummary);
-app.get("/api/sensehat",            apiLimiter, getSenseHatData);
-app.get("/api/sensehat-available",  apiLimiter, getSenseHatAvailable);
-app.get("/api/sensehat-mode",       apiLimiter, getSenseHatMode);
-app.post("/api/sensehat-mode",      localhostOnly, setSenseHatMode);
-app.get("/api/sensehat-clock-brightness",  apiLimiter, getClockBrightness);
-app.post("/api/sensehat-clock-brightness", localhostOnly, setClockBrightness);
-app.get("/api/sensehat-radar-brightness",  apiLimiter, getRadarBrightness);
-app.post("/api/sensehat-radar-brightness", localhostOnly, setRadarBrightness);
-app.post("/api/kiosk-location",            localhostOnly, postKioskLocation);
-app.get("/api/indoor-temperature",  apiLimiter, getIndoorTemperature);
 
-const { getAirQuality } = require("./airQualityCtrl");
-app.get("/api/air-quality",         apiLimiter, getAirQuality);
-
+// Air quality (/api/air-quality, 5 sources), pollen (/api/pollen) and the
+// Open-Meteo PoC adapter (/api/weather/openmeteo) were removed in the radar
+// rework. Pollen was Europe-only (CAMS returns null for every US coord) and
+// the Open-Meteo adapter only ever existed to compare against Tomorrow.io,
+// which is itself gone.
 const { getHealth } = require("./healthCtrl");
 app.get("/api/health",              apiLimiter, getHealth);
-
-const { getOpenMeteoWeather } = require("./openMeteoCtrl");
-app.get("/api/weather/openmeteo",   apiLimiter, getOpenMeteoWeather);
-
-const { getPollen } = require("./pollenCtrl");
-app.get("/api/pollen",              apiLimiter, getPollen);
 
 const { getWeatherAlerts, getNearbyAlerts } = require("./govAlertsCtrl");
 app.get("/api/weather-alerts",      apiLimiter, getWeatherAlerts);
@@ -767,34 +720,10 @@ const { getRadarSite, getRadarFrames } = require("./iemRadarCtrl");
 app.get("/api/radar/site",          apiLimiter, getRadarSite);
 app.get("/api/radar/frames",        apiLimiter, getRadarFrames);
 
-// Radar risk-level overlay for the dashed circles in WeatherMap. Reads the
-// "right now" intensity sampled on each ring and maps to a colour tier
-// (calm / yellow / orange / red) aligned with WMO / Météo-France / NWS
-// conventions. The outer ring is only evaluated when the user has opted
-// into extendedRadius — same gate as the AI summary's outer-ring sampling.
-const { getRiskLevels } = require("./radarAnalyzerCtrl");
-app.get("/api/radar-risk", apiLimiter, async (req, res) => {
-  const lat = parseFloat(req.query.lat);
-  const lon = parseFloat(req.query.lon);
-  if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-    return res.status(400).json("Invalid coordinates").end();
-  }
-  const distanceUnit = req.query.distanceUnit === "mi" ? "mi" : "km";
-  let extendedRadius = false;
-  try {
-    const settings = await settingsCtrl.getSettingsData();
-    extendedRadius = Boolean(settings?.advanced?.ai?.extendedRadius);
-  } catch {
-    // Settings unreadable — proceed with inner ring only (safe default).
-  }
-  try {
-    const result = await getRiskLevels(lat, lon, { extendedRadius, distanceUnit });
-    if (!result) return res.status(503).json("Radar risk unavailable").end();
-    return res.status(200).json(result).end();
-  } catch {
-    return res.status(500).json("Radar risk failed").end();
-  }
-});
+// The radar risk-level sampler (/api/radar-risk) was removed in the radar
+// rework. It sampled RainViewer tiles pixel-by-pixel to colour the dashed
+// analysis rings and feed the AI summary; both of those are gone, and the
+// source it sampled is gone with them.
 
 app.get("/api/update-check", apiLimiter, async (req, res) => {
   try {
@@ -1040,7 +969,6 @@ app.post("/api/display-scale", localhostOnly, setDisplayScale);
 app.post("/api/relaunch-kiosk", localhostOnly, relaunchKiosk);
 
 function shutdown() {
-  saveCacheToDisk();
   flushRequestCounts();
   process.exit(0);
 }

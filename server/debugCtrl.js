@@ -6,43 +6,30 @@ const { execSync } = require("child_process");
 const dns = require("dns").promises;
 const axios = require("axios").default;
 const { checkForUpdate, getRepo } = require("./updateChecker");
-const { weatherCache, getCacheStats } = require("./proxyCtrl");
-const { summaryCache, getRecentRadarSnapshots } = require("./aiSummaryCtrl");
 const { getServiceStatus } = require("./serviceStatus");
 const { getCounters } = require("./requestCounter");
 const { getResponseTimeStats } = require("./responseTimer");
 const { getRemoteClients } = require("./clientTracker");
-const { detectSenseHatVersion } = require("./sensehatModeCtrl");
 
 const PROVIDER_STATUS_TTL = 30 * 60 * 1000;
 
 const PROVIDER_STATUS_APIS = [
-  { name: "Tomorrow.io",     type: "statuspage",           url: "https://status.tomorrow.io/api/v2/status.json"      },
   { name: "Mapbox",          type: "statuspage",           url: "https://status.mapbox.com/api/v2/status.json"       },
   { name: "ipapi.co",        type: "html",                 url: "https://ipapi.co/status/"                           },
   { name: "LocationIQ",      type: "rss",                  url: "https://status.locationiq.com/rss"                  },
-  { name: "Anthropic Claude", type: "statuspage-component", url: "https://status.claude.com/api/v2/components.json", componentName: "Claude API" },
-  // RainViewer hosts its public status page on Hyperping (status.rainviewer.com),
-  // which is a React SPA without a stable JSON status endpoint we can scrape
-  // the way the Statuspage.io entries above do. Fall back to an "api-ping"
-  // probe of the actual API URL the radar code uses for the frame index —
-  // semantics are slightly different (it answers "is RainViewer's API
-  // currently answering?" rather than "is RainViewer self-reporting issues?")
-  // but the result is what the kiosk owner cares about. The latency reading
-  // also surfaces slow-but-up situations (>3 s response time → minor).
-  { name: "RainViewer",      type: "api-ping",             url: "https://api.rainviewer.com/public/weather-maps.json" },
-  // GitHub is not an upstream we call directly from the runtime
-  // (no `recordServiceCall` ever fires for it), so the only health
-  // signal we have for it is the statuspage. We track "Git
-  // Operations" specifically because that's the component that
-  // affects the in-app updater (`POST /api/update` runs a real
-  // `git pull` to fetch new commits). A degradation here predicts
-  // slow or timing-out updates — surfacing it in the dock popover
-  // gives the kiosk owner an upstream-side explanation when the
-  // updater behaves oddly. Validated live on 2026-05-27 morning
-  // when this very component was in degraded state during update
-  // attempts (see commit cec11e9 — the 90 s timeout bump that
-  // shipped the same morning was motivated by the same incident).
+  // IEM publishes no machine-readable status page, so probe the frame-list
+  // API the radar actually depends on. Semantics differ from the Statuspage
+  // entries ("is it answering?" rather than "is it self-reporting issues?")
+  // but that is what a kiosk owner cares about, and the latency reading
+  // surfaces slow-but-up situations too.
+  { name: "IEM (radar)",     type: "api-ping",             url: "https://mesonet.agron.iastate.edu/json/radar.py?operation=products&radar=DIX" },
+  // NWS backs the alert polling and the radar-site lookup.
+  { name: "NWS",             type: "api-ping",             url: "https://api.weather.gov/" },
+  // GitHub is not an upstream we call at runtime; the statuspage is the only
+  // health signal we have. "Git Operations" is tracked specifically because
+  // it is the component that affects the in-app updater (`POST /api/update`
+  // runs a real `git pull`). A degradation here predicts slow or timing-out
+  // updates and gives the kiosk owner an upstream-side explanation.
   { name: "GitHub",          type: "statuspage-component", url: "https://www.githubstatus.com/api/v2/components.json", componentName: "Git Operations" },
 ];
 
@@ -368,11 +355,7 @@ function getSystemInfo() {
     } catch { /* highly unusual platform — leave as Unknown */ }
   }
 
-  // Sense HAT board revision (v1 / v2) from the HAT ID-EEPROM, or null when
-  // no HAT is attached. Purely informational — handy for fleet inventory.
-  const senseHat = detectSenseHatVersion();
-
-  return { hardware, os: osName, hostname: os.hostname(), senseHat };
+  return { hardware, os: osName, hostname: os.hostname() };
 }
 
 // Hostname reverse-DNS cache (5 min TTL)
@@ -554,18 +537,12 @@ function logSecurityEvent(ip, method, url) {
 async function getDebugInfo(req, res) {
   const now = Date.now();
 
-  const cache = [
-    ...Object.entries(weatherCache).map(([key, entry]) => ({
-      key,
-      expiresIn: Math.max(0, Math.round((entry.expiresAt - now) / 1000)),
-      expired: now > entry.expiresAt,
-    })),
-    ...Object.entries(summaryCache).map(([key, entry]) => ({
-      key: `ai-summary:${key}`,
-      expiresIn: Math.max(0, Math.round((entry.expiresAt - now) / 1000)),
-      expired: now > entry.expiresAt,
-    })),
-  ];
+  // The weather + ai-summary caches were removed with Tomorrow.io and the
+  // AI summary in the radar rework. Nothing server-side caches payloads
+  // any more (the radar frame list keeps its own short-lived in-memory
+  // cache inside iemRadarCtrl), so this inventory is now always empty —
+  // kept as a stable field so the Debug panel doesn't need a null guard.
+  const cache = [];
 
   let logs = [];
   const LOG_PATHS = [
@@ -614,7 +591,6 @@ async function getDebugInfo(req, res) {
       heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
       rssMb: Math.round(mem.rss / 1024 / 1024),
     },
-    cache: getCacheStats(),
     responseTimes: getResponseTimeStats(),
     powerStatus: getPowerStatus(),
     cpuTempC: getCpuTempC(),
@@ -629,7 +605,7 @@ async function getDebugInfo(req, res) {
     }))
   );
 
-  return res.status(200).json({ cache, logs, vulnerabilityScanUrl, securityEvents, services: getServiceStatus(), counters: getCounters(), system: getSystemInfo(), network: getNetworkInfo(), providerStatus, connectivity, appVersion: getAppVersion(), serverKpis, remoteClients, updateInfo, serverConfig: getServerConfig(), radarSnapshots: getRecentRadarSnapshots() });
+  return res.status(200).json({ cache, logs, vulnerabilityScanUrl, securityEvents, services: getServiceStatus(), counters: getCounters(), system: getSystemInfo(), network: getNetworkInfo(), providerStatus, connectivity, appVersion: getAppVersion(), serverKpis, remoteClients, updateInfo, serverConfig: getServerConfig() });
 }
 
 /**
