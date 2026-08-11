@@ -20,7 +20,6 @@ import centerCircleIcon from "@iconify/icons-carbon/center-circle";
 import locationFilledIcon from "@iconify/icons-carbon/location-filled";
 import locationOutlineIcon from "@iconify/icons-carbon/location";
 import timePlotIcon from "@iconify/icons-carbon/time-plot";
-import windGustsIcon from "@iconify/icons-carbon/wind-gusts";
 import legendIcon from "@iconify/icons-carbon/legend";
 import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import contrastIcon from "@iconify/icons-carbon/contrast";
@@ -29,7 +28,6 @@ import moonIcon from "@iconify/icons-carbon/moon";
 import settingsIcon from "@iconify/icons-carbon/settings";
 import bugIcon from "@iconify/icons-carbon/debug";
 import upgradeIcon from "@iconify/icons-carbon/upgrade";
-import circleDashIcon from "@iconify/icons-carbon/circle-dash";
 /* Places (favorites) opener. `bookmark` rather than the semantically
  * closer `location-star`: that one draws a map pin, and `location` /
  * `location-filled` are already the marker-visibility toggle one button
@@ -45,13 +43,11 @@ import bookmarkIcon from "@iconify/icons-carbon/bookmark";
  * "Claude-generated summary"). Breaking the Carbon-only convention
  * for this single icon is the right trade — the visual semantics
  * matter more than the family purity. */
-import sparkleIcon from "@iconify/icons-material-symbols/auto-awesome-outline";
 /* Forecast view-open (rail-affordance redesign 2026-06-24). A vertical
  * column-chart Carbon glyph — deliberately NOT a weather glyph and NOT a
  * generic expand/⤢ (that would re-introduce the maximize ambiguity the
  * redesign removed from NowcastLine). Visually distinct from `timePlotIcon`
  * (the timeline button), so no collision in the dock set. */
-import chartColumnIcon from "@iconify/icons-carbon/chart-column";
 import renewIcon from "@iconify/icons-carbon/renew";
 
 // Inline color for the moon icon — the "blood moon" / lunar-eclipse
@@ -97,12 +93,9 @@ const ControlButtons = () => {
     setDarkMode,
     saveDarkModeAuto,
     saveAdvancedSleepFlag,
-    saveAdvancedAiFlag,
-    saveAiSummaryUserVisible,
     resetMapPosition,
     toggleMarker,
     toggleRadarTimelineVisible,
-    toggleDirectionArrows,
     toggleWeatherAlerts,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
@@ -125,13 +118,9 @@ const ControlButtons = () => {
   const {
     darkMode,
     darkModeAuto,
-    radarAnalysisEnabled,
-    aiSummaryAvailable,
-    aiSummaryUserVisible,
     markerIsVisible,
     radarTimelineVisible,
     radarSource,
-    showDirectionArrows,
     hideRadarLegend,
     mouseHide,
   } = useContext(UiPrefsContext);
@@ -421,35 +410,7 @@ const ControlButtons = () => {
   // be on". The title is rewritten to a hint ("Enable radar rings
   // first…") so a tooltip / aria-label still communicates why the
   // control is inactive.
-  const btnArrows = (
-    <div
-      key="arrows"
-      data-dock-priority="secondary"
-      onClick={(e) => {
-        if (!radarAnalysisEnabled) {
-          // Tap on the disabled (dimmed) button surfaces a short
-          // explanation toast instead of silently doing nothing —
-          // the user sees the icon and tries it; without feedback
-          // they would conclude the button is broken.
-          notify("toasts.directionArrowsNeedRings", e);
-          return;
-        }
-        toggleDirectionArrows();
-        notify(showDirectionArrows ? "toasts.directionArrowsOff" : "toasts.directionArrowsOn", e);
-      }}
-      className={`${!radarAnalysisEnabled ? styles.buttonDisabled : ""} ${showDirectionArrows ? styles.buttonDown : ""}`}
-      title={radarAnalysisEnabled
-        ? t(showDirectionArrows ? "radar.hideDirectionArrows" : "radar.showDirectionArrows")
-        : t("radar.directionArrowsNeedRings")}
-      aria-label={radarAnalysisEnabled
-        ? t(showDirectionArrows ? "radar.hideDirectionArrows" : "radar.showDirectionArrows")
-        : t("radar.directionArrowsNeedRings")}
-      aria-disabled={!radarAnalysisEnabled || undefined}
-    >
-      <InlineIcon icon={windGustsIcon} />
-    </div>
-  );
-  // Legend visibility toggle. v2.14.72: dropped the `mapTimestamps`
+   // Legend visibility toggle. v2.14.72: dropped the `mapTimestamps`
   // part of the gate — that state lives in WeatherMap, not in
   // AppContext, so the check was always falsy and the button
   // never rendered (latent bug since the original v2 wiring).
@@ -610,83 +571,11 @@ const ControlButtons = () => {
       <InlineIcon icon={bugIcon} />
     </div>
   ) : null;
-  // Debug-only — quick toggle for the dashed analysis rings on
-  // the map. Mirrors the `radarAnalysisEnabled` setting that
-  // lives in AdvancedSettings → AI section; the dock button is
-  // a convenience for live development / on-screen debugging.
-  // The same `saveAdvancedAiFlag` setter is used so the change
-  // round-trips to settings.json the same way the panel toggle
-  // does. `carbon:circle-dash` literally depicts the dashed
-  // rings the button controls.
-  const btnRings = isLocal && debugEnabled ? (
-    <div
-      key="rings"
-      onClick={(e) => { saveAdvancedAiFlag("radarAnalysisEnabled", !radarAnalysisEnabled); notify(radarAnalysisEnabled ? "toasts.radarRingsOff" : "toasts.radarRingsOn", e); }}
-      className={`${radarAnalysisEnabled ? styles.buttonDown : ""}`}
-      title={t(radarAnalysisEnabled ? "controls.disableRadarRings" : "controls.enableRadarRings")}
-      aria-label={t(radarAnalysisEnabled ? "controls.disableRadarRings" : "controls.enableRadarRings")}
-    >
-      <InlineIcon icon={circleDashIcon} />
-    </div>
-  ) : null;
-  // IA button — two behaviours sharing the sparkle glyph:
-  //  • v3.3 priority model (LayoutPi, flag on → `piLayoutState != null`):
-  //    opens the full-rail AiView (the Claude summary was dropped from the
-  //    glance, so the toggle had nothing to act on). Shown whenever the AI is
-  //    configured server-side — NOT debug-gated, it's a real feature. It does
-  //    NOT gate on `aiSummaryUserVisible`: that's the v2 "hide the inline
-  //    section" debug toggle, meaningless for a deliberate view open (and it
-  //    persists, so a stale `false` would wrongly suppress the view).
-  //  • v2 / desktop: the original debug-only toggle that hides the inline AI
-  //    summary section without touching the Anthropic key (`aiSummaryAvailable`
-  //    = server key reachable; `aiSummaryUserVisible` = this override).
-  const btnBot = inPriorityDock
-    ? (aiSummaryAvailable ? (
-      <div
-        key="bot"
-        onClick={() => setPiLayoutState("ai")}
-        className={`${piLayoutState === "ai" ? styles.buttonDown : ""}`}
-        title={t("controls.openAiView")}
-        aria-label={t("controls.openAiView")}
-      >
-        <InlineIcon icon={sparkleIcon} />
-      </div>
-    ) : null)
-    : (isLocal && debugEnabled && aiSummaryAvailable ? (
-      <div
-        key="bot"
-        onClick={(e) => { saveAiSummaryUserVisible(!aiSummaryUserVisible); notify(aiSummaryUserVisible ? "toasts.aiSummaryHidden" : "toasts.aiSummaryShown", e); }}
-        className={`${aiSummaryUserVisible ? styles.buttonDown : ""}`}
-        title={t(aiSummaryUserVisible ? "controls.hideAiSummary" : "controls.showAiSummary")}
-        aria-label={t(aiSummaryUserVisible ? "controls.hideAiSummary" : "controls.showAiSummary")}
-      >
-        <InlineIcon icon={sparkleIcon} />
-      </div>
-    ) : null);
-  // Forecast view-open (rail-affordance redesign 2026-06-24). Shown on the
-  // Pi dock in BOTH v3.2 (classic 3-states) and v3.3 (priority views) — the
-  // gate is `piLayoutState != null`, which LayoutPi sets ("mid") on mount in
-  // both, NOT the v3.3-only `inPriorityDock`. This is deliberate: NowcastLine
-  // lost its maximize in both layouts, so the forecast MUST be reachable from
-  // the dock in both or the v3.2 user is stranded (LLD §2.8 / §3.4). It is a
-  // silent view-open (no toast: opening a full-rail view IS the visible
-  // result, mirroring btnBot above) that promotes the layout to MAX where
-  // ChartTabs renders the maximized forecast. This is now the ONLY forecast
-  // entry point on the Pi. The down-state is a plain `.buttonDown` class
-  // toggle when MAX is active — no animated highlight (kiosk-GPU rule #264).
-  // No non-Pi analogue, so off the Pi dock the button is `null`.
-  const inPiDock = piLayoutState != null;
-  const btnForecast = inPiDock ? (
-    <div
-      key="forecast"
-      onClick={() => setPiLayoutState("max")}
-      className={`${piLayoutState === "max" ? styles.buttonDown : ""}`}
-      title={t("controls.openForecast")}
-      aria-label={t("controls.openForecast")}
-    >
-      <InlineIcon icon={chartColumnIcon} />
-    </div>
-  ) : null;
+  // The IA button and the Claude summary it opened were removed in the
+  // radar rework.
+  const btnBot = null;
+  // The forecast view-open button went with ChartTabs.
+  const btnForecast = null;
   const btnUpdateLocal = updateAvailable && isLocal ? (
     <div
       key="updateLocal"
@@ -775,10 +664,8 @@ const ControlButtons = () => {
         {btnPlaces}
         {btnMarker}
         {btnTimeline}
-        {btnArrows}
         {btnLegend}
         {btnWeatherAlerts}
-        {btnRings}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

@@ -1,15 +1,10 @@
 import React, { useContext, useEffect } from "react";
 import { UiPrefsContext, SystemContext, AppActionsContext } from "~/AppContext";
 import WeatherMap from "~/components/WeatherMap";
-import HeroBand from "~/components/ambient/HeroBand";
-import MetricsGrid from "~/components/ambient/MetricsGrid";
-import AirCard from "~/components/ambient/AirCard";
+import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
 import AlertDetailInline from "~/components/ambient/AlertDetailInline";
 import AlertMiniCards from "~/components/ambient/AlertMiniCards";
-import IndoorBlock from "~/components/ambient/IndoorBlock";
-import ChartTabs from "~/components/ambient/ChartTabs";
-import AiSummaryInline from "~/components/ambient/AiSummaryInline";
 import BottomDock from "~/components/ambient/BottomDock";
 import FloatingMiniBanner from "~/components/ambient/FloatingMiniBanner";
 import styles from "./styles.css";
@@ -89,7 +84,7 @@ const LayoutDesktop = () => {
           marker visually down past it without hardcoding pixel values
           that would drift if the slab ever changes height. */}
       <div className={styles.heroSlot} data-ambient-hero>
-        <HeroBand />
+        <RadarHeader />
       </div>
 
       {/* Floating mini-banner overlays the map area whenever the
@@ -109,14 +104,14 @@ const LayoutDesktop = () => {
           surface inherits from the active palette so the radar shows
           through subtly. */}
       <aside className={styles.rail} aria-hidden={focused}>
+        {/* The rail is now the alert stack and nothing else. Metrics,
+            air quality, indoor temperature, the forecast chart and the AI
+            prose all went with their data sources in the radar rework;
+            the stack returns null in calm weather, so the rail simply
+            isn't there when there is nothing to say. */}
         <AlertBanner />
         <AlertDetailInline />
         <AlertMiniCards />
-        <AirCard />
-        <MetricsGrid />
-        <IndoorBlock />
-        <ChartTabs />
-        <AiSummaryInline />
       </aside>
 
       <BottomDock />

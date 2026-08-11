@@ -434,17 +434,6 @@ export function AppContextProvider({ children }) {
   // user wins). Persisted in localStorage; default OFF so existing
   // installs aren't surprised by sudden theme switches.
   const [darkModeAuto, setDarkModeAuto] = useState(false);
-  const [currentWeatherData, setCurrentWeatherData] = useState(null);
-  const [currentWeatherDataErr, setCurrentWeatherDataErr] = useState(null);
-  const [currentWeatherDataErrMsg, setCurrentWeatherDataErrMsg] = useState(
-    null
-  );
-  const [hourlyWeatherData, setHourlyWeatherData] = useState(null);
-  const [hourlyWeatherDataErr, setHourlyWeatherDataErr] = useState(null);
-  const [hourlyWeatherDataErrMsg, setHourlyWeatherDataErrMsg] = useState(null);
-  const [dailyWeatherData, setDailyWeatherData] = useState(null);
-  const [dailyWeatherDataErr, setDailyWeatherDataErr] = useState(null);
-  const [dailyWeatherDataErrMsg, setDailyWeatherDataErrMsg] = useState(null);
   const [panToCoords, setPanToCoords] = useState(null);
   const [markerIsVisible, setMarkerIsVisible] = useState(true);
   // Display preferences (units + clock + fontSize) — localStorage-backed
@@ -582,15 +571,11 @@ export function AppContextProvider({ children }) {
   const [nearbyResidualCount, setNearbyResidualCount] = useState(0);
   // Last AQHI payload returned by /api/air-quality (lifted from
   // <UvAqiBadges> so the Debug panel can display the chosen station's
-  // name, distance, observation/forecast kind without refetching).
-  // null = no fetch yet, out of coverage, or upstream failure.
-  const [aqhiInfo, setAqhiInfo] = useState(null);
-  // Pollen badge — opt-in (advanced.pollen.enabled). Coverage is
+   // Pollen badge — opt-in (advanced.pollen.enabled). Coverage is
   // strong in Europe (CAMS native) and acceptable in North America
   // (CAMS global via GEOS-CF), but blank in many regions. When
   // /api/pollen returns `available: false` the MetricsGrid hides
   // the 5th cell silently.
-  const [pollenInfo, setPollenInfo] = useState(null);
   const [pollenEnabled, setPollenEnabled] = useState(false);
   // Active government weather alerts at mapGeo, sorted server-side by
   // descending severity. NWS for the US, ECCC for Canada — see
@@ -1399,95 +1384,7 @@ export function AppContextProvider({ children }) {
     }
   }, [weatherApiKey, reverseGeoApiKey, getWeatherApiKey, getReverseGeoApiKey]);
 
-  /**
-   * Updates hourly weather data
-   *
-   * @param {object} coords
-   * @param {Number} coords.latitude latitude
-   * @param {Number} coords.longitude longitude
-   *
-   * @returns {Promise} hourly weather data
-   */
-  const updateHourlyWeatherData = useCallback((coords) => {
-    setHourlyWeatherDataErr(null);
-    setHourlyWeatherDataErrMsg(null);
-    const { latitude, longitude } = coords;
 
-    return new Promise((resolve, reject) => {
-      if (!coords) {
-        setHourlyWeatherDataErr(true);
-        return reject("No coords");
-      }
-      if (!weatherApiKey) {
-        setHourlyWeatherDataErr(true);
-        setSettingsMenuOpen(true);
-        return reject("Missing weather API key");
-      }
-
-      axios
-        .get(`/api/weather/hourly?lat=${latitude}&lon=${longitude}`)
-        .then((res) => {
-          if (!res) {
-            return reject({ message: "No response" });
-          }
-          const { data } = res;
-          setHourlyWeatherData(data);
-          resolve(data);
-        })
-        .catch((err) => {
-          setHourlyWeatherDataErr(true);
-          if (err && err.message) {
-            setHourlyWeatherDataErrMsg(err.message);
-          }
-
-          reject(err);
-        });
-    });
-  }, [weatherApiKey]);
-
-  /**
-   * Updates daily  weather data
-   *
-   * @param {object} coords
-   * @param {Number} coords.latitude latitude
-   * @param {Number} coords.longitude longitude
-   *
-   * @returns {Promise} daily weather data
-   */
-  const updateDailyWeatherData = useCallback((coords) => {
-    setDailyWeatherDataErr(null);
-    setDailyWeatherDataErrMsg(null);
-    const { latitude, longitude } = coords;
-
-    return new Promise((resolve, reject) => {
-      if (!coords) {
-        setDailyWeatherDataErr(true);
-        return reject("No coords");
-      }
-      if (!weatherApiKey) {
-        setDailyWeatherDataErr(true);
-        setSettingsMenuOpen(true);
-        return reject("Missing weather API key");
-      }
-      axios
-        .get(`/api/weather/daily?lat=${latitude}&lon=${longitude}`)
-        .then((res) => {
-          if (!res) {
-            return reject({ message: "No response" });
-          }
-          const { data } = res;
-          setDailyWeatherData(data);
-          resolve(data);
-        })
-        .catch((err) => {
-          setDailyWeatherDataErr(true);
-          if (err && err.message) {
-            setDailyWeatherDataErrMsg(err.message);
-          }
-          reject(err);
-        });
-    });
-  }, [weatherApiKey]);
 
   const updateSunriseSunset = useCallback((coords) => {
     return new Promise((resolve, reject) => {
@@ -1535,50 +1432,6 @@ export function AppContextProvider({ children }) {
     });
   }, []);
 
-  /**
-   * Updates current weather data
-   *
-   * @param {object} coords
-   * @param {Number} coords.latitude latitude
-   * @param {Number} coords.longitude longitude
-   *
-   * @returns {Promise} current weather data
-   */
-  const updateCurrentWeatherData = useCallback((coords) => {
-    setCurrentWeatherDataErr(null);
-    setCurrentWeatherDataErrMsg(null);
-    const { latitude, longitude } = coords;
-
-    return new Promise((resolve, reject) => {
-      if (!coords) {
-        setCurrentWeatherDataErr(true);
-        return reject("No coords");
-      }
-      if (!weatherApiKey) {
-        setCurrentWeatherDataErr(true);
-        setSettingsMenuOpen(true);
-        return reject("Missing weather API key");
-      }
-
-      axios
-        .get(`/api/weather/current?lat=${latitude}&lon=${longitude}`)
-        .then((res) => {
-          if (!res) {
-            return reject({ message: "No response" });
-          }
-          const { data } = res;
-          setCurrentWeatherData(data);
-          resolve(data);
-        })
-        .catch((err) => {
-          setCurrentWeatherDataErr(true);
-          if (err && err.message) {
-            setCurrentWeatherDataErrMsg(err.message);
-          }
-          reject(err);
-        });
-    });
-  }, [weatherApiKey]);
 
   /**
    * Set the map to a given position
@@ -1588,12 +1441,13 @@ export function AppContextProvider({ children }) {
    * @param {String} coords.longitude
    */
   const setMapPosition = useCallback((coords) => {
-    updateCurrentWeatherData(coords);
-    updateHourlyWeatherData(coords);
-    updateDailyWeatherData(coords);
+    // The Tomorrow.io current/hourly/daily fetches that used to fire here
+    // went with the forecast UI in the radar rework. Moving the map now
+    // only moves the map — the radar layers and the alert poll pick the
+    // new coordinates up from `mapGeo` on their own.
     setMapGeo(coords);
     setPanToCoords(coords);
-  }, [updateCurrentWeatherData, updateHourlyWeatherData, updateDailyWeatherData]);
+  }, []);
 
   /**
    * Return the map position to browser geolocation coordinates
@@ -2114,111 +1968,22 @@ export function AppContextProvider({ children }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [showWeatherAlerts, mapGeo, alertRadiusKm, showTestAlerts]);
 
-  // Periodic weather data refresh. This used to live in a component, so
-  // when no mounted layout owned it the initial fetch triggered by
-  // setMapPosition was the only weather pull and data went stale after
-  // the first session-hours (observed: still showing morning values 5 h
-  // later). Polling from AppContext means every layout gets fresh
-  // current/hourly/daily data without depending on which UI is rendered. The initial setMapPosition
-  // call still fires its one-shot fetches; the immediate call below is
-  // redundant on first mount but covers the case where weatherApiKey
-  // becomes available *after* mapGeo (and matches v2 behaviour).
-  useEffect(() => {
-    if (!weatherApiKey || !mapGeo) return undefined;
-    const CURRENT_INTERVAL = 10 * 60 * 1000;
-    const HOURLY_INTERVAL = 60 * 60 * 1000;
-    const DAILY_INTERVAL = 24 * 60 * 60 * 1000;
-    const runCurrent = () => updateCurrentWeatherData(mapGeo).catch(() => undefined);
-    const runHourly = () => {
-      updateSunriseSunset(mapGeo);
-      updateHourlyWeatherData(mapGeo).catch(() => undefined);
-    };
-    const runDaily = () => updateDailyWeatherData(mapGeo).catch(() => undefined);
-    // Stagger the three pollers so current / hourly / daily never fire in
-    // the same instant. Two wins: (1) no synchronized burst onto
-    // Tomorrow.io that trips the per-second rate limit (429), and (2) the
-    // offsets permanently phase-shift the intervals — without them the
-    // hourly tick realigns with a current tick every 60 min and the daily
-    // tick every 24 h. The server-side dispatch spacer (proxyCtrl) is the
-    // hard guarantee; this is cheap client-side defence-in-depth.
-    const POLLER_STAGGER_MS = 2000;
-    const pollers = [
-      { run: runCurrent, interval: CURRENT_INTERVAL, offset: 0 },
-      { run: runHourly, interval: HOURLY_INTERVAL, offset: POLLER_STAGGER_MS },
-      { run: runDaily, interval: DAILY_INTERVAL, offset: 2 * POLLER_STAGGER_MS },
-    ];
-    const startTimers = [];
-    const intervalTimers = [];
-    for (const poller of pollers) {
-      const startId = setTimeout(() => {
-        poller.run();
-        intervalTimers.push(setInterval(poller.run, poller.interval));
-      }, poller.offset);
-      startTimers.push(startId);
-    }
-    return () => {
-      startTimers.forEach((id) => clearTimeout(id));
-      intervalTimers.forEach((id) => clearInterval(id));
-    };
-    // The update* callbacks only change identity when weatherApiKey does
-    // (their sole useCallback dep), so listing them keeps the restart
-    // pattern identical to the old [weatherApiKey, mapGeo] keying.
-  }, [weatherApiKey, mapGeo, updateCurrentWeatherData, updateHourlyWeatherData, updateDailyWeatherData, updateSunriseSunset]);
-
-  // Air-quality (AQHI / AQI / IQA) polling. Previously lived inside the
-  // v2 UvAqiBadges component, but v3 layouts (MetricsGrid in LayoutPi /
-  // LayoutDesktop) read `aqhiInfo` from context without mounting that
-  // component — so the IQA tile stayed on "—" forever. Lifting the
-  // fetch here keeps the air-quality state alive regardless of which
-  // UI is rendered, exactly like the weather-data refresh effect above.
-  //
-  // 30 min cadence matches every upstream's hourly publication; the
-  // server caches each source so the cost is flat across remote clients.
+  // Sunrise/sunset refresh. What used to be a three-poller weather block
+  // (current / hourly / daily on staggered intervals against Tomorrow.io)
+  // is now a single hourly solar pull — the only piece the radar viewer
+  // still needs, because auto dark-mode switches the kiosk palette on it.
+  // No API key gate any more: sunrise-sunset.org is keyless.
   useEffect(() => {
     if (!mapGeo) return undefined;
-    const AQI_REFRESH_MS = 30 * 60 * 1000;
-    let cancelled = false;
-    const fetchAqi = () => {
-      const params = new URLSearchParams({
-        lat: mapGeo.latitude,
-        lon: mapGeo.longitude,
-      });
-      axios.get(`/api/air-quality?${params}`)
-        .then((res) => {
-          if (!cancelled) setAqhiInfo(res.data?.available ? res.data : null);
-        })
-        .catch(() => { if (!cancelled) setAqhiInfo(null); });
-    };
-    fetchAqi();
-    const interval = setInterval(fetchAqi, AQI_REFRESH_MS);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [mapGeo]);
+    const SOLAR_INTERVAL = 60 * 60 * 1000;
+    updateSunriseSunset(mapGeo);
+    const id = setInterval(() => updateSunriseSunset(mapGeo), SOLAR_INTERVAL);
+    return () => clearInterval(id);
+  }, [mapGeo, updateSunriseSunset]);
 
-  // Pollen — same cadence + skip pattern as the AQ poll above.
-  // Gated on the opt-in `advanced.pollen.enabled` flag so installs
-  // that don't care about pollen never burn the upstream quota.
-  useEffect(() => {
-    if (!mapGeo || !pollenEnabled) {
-      setPollenInfo(null);
-      return undefined;
-    }
-    const POLLEN_REFRESH_MS = 60 * 60 * 1000;
-    let cancelled = false;
-    const fetchPollen = () => {
-      const params = new URLSearchParams({
-        lat: mapGeo.latitude,
-        lon: mapGeo.longitude,
-      });
-      axios.get(`/api/pollen?${params}`)
-        .then((res) => {
-          if (!cancelled) setPollenInfo(res.data?.available ? res.data : null);
-        })
-        .catch(() => { if (!cancelled) setPollenInfo(null); });
-    };
-    fetchPollen();
-    const interval = setInterval(fetchPollen, POLLEN_REFRESH_MS);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [mapGeo, pollenEnabled]);
+  // The air-quality and pollen pollers lived here; both went with their
+  // server controllers in the radar rework (pollen was Europe-only and
+  // returned null for every US coordinate anyway).
 
   // Auto dark/light at sunrise / sunset. Runs only when the user opted
   // in via Settings AND we have valid sunrise/sunset timestamps. Checks
@@ -2310,7 +2075,6 @@ export function AppContextProvider({ children }) {
     toggleDirectionArrows,
     toggleWeatherAlerts,
     setAlertRadiusKmLive,
-    setAqhiInfo,
     savePollenEnabled,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2323,9 +2087,6 @@ export function AppContextProvider({ children }) {
     loadStoredData,
     saveClockTime,
     saveSettingsToJson,
-    updateCurrentWeatherData,
-    updateDailyWeatherData,
-    updateHourlyWeatherData,
     saveMouseHide,
     saveShowAdvisoryAlerts,
     saveShowTestAlerts,
@@ -2396,7 +2157,6 @@ export function AppContextProvider({ children }) {
     toggleDirectionArrows,
     toggleWeatherAlerts,
     setAlertRadiusKmLive,
-    setAqhiInfo,
     savePollenEnabled,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2409,9 +2169,6 @@ export function AppContextProvider({ children }) {
     loadStoredData,
     saveClockTime,
     saveSettingsToJson,
-    updateCurrentWeatherData,
-    updateDailyWeatherData,
-    updateHourlyWeatherData,
     saveMouseHide,
     saveShowAdvisoryAlerts,
     saveShowTestAlerts,
@@ -2645,39 +2402,21 @@ export function AppContextProvider({ children }) {
     autoSelectTab,
   ]);
 
-  // Weather data: polled environmental payloads + their error states.
+  // Solar data. What used to be the "weather data" slice (Tomorrow.io
+  // current/hourly/daily payloads, their error states, air quality and
+  // pollen) is now just sunrise/sunset — the one environmental input the
+  // radar viewer still needs, because auto dark-mode switches the kiosk
+  // palette on it.
   const weatherDataSlice = useMemo(() => ({
-    currentWeatherData,
-    currentWeatherDataErr,
-    currentWeatherDataErrMsg,
-    hourlyWeatherData,
-    hourlyWeatherDataErr,
-    hourlyWeatherDataErrMsg,
-    dailyWeatherData,
-    dailyWeatherDataErr,
-    dailyWeatherDataErrMsg,
     sunriseTime,
     sunsetTime,
     sunriseSunsetToday,
     sunriseSunsetTomorrow,
-    aqhiInfo,
-    pollenInfo,
   }), [
-    currentWeatherData,
-    currentWeatherDataErr,
-    currentWeatherDataErrMsg,
-    hourlyWeatherData,
-    hourlyWeatherDataErr,
-    hourlyWeatherDataErrMsg,
-    dailyWeatherData,
-    dailyWeatherDataErr,
-    dailyWeatherDataErrMsg,
     sunriseTime,
     sunsetTime,
     sunriseSunsetToday,
     sunriseSunsetTomorrow,
-    aqhiInfo,
-    pollenInfo,
   ]);
 
   // Alerts: gov-alert list + banner UI state + nearby-alerts survey.

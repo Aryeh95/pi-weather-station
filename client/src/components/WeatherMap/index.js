@@ -14,8 +14,6 @@ import {
   ZoomControl,
   Marker,
   Circle,
-  CircleMarker,
-  Polyline,
   GeoJSON,
   Popup,
   useMap,
@@ -79,23 +77,11 @@ import {
   SITE_MIN_ZOOM,
   MOSAIC_MAX_ZOOM,
 } from "./iemRadar";
-import RiskRing from "./RiskRing";
-import RingLabels from "./RingLabels";
 import MapResizer from "./MapResizer";
 import RadarFocusControl from "./RadarFocusControl";
 import {
   hasVal,
-  tierForIntensity,
-  buildArrowPath,
-  buildSamplingPoints,
   panWithRailOffset,
-  KM_PER_UNIT,
-  METERS_PER_UNIT,
-  RADAR_GEOMETRY,
-  DIR_INNER_TO_BEARING,
-  DIR_OUTER_TO_BEARING,
-  ARROW_COLOR,
-  DOT_COLOR_BY_TIER,
   buildAlertPolygonLayers,
   buildRadiusRingOptions,
   pointInGeometry,
@@ -111,8 +97,9 @@ import {
  * shared default. */
 const NO_ALERTS = Object.freeze([]);
 
-/* Zoom threshold above which the analysis-zone dashed circles AND
- * the sampling-point dots stop rendering. At z=13 the inner 50 km
+/* Zoom threshold above which the nearby-alerts radius ring stops
+ * rendering. (It also gated the radar analysis circles and sampling
+ * dots, which were removed with the RainViewer sampler.) At z=13 the inner 50 km
  * circle has a pixel radius of ~3700 px (≈ 2.7× the iPad viewport
  * width) so most of it is already off-screen; by z=14 it's ~7460 px
  * (entirely off-screen). Beyond that the SVG element is dead
@@ -129,20 +116,6 @@ const RING_HIDE_ZOOM = 13;
  * a component-scoped const would work (effect callbacks run after the
  * body) but only by accident of timing. */
 const MAP_CYCLE_RATE = 1000; //ms
-
-// Visual nudge for the nearby-alerts radius ring when it would land exactly
-// on a drawn radar analysis ring. This only happens in KM mode at 50 / 100 km
-// (the radar rings are 50 / 100 km): the alert radius is always stored in km,
-// so its drawn circle coincides pixel-for-pixel with the radar circle and the
-// dotted ring hides under it, reading as invisible. In MI mode the radar rings
-// are 30 / 60 mi (48.3 / 96.6 km) while the alert ring is still drawn from km
-// (50 / 100 km), so they're already ~1.7 / 3.4 km apart and visible — no nudge.
-// Display-only: the survey *query* radius (alertRadiusKm) is unchanged; only
-// the drawn circle is pushed a few km outward (matching the mi-mode offset) so
-// it stays legible. The ring is a round proxy for the radius, never a precise
-// instrument, so a ~3 km visual offset on a 50 km circle is immaterial.
-const ALERT_RING_OVERLAP_EPS_M = 500;   // treat as "on top of" a radar ring within 0.5 km
-const ALERT_RING_NUDGE_M = 3000;        // push 3 km outward, just past the radar ring
 
 // Paint order for the nearby-alerts survey polygons, keyed by display tier.
 // Leaflet paints later-inserted vector layers ON TOP, and the survey routinely
@@ -680,16 +653,6 @@ const WeatherMap = ({ zoom, dark }) => {
     getMapApiKey,
     setCurrentMapZoom,
     setZoomToLevel,
-    setInnerRisk,
-    setOuterRisk,
-    setInnerTrend,
-    setOuterTrend,
-    setInnerBumped,
-    setOuterBumped,
-    setInnerTrendConfidence,
-    setOuterTrendConfidence,
-    setInnerDirectionVectors,
-    setOuterDirectionVectors,
     setRadarFrameTs,
     setDesktopRadarMaximized,
     setPiRadarMaximized,
@@ -716,16 +679,10 @@ const WeatherMap = ({ zoom, dark }) => {
     radarTimelineVisible,
     radarSource,
     hideRadarLegend,
-    aiSummaryAvailable,
-    radarAnalysisEnabled,
-    extendedRadarRadius,
-    showSamplingPoints,
     lightModeStyle,
     darkModeStyle,
     radarOpacityLight,
     radarOpacityDark,
-    distanceUnit,
-    showDirectionArrows,
   } = useContext(UiPrefsContext);
   const {
     // Phase 4d (2026-05-28): id of the alert whose `geometry` is
@@ -745,10 +702,6 @@ const WeatherMap = ({ zoom, dark }) => {
   const {
     currentMapZoom,
     zoomToLevel,
-    innerRisk,
-    outerRisk,
-    innerDirectionVectors,
-    outerDirectionVectors,
   } = useContext(RadarStateContext);
 
   // Clear the map-zone highlight when the alert it points at is no
@@ -768,28 +721,11 @@ const WeatherMap = ({ zoom, dark }) => {
     }
   }, [highlightedAlertId, eligibleGovAlerts, setHighlightedAlertId]);
 
-  // Largest sample in each ring drives the circle radius. Multiplied by
-  // METERS_PER_UNIT because Leaflet's Circle takes meters.
-  const innerRadiusMeters =
-    RADAR_GEOMETRY[distanceUnit].inner[RADAR_GEOMETRY[distanceUnit].inner.length - 1] *
-    METERS_PER_UNIT[distanceUnit];
-  const outerRadiusMeters =
-    RADAR_GEOMETRY[distanceUnit].outer[RADAR_GEOMETRY[distanceUnit].outer.length - 1] *
-    METERS_PER_UNIT[distanceUnit];
-
-  // Drawn radius for the alert ring. If it coincides with a currently-drawn
-  // radar ring (inner whenever radar analysis is on; outer only when the
-  // extended radius is enabled), nudge it outward so it doesn't hide under
-  // the radar ring — see ALERT_RING_* above for the km-vs-mi rationale.
-  const alertRingBaseMeters = alertRadiusKm * 1000;
-  const alertRingCollides =
-    (radarAnalysisEnabled &&
-      Math.abs(alertRingBaseMeters - innerRadiusMeters) < ALERT_RING_OVERLAP_EPS_M) ||
-    (radarAnalysisEnabled && extendedRadarRadius &&
-      Math.abs(alertRingBaseMeters - outerRadiusMeters) < ALERT_RING_OVERLAP_EPS_M);
-  const alertRingMeters = alertRingCollides
-    ? alertRingBaseMeters + ALERT_RING_NUDGE_M
-    : alertRingBaseMeters;
+  // Drawn radius for the nearby-alerts survey ring. This used to be
+  // nudged outward when it coincided with one of the radar analysis
+  // rings; those rings went with the RainViewer sampler, so the ring is
+  // now simply drawn at its true radius.
+  const alertRingMeters = alertRadiusKm * 1000;
 
   // Nearby-alerts tap popup (Phase 3b): { latlng: [lat, lon], alerts: [...] }
   // when the user tapped inside one or more survey polygons; null otherwise.
@@ -1068,11 +1004,8 @@ const WeatherMap = ({ zoom, dark }) => {
   // Per-point intensities for colouring sampling-point dots stay local —
   // only the renderer below cares about them. Map keyed by `${dir}:${dist}`
   // so the dot lookup is O(1) regardless of how many points are visible.
-  const [riskSamples, setRiskSamples] = useState(() => new Map());
-  const riskIntervalRef = useRef(null);
 
   const MAP_TIMESTAMP_REFRESH_FREQUENCY = 1000 * 60 * 10; //update every 10 minutes
-  const RISK_REFRESH_INTERVAL = 5 * 60 * 1000; // RainViewer cycles every 10 min; 5 min keeps us close to fresh
 
   const getMapApiKeyCallback = useCallback(() => getMapApiKey(), [
     getMapApiKey,
@@ -1157,83 +1090,6 @@ const WeatherMap = ({ zoom, dark }) => {
     }
   }, [currentMapTimestampIdx, mapTimestamps]);
 
-  // Poll /api/radar-risk every 5 min (and on mapGeo / config changes) to
-  // colour the dashed circles by intensity. Gated by the same conditions
-  // as the circles themselves — fetching when the rings aren't visible
-  // would be wasted work.
-  // The risk fetch is intentionally NOT gated on aiSummaryAvailable. The
-  // /api/radar-risk endpoint is purely deterministic — RainViewer tile
-  // sampling + tier classification, no LLM call — so the AlertBanner and
-  // dashed circles it feeds are useful even without an Anthropic key. The
-  // AI summary's third paragraph is the only Claude-dependent surface,
-  // and that's gated server-side in aiSummaryCtrl.js.
-  const riskFetchEnabled = radarAnalysisEnabled && Boolean(mapGeo);
-  useEffect(() => {
-    if (!riskFetchEnabled) {
-      setInnerRisk(null);
-      setOuterRisk(null);
-      setInnerTrend("stable");
-      setOuterTrend("stable");
-      setInnerBumped(false);
-      setOuterBumped(false);
-      setInnerTrendConfidence(0);
-      setOuterTrendConfidence(0);
-      setInnerDirectionVectors([]);
-      setOuterDirectionVectors([]);
-      setRiskSamples(new Map());
-      return undefined;
-    }
-    // Cancellation flag (same pattern as AppContext's AQI / pollen
-    // effects): a slow response keyed to the previous position must not
-    // land after a pan and paint the rings/samples of the wrong place.
-    let cancelled = false;
-    const fetchRisk = () => {
-      const params = new URLSearchParams({
-        lat: mapGeo.latitude,
-        lon: mapGeo.longitude,
-        distanceUnit,
-      });
-      axios
-        .get(`/api/radar-risk?${params}`)
-        .then((res) => {
-          if (cancelled) return;
-          setInnerRisk(res.data?.inner?.level || "calm");
-          setOuterRisk(res.data?.outer?.level || null);
-          setInnerTrend(res.data?.inner?.trend || "stable");
-          setOuterTrend(res.data?.outer?.trend || "stable");
-          setInnerBumped(Boolean(res.data?.inner?.bumped));
-          setOuterBumped(Boolean(res.data?.outer?.bumped));
-          setInnerTrendConfidence(Number(res.data?.inner?.trendConfidence) || 0);
-          setOuterTrendConfidence(Number(res.data?.outer?.trendConfidence) || 0);
-          setInnerDirectionVectors(Array.isArray(res.data?.inner?.directionVectors) ? res.data.inner.directionVectors : []);
-          setOuterDirectionVectors(Array.isArray(res.data?.outer?.directionVectors) ? res.data.outer.directionVectors : []);
-          // Build the lookup map from inner + outer samples. Same
-          // direction:distance keying as buildSamplingPoints, so the
-          // renderer can colour each dot in O(1).
-          const map = new Map();
-          for (const s of res.data?.inner?.samples || []) {
-            map.set(`${s.direction}:${s.distance}`, s.intensity);
-          }
-          for (const s of res.data?.outer?.samples || []) {
-            map.set(`${s.direction}:${s.distance}`, s.intensity);
-          }
-          setRiskSamples(map);
-        })
-        .catch(() => {
-          // Non-fatal — leave the previous colour in place. The endpoint
-          // returns 503 when RainViewer is unreachable; clearing here would
-          // make the ring flash neutral on every transient failure.
-        });
-    };
-    fetchRisk();
-    riskIntervalRef.current = setInterval(fetchRisk, RISK_REFRESH_INTERVAL);
-    return () => {
-      cancelled = true;
-      clearInterval(riskIntervalRef.current);
-      riskIntervalRef.current = null;
-    };
-  }, [riskFetchEnabled, mapGeo, distanceUnit, RISK_REFRESH_INTERVAL, setInnerRisk, setOuterRisk, setInnerTrend, setOuterTrend, setInnerBumped, setOuterBumped]);
-
   // Radar animation: start/stop interval based on animateWeatherMap toggle.
   // Per-frame interval is MAP_CYCLE_RATE / radarSpeed so 1× / 2× / 4× cycling
   // from the timeline's speed selector takes effect immediately. Using a ref
@@ -1315,59 +1171,6 @@ const WeatherMap = ({ zoom, dark }) => {
     () => buildRadiusRingOptions(dark, nightRed),
     [dark, nightRed]
   );
-  // The sampling grid is pure geodesic math over (centre, radius, unit) —
-  // 161 points (481 extended) of offsetLatLon per call. Rebuilding it in
-  // the render body recomputed the whole grid on every WeatherMap render.
-  // Gated on the layer's visibility toggles too, so the grid isn't even
-  // computed while the dots layer is hidden (the zoom gate stays in the
-  // JSX — zoom changes often and the markers behind it are memoized).
-  const samplingPoints = useMemo(
-    () => (markerPosition && radarAnalysisEnabled && showSamplingPoints
-      ? buildSamplingPoints(markerPosition, extendedRadarRadius, distanceUnit)
-      : []),
-    [markerPosition, radarAnalysisEnabled, showSamplingPoints, extendedRadarRadius, distanceUnit]
-  );
-  // Rendered markers memoized as a block: the per-dot pathOptions
-  // literals get stable identities tied to the inputs that actually
-  // change their colour (sample intensities, palette).
-  const samplingPointMarkers = useMemo(() => samplingPoints.map(
-    ({ position, key }, idx) => {
-      // Each dot picks its colour from the sample's own intensity.
-      // Clear (intensity 0 or unknown) keeps the neutral default
-      // — same colour the dots had before this change. Coloured
-      // tiers reuse RING_RISK_STYLE so the dots and the dashed
-      // circle they belong to speak the same visual language.
-      const intensity = riskSamples.get(key);
-      const tier = tierForIntensity(intensity);
-      const fillColor = tier
-        ? DOT_COLOR_BY_TIER[dark ? "dark" : "light"][tier]
-        : (dark ? "#f6f6f4" : "#3a3938");
-      // Light-mode dots get a slightly larger radius and a solid
-      // fill — the cream basemap eats thin strokes and low-opacity
-      // fills. For coloured tiers in light mode, also wrap a
-      // darker outline around the fill so an orange dot sitting on
-      // an orange radar tile (same hue!) still reads as a marker
-      // and not as part of the underlying band. Dark mode keeps
-      // the original subtler look — the dark basemap provides
-      // enough contrast that no separate outline is needed.
-      const outlineNeeded = !dark && tier;
-      return (
-        <CircleMarker
-          key={`sp-${idx}`}
-          center={position}
-          radius={dark ? 3 : 4}
-          pathOptions={{
-            color: outlineNeeded ? "#3a3938" : fillColor,
-            fillColor,
-            weight: outlineNeeded ? 1.5 : 1,
-            opacity: 0.85,
-            fillOpacity: dark ? 0.5 : 1,
-          }}
-        />
-      );
-    }
-  ), [samplingPoints, riskSamples, dark]);
-
   if (!hasVal(latitude) || !hasVal(longitude) || !zoom || !mapApiKey) {
     return (
       <div className={`${styles.noMap} ${dark ? styles.dark : styles.light}`}>
@@ -1475,12 +1278,6 @@ const WeatherMap = ({ zoom, dark }) => {
          * Phase 3 — it's now a standalone overlay button (rendered
          * after the map alongside RadarLegend/RadarTimeline), no
          * longer a Leaflet bar control. */}
-        {/* ArrowToggleControl lived here pre-2.14.15 as an imperative
-         * Leaflet control at the topleft. Moved to BottomDock so the
-         * top-left of the map stays uncluttered (and the dock has
-         * plenty of room for related radar toggles now that v3 gives
-         * it a dedicated slab). See ControlButtons for the new entry,
-         * gated on the same `radarAnalysisEnabled` flag. */}
         {/* v2.14.66: the Ukrainian flag (added by Leaflet v1.9.3 as a
          * humanitarian gesture) stays visible in every palette except
          * nightRed — its yellow stripe disrupts the dark-red basemap.
@@ -1653,32 +1450,6 @@ const WeatherMap = ({ zoom, dark }) => {
             />
           )
         ) : null}
-        {/* Radar-analysis overlays — only visible when the AI summary feature
-            is configured AND the radar analysis is enabled in advanced
-            settings. Inner circle marks the default analysis zone (50 km or
-            30 mi depending on distanceUnit); when extendedRadius is on, a
-            second outer circle (100 km or 60 mi) joins it with the same
-            dashed style. Sampling-point dots opt-in via a separate toggle
-            so curious users can see exactly what the analyzer reads. Inner
-            ring is always 16 directions × 10 distances; outer ring is 32
-            directions × 10 distances when extendedRadius is on. */}
-        {radarAnalysisEnabled && markerPosition && currentMapZoom < RING_HIDE_ZOOM ? (
-          <RiskRing center={markerPosition} radius={innerRadiusMeters} risk={innerRisk} dark={dark} aiOff={!aiSummaryAvailable} nightRed={nightRed} />
-        ) : null}
-        {radarAnalysisEnabled && markerPosition && extendedRadarRadius && currentMapZoom < RING_HIDE_ZOOM ? (
-          <RiskRing center={markerPosition} radius={outerRadiusMeters} risk={outerRisk} dark={dark} aiOff={!aiSummaryAvailable} nightRed={nightRed} />
-        ) : null}
-        {/* On-map radius chips ("50 km" / "100 km") at the rings' SE
-            intersection (v3.1 Phase 3 — audit F7/F20). Same gates as
-            the rings so the labels never outlive their circles; the
-            mobile layout hides them in CSS. */}
-        {radarAnalysisEnabled && markerPosition && currentMapZoom < RING_HIDE_ZOOM ? (
-          <RingLabels
-            center={markerPosition}
-            distanceUnit={distanceUnit}
-            extendedRadarRadius={extendedRadarRadius}
-          />
-        ) : null}
         {/* Nearby-alerts radius ring (Phase 2) — the user's survey extent,
             persistent while the layer is on. A cool-blue dotted circle
             (red dash-dot in nightRed) kept distinct from the radar risk
@@ -1694,46 +1465,6 @@ const WeatherMap = ({ zoom, dark }) => {
             pathOptions={radiusRingOptions}
           />
         ) : null}
-        {radarAnalysisEnabled && markerPosition && showSamplingPoints && currentMapZoom < RING_HIDE_ZOOM
-          ? samplingPointMarkers
-          : null}
-        {radarAnalysisEnabled && markerPosition && showDirectionArrows
-          ? [
-              ...innerDirectionVectors.map((v) => ({ ...v, _ring: "inner" })),
-              ...outerDirectionVectors.map((v) => ({ ...v, _ring: "outer" })),
-            ].map((v, idx) => {
-              const bearingMap = v._ring === "inner" ? DIR_INNER_TO_BEARING : DIR_OUTER_TO_BEARING;
-              const bearing = bearingMap[v.direction];
-              if (bearing == null) return null;
-              const path = buildArrowPath(
-                markerPosition, bearing, v.peakDistance, v.magnitude, v.trend,
-                KM_PER_UNIT[distanceUnit],
-              );
-              const baseColor = (ARROW_COLOR[v.trend] || ARROW_COLOR.approaching)[dark ? "dark" : "light"];
-              // Opacity reflects confidence — the user sees at a glance which
-              // arrows are well-supported by the data and which are tentative.
-              // Floor at 0.25 so even low-confidence arrows stay visible
-              // (they're already filtered to non-stable directions, so we
-              // want to surface them; we just want them visually "softer").
-              const opacity = Math.max(0.25, Math.min(1, (v.confidence || 0) / 100));
-              // Stroke weight scales gently with peak intensity so heavier
-              // bands read as thicker arrows. Cap at 4 px to avoid clutter.
-              const weight = Math.min(4, 1.5 + (v.peakIntensity || 0) * 0.4);
-              return (
-                <Polyline
-                  key={`arrow-${v._ring}-${v.direction}-${idx}`}
-                  positions={path}
-                  pathOptions={{
-                    color: baseColor,
-                    weight,
-                    opacity,
-                    lineCap: "round",
-                    lineJoin: "round",
-                  }}
-                />
-              );
-            })
-          : null}
         {/* Phase 4d (2026-05-28): polygon overlay of the alert zone
           * the user picked via the AlertBanner "Voir sur la carte"
           * button. Renders nothing when highlightedAlertId is null

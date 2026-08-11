@@ -3,17 +3,11 @@ import { useTranslation } from "react-i18next";
 import { ExpandIcon, RestoreIcon } from "~/components/WeatherMap/icons";
 import { UiPrefsContext, SystemContext, AppActionsContext } from "~/AppContext";
 import WeatherMap from "~/components/WeatherMap";
-import HeroCompact from "~/components/ambient/HeroCompact";
-import TimeBlock from "~/components/ambient/TimeBlock";
-import MetricsGrid from "~/components/ambient/MetricsGrid";
-import AirCard from "~/components/ambient/AirCard";
+import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
 import AlertDetailInline from "~/components/ambient/AlertDetailInline";
 import AlertMiniCards from "~/components/ambient/AlertMiniCards";
 import FloatingMiniBanner from "~/components/ambient/FloatingMiniBanner";
-import IndoorBlock from "~/components/ambient/IndoorBlock";
-import ChartTabs from "~/components/ambient/ChartTabs";
-import AiSummaryInline from "~/components/ambient/AiSummaryInline";
 import BottomDock from "~/components/ambient/BottomDock";
 import styles from "./styles.css";
 
@@ -288,19 +282,14 @@ const LayoutMobile = () => {
         ref={scrollRef}
         className={styles.scroll}
       >
-        <TimeBlock />
-        {/* AlertBanner + AlertDetailInline placed just under
-         * TimeBlock (ABOVE HeroCompact), matching the v2 InfoPanel
-         * .alertArea position and the LayoutPi ordering. Both
-         * components return null when no eligible alert is active,
-         * so this slot is invisible on calm days. */}
+        <RadarHeader />
+        {/* Alert stack sits directly under the header, matching the
+         * LayoutPi ordering. Every component here returns null when no
+         * eligible alert is active, so the slot is invisible on calm
+         * days and the map card rises to meet the header. */}
         <AlertBanner />
         <AlertDetailInline />
         <AlertMiniCards />
-        <HeroCompact />
-        <AirCard />
-        <MetricsGrid />
-        <IndoorBlock />
         <div
           ref={mapCardRef}
           className={`${styles.mapCard} ${mobileRadarMaximized ? styles.mapCardMaximized : ""} map-container ${darkMode ? "map-dark-mode" : ""} ${mouseHide ? "map-mouse-hide" : ""}`}
@@ -342,8 +331,6 @@ const LayoutMobile = () => {
             />
           )}
         </div>
-        <ChartTabs />
-        <AiSummaryInline />
         <div className={styles.footer}>
           {t("mobile.settingsHint", {
             defaultValue: "Pour les réglages avancés, ouvre l'app depuis le Pi en local.",

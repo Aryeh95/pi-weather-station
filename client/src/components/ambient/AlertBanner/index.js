@@ -5,24 +5,17 @@ import closeIcon from "@iconify/icons-carbon/close";
 import chevronDown from "@iconify/icons-carbon/chevron-down";
 import chevronRight from "@iconify/icons-carbon/chevron-right";
 import {
-  RadarStateContext,
   AlertsContext,
   AppActionsContext,
-  WeatherDataContext,
   SystemContext,
 } from "~/AppContext";
 import SourceBadge from "~/components/ambient/SourceBadge";
-import ConfidencePill from "~/components/ambient/ConfidencePill";
 import SeverityChip from "~/components/ambient/SeverityChip";
 import RailSquareButton from "~/components/ambient/RailSquareButton";
 import { ExpandIcon } from "~/components/WeatherMap/icons";
 import AlertMetaChips from "~/components/ambient/AlertMetaChips";
 import useDismissedAlerts from "~/hooks/useDismissedAlerts";
 import useEligibleGovAlerts from "~/hooks/useEligibleGovAlerts";
-import {
-  isCurrentlyPrecipitating,
-  getRadarAlertState,
-} from "~/ui/alertLogic";
 import { priorityViewsEnabled } from "~/ui/piLayout";
 import styles from "./styles.css";
 
@@ -73,15 +66,8 @@ import styles from "./styles.css";
  *   is active
  */
 const AlertBanner = () => {
-  const {
-    innerRisk, outerRisk,
-    innerTrend, outerTrend,
-    innerBumped, outerBumped,
-    innerTrendConfidence, outerTrendConfidence,
-  } = useContext(RadarStateContext);
   const { govAlertExpanded } = useContext(AlertsContext);
   const { setGovAlertExpanded, selectGovAlert, setPiLayoutState } = useContext(AppActionsContext);
-  const { currentWeatherData } = useContext(WeatherDataContext);
   const { piLayoutState } = useContext(SystemContext);
   const { t, i18n } = useTranslation();
   const { dismiss } = useDismissedAlerts();
@@ -352,28 +338,12 @@ const AlertBanner = () => {
   // returned above; desktop / mobile fall through to the radar banner.
   if (isPi) return null;
 
-  // Radar-derived alert — keeps the pre-4 chips-row + title
-  // visual (no severity chip, no expansion). RADAR is a derived
-  // source with no upstream "structured body" to expand into.
-  const weatherCode = currentWeatherData?.data?.timelines?.[0]?.intervals?.[0]?.values?.weatherCode;
-  const radarState = getRadarAlertState(
-    innerRisk, outerRisk,
-    innerTrend, outerTrend,
-    innerBumped, outerBumped,
-    innerTrendConfidence, outerTrendConfidence,
-    isCurrentlyPrecipitating(weatherCode),
-  );
-  if (!radarState) return null;
-
-  return (
-    <div className={`${styles.banner} ${styles[`tier-${radarState.tier}`]}`}>
-      <div className={styles.chips}>
-        <SourceBadge source="RADAR" />
-        <ConfidencePill confidence={radarState.confidence} />
-      </div>
-      <div className={styles.title}>{t(radarState.i18nKey)}</div>
-    </div>
-  );
+  // The RADAR-derived banner tier used to render here, driven by the
+  // RainViewer tile sampler's risk levels and trend confidence. Both the
+  // sampler and its source were removed in the radar rework, so a
+  // government alert is now the only thing this banner ever shows — and
+  // the gov paths above have already returned by this point.
+  return null;
 };
 
 export default AlertBanner;

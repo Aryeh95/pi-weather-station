@@ -10,12 +10,11 @@
 // file) and the original (from the client source), applies the same
 // mechanical normalization to both, and asserts textual equality.
 //
-// Covered pairs (the five files audited in quality-audit lot D):
-//   test/conversions.test.js  ↔ client/src/services/conversions.js
+// Covered pairs:
 //   test/alertParser.test.js  ↔ client/src/ui/alertParser.js
-//   test/alertLogic.test.js   ↔ client/src/ui/alertLogic.js (+ hybrid.js)
-//   test/moonLitPath.test.js  ↔ client/src/ui/astronomy.js
+//   test/alertLogic.test.js   ↔ client/src/ui/alertLogic.js
 //   test/uiHybrid.test.js     ↔ client/src/ui/hybrid.js
+//   test/iemRadarLayers.test.js ↔ client/src/components/WeatherMap/iemRadar.js
 //
 // Normalization is deliberately mechanical (regex-based, no JS parser —
 // the suite must stay deps-free per CLAUDE.md). It erases formatting
@@ -61,21 +60,25 @@ const COPY_END_RE = /^\/\/ -{4,} end of verbatim copy -{4,}\s*$/m;
 // not be discovered as standalone declarations.
 const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|const\s+(\w+)\s*=)/gm;
 
-// Inventory size as of 2026-08 (12 + 9 + 8 + 6 + 1 + 9 + 4). Guards against
-// the discovery silently finding nothing (which would fake-pass the suite).
+// Inventory size after the radar rework (9 + 6 + 4 + 4). Guards against the
+// discovery silently finding nothing (which would fake-pass the suite).
 // If a copied declaration is legitimately removed from a test file,
 // lower this consciously.
-// 2026-08: +9 for test/iemRadarLayers.test.js (the IEM two-layer radar
-// zoom band and frame-age classifier).
-const EXPECTED_CHECK_COUNT = 49;
+//
+// The teardown dropped three whole pairs — radarGeometry, conversions and
+// moonLitPath — because their SOURCES were deleted (the RainViewer sampling
+// geometry, the temperature/speed conversions, and the astronomy helpers all
+// belonged to the forecast UI), and trimmed alertLogic to the government-alert
+// helpers.
+const EXPECTED_CHECK_COUNT = 23;
 
 /**
- * The six copy-carrying test files and how to find their copies.
+ * The four copy-carrying test files and how to find their copies.
  *
- * Marker-delimited files (`conversions`, `alertParser`, `moonLitPath`)
- * need no `sourceFile`/`copiedNames`: the source path comes from the
- * start marker and the copied declarations are auto-discovered inside
- * the block. `alertLogic` and `uiHybrid` predate the marker convention
+ * Marker-delimited files (`iemRadarLayers`, `alertParser`) need no
+ * `sourceFile`/`copiedNames`: the source path comes from the start
+ * marker and the copied declarations are auto-discovered inside the
+ * block. `alertLogic` and `uiHybrid` predate the marker convention
  * and embed their copies inline, so their pairs are spelled out.
  *
  * `adaptations` documents the places where a copy INTENTIONALLY differs
@@ -93,23 +96,9 @@ const EXPECTED_CHECK_COUNT = 49;
  */
 const PAIRS = [
   {
-    // Marker-delimited copy of WeatherMap/geometry.js (12 declarations)
-    // — registered the day it was created so its own "fails loudly"
-    // header is mechanically true from the start.
-    testFile: "test/radarGeometry.test.js",
-  },
-  {
     // Marker-delimited copy of WeatherMap/iemRadar.js — the two-layer
-    // NEXRAD zoom band and frame-age classifier. Registered on creation
-    // for the same reason as radarGeometry above.
+    // NEXRAD zoom band and frame-age classifier.
     testFile: "test/iemRadarLayers.test.js",
-  },
-  {
-    testFile: "test/conversions.test.js",
-    // Marker-delimited. The copy drops the source's leftover
-    // `console.log` diagnostics and condenses `else if` chains into
-    // early returns — both normalized away mechanically (see the
-    // console.log / unbraced-return / else-after-return rules).
   },
   {
     testFile: "test/alertParser.test.js",
@@ -130,53 +119,18 @@ const PAIRS = [
     },
   },
   {
-    testFile: "test/moonLitPath.test.js",
-    // Marker-delimited, copy is byte-for-byte modulo comments/export.
-  },
-  {
     testFile: "test/alertLogic.test.js",
     sourceFile: "client/src/ui/alertLogic.js",
+    // The radar rework removed isCurrentlyPrecipitating / getRadarAlertState
+    // (the RainViewer-fed banner state machine) and getAirAlertState, along
+    // with the confidenceBucket trio the copy borrowed from hybrid.js — so
+    // the copied set is now just the government-alert helpers.
     copiedNames: [
-      "CONFIDENCE_HIGH",
-      "CONFIDENCE_MID",
-      "confidenceBucket",
       "severity",
-      "isCurrentlyPrecipitating",
-      "getRadarAlertState",
       "ELIGIBLE_GOV_TIERS",
       "ELIGIBLE_GOV_TIERS_WITH_ADVISORY",
       "selectEligibleGovAlerts",
     ],
-    adaptations: {
-      // `alertLogic.js` imports `confidenceBucket` (and its two
-      // threshold constants) from `hybrid.js`; the test file inlines a
-      // copy of all three, so they are compared against `hybrid.js`.
-      CONFIDENCE_HIGH: { sourceFile: "client/src/ui/hybrid.js" },
-      CONFIDENCE_MID: { sourceFile: "client/src/ui/hybrid.js" },
-      confidenceBucket: { sourceFile: "client/src/ui/hybrid.js" },
-      getRadarAlertState: {
-        // The copy shortens the two confidence parameter names
-        // (signature AND body use them, so a plain rename is exact).
-        renames: [
-          [/\binnerTrendConfidence\b/g, "innerC"],
-          [/\bouterTrendConfidence\b/g, "outerC"],
-        ],
-        patches: [
-          {
-            // The source assigns the position-only i18n key to a local
-            // `const i18nKey` before returning (twice, identically);
-            // the copy inlines the template literal into the returned
-            // object. Same value, different shape — inline it here.
-            find:
-              "const i18nKey = `alert.${tier}${innerIsSource ? \"Near\" : \"Approaching\"}`; "
-              + "return { tier, i18nKey, confidence, confidenceBucket: bucket };",
-            replace:
-              "return { tier, i18nKey: `alert.${tier}${innerIsSource ? \"Near\" : \"Approaching\"}`, "
-              + "confidence, confidenceBucket: bucket };",
-          },
-        ],
-      },
-    },
   },
   {
     testFile: "test/uiHybrid.test.js",

@@ -1,22 +1,12 @@
 import React, { useContext, useEffect } from "react";
-import { UiPrefsContext, SystemContext, AppActionsContext, WeatherDataContext } from "~/AppContext";
-import { getAirAlertState } from "~/ui/alertLogic";
+import { UiPrefsContext, SystemContext, AppActionsContext } from "~/AppContext";
 import { priorityViewsEnabled } from "~/ui/piLayout";
 import WeatherMap from "~/components/WeatherMap";
-import ConditionsView from "~/components/ambient/ConditionsView";
 import AlertView from "~/components/ambient/AlertView";
-import AiView from "~/components/ambient/AiView";
-import HeroCompact from "~/components/ambient/HeroCompact";
-import TimeBlock from "~/components/ambient/TimeBlock";
-import MetricsGrid from "~/components/ambient/MetricsGrid";
-import AirCard from "~/components/ambient/AirCard";
-import AirAlertCard from "~/components/ambient/AirAlertCard";
+import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
 import AlertDetailInline from "~/components/ambient/AlertDetailInline";
 import AlertMiniCards from "~/components/ambient/AlertMiniCards";
-import IndoorBlock from "~/components/ambient/IndoorBlock";
-import ChartTabs from "~/components/ambient/ChartTabs";
-import NowcastLine from "~/components/ambient/NowcastLine";
 import BottomDock from "~/components/ambient/BottomDock";
 import FloatingMiniBanner from "~/components/ambient/FloatingMiniBanner";
 import styles from "./styles.css";
@@ -82,13 +72,6 @@ const LayoutPi = () => {
   const { darkMode, defaultMapZoom, mouseHide } = useContext(UiPrefsContext);
   const { piLayoutState, piScrubberOpen } = useContext(SystemContext);
   const { setPiLayoutState, setPiScrubberOpen } = useContext(AppActionsContext);
-  const { aqhiInfo } = useContext(WeatherDataContext);
-
-  // v3.2 air-quality alert: escalate to a top-of-rail AIR card only at the
-  // health-risk band (high/veryHigh). Computed once here so the inline
-  // AirCard's AQ row can be suppressed in the same render — no duplicate
-  // AQHI reading (the AIR card carries it, with its own tap-for-detail).
-  const airAlert = getAirAlertState(aqhiInfo?.category);
 
   // v3.3 priority-views model — opt-in/short-7" only. When on, the rail is a
   // compact glance whose Hero ⤢ opens the Conditions view (metrics + indoor
@@ -144,6 +127,12 @@ const LayoutPi = () => {
          * costs nothing then); the forecast chart and AI prose are
          * deliberately absent from the glance — the chart lives in MAX. */}
         <div className={styles.midPanel}>
+          {/* The glance is now the clock and the alert stack. Conditions,
+            * metrics, air quality, indoor temperature, the nowcast line and
+            * the forecast chart all went with their data sources in the
+            * radar rework — the alert stack returns null in calm weather,
+            * so the rail is just the header then. */}
+          <RadarHeader compact />
           <AlertBanner />
           {/* v3.2 inline expansion — in the v3.3 priority model the alert
             * card opens the full AlertView instead, so drop the inline body. */}
@@ -154,60 +143,13 @@ const LayoutPi = () => {
            * detail footer's "Masquer") was unrecoverable on the 7" until the
            * 4 h auto-resurface. */}
           <AlertMiniCards />
-          {/* AIR — air-quality alert card (v3.2). Renders only at the
-           * health-risk band; stacks under the gov alert (mockup case 4). */}
-          {airAlert && <AirAlertCard alert={airAlert} />}
-          <TimeBlock compact />
-          {/* shortPhaseName: the 7" rail is too narrow for the full
-           * moon-phase string ("Gibbeuse croissante") in the hero
-           * meta-line — B4.7 ruling: short family name, no ellipsis. */}
-          <HeroCompact
-            shortPhaseName
-            hideAstro
-            hideFeelsLike={priority}
-            onMaximize={priority ? () => setPiLayoutState("conditions") : undefined}
-          />
-          {/* NowcastLine (v3.2 keystone): ALWAYS present — an active radar
-           * echo shows the verdict, otherwise a quiet radar-anchored calm
-           * state ("No rain within X") with a sky-adaptive icon and a leading
-           * RADAR badge. Status-only since the rail-affordance redesign
-           * (2026-06-24): it no longer maximizes — forecast access lives in
-           * the BottomDock's "views" group (forecast button). */}
-          <NowcastLine />
-          <AirCard suppressAqRow={!!airAlert} />
-          {/* Metrics + indoor: in the v3.3 glance these relocate to the
-            * Conditions view (the glance stays compact for the font-size
-            * budget); the v3.2 stacked rail keeps them inline. */}
-          {!priority && <MetricsGrid />}
-          {!priority && <IndoorBlock />}
         </div>
-        {/* Forecast host — shown only in MAX, where ChartTabs renders its
-         * maximized detail view (it reads piLayoutState === "max"). Kept
-         * mounted (display:none in MID) so its metric/period state and the
-         * auto-tab selector survive the mid↔max round trip. */}
-        <div className={styles.forecastHost}>
-          <ChartTabs />
-        </div>
-        {/* v3.3 Conditions view host — mounted alongside the glance, shown
-         * only in the "conditions" state (same pattern as forecastHost). */}
-        {priority && (
-          <div className={styles.conditionsHost}>
-            <ConditionsView />
-          </div>
-        )}
-        {/* v3.3 Alert view host — shown only in the "alert" state. */}
+        {/* v3.3 Alert view host — shown only in the "alert" state. The
+          * forecast / conditions / AI hosts that used to sit alongside it
+          * are gone with their data. */}
         {priority && (
           <div className={styles.alertHost}>
             <AlertView />
-          </div>
-        )}
-        {/* v3.3 IA view host — mounted LAZILY (only in the "ai" state), unlike
-          * the always-mounted hosts above: the AI view has no interactive state
-          * to preserve, and lazy mount means the paid Anthropic fetch fires on
-          * open rather than as background overhead. */}
-        {priority && piLayoutState === "ai" && (
-          <div className={styles.aiHost}>
-            <AiView />
           </div>
         )}
       </aside>

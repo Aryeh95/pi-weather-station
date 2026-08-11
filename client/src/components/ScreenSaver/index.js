@@ -19,65 +19,6 @@ const INSET = 0.08;
 const ANTI_BURNIN_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
- * Map a Tomorrow.io weather code to a calm Unicode glyph for the screensaver
- * footer. The mock uses ☁ as the reference; this keeps the same monochrome,
- * single-character feel across conditions rather than reaching for emoji
- * (which render inconsistently across systems and clash with the typography).
- *
- * @param {Number} code Tomorrow.io weather code
- * @returns {String} Single-character Unicode glyph
- */
-function weatherGlyph(code) {
-  if (code === 1000 || code === 1100) return "☀"; // ☀ clear / mostly clear
-  if (code === 1101) return "⛅"; // ⛅ partly cloudy
-  if (code === 1001 || code === 1102 || code === 2000 || code === 2100) return "☁"; // ☁ cloudy / fog
-  if ([4000, 4001, 4200, 4201, 6000, 6001, 6200, 6201].includes(code)) return "☂"; // ☂ rain / freezing rain
-  if ([5000, 5001, 5100, 5101, 7000, 7101, 7102].includes(code)) return "❄"; // ❄ snow / ice pellets
-  if (code === 8000) return "⚡"; // ⚡ thunderstorm
-  return "☁"; // default cloudy
-}
-
-/**
- * Map a Tomorrow.io weather code to the matching i18n key for the condition
- * label. Mirrors the mapping in CurrentWeather/index.js but stays local here
- * to avoid pulling in the full icon-loading machinery.
- *
- * @param {Number} code Tomorrow.io weather code
- * @returns {String} i18n key under "weather.*"
- */
-function conditionKey(code) {
-  switch (code) {
-    case 6201: return "weather.heavyFreezingRain";
-    case 6001: return "weather.freezingRain";
-    case 6200: return "weather.lightFreezingRain";
-    case 6000: return "weather.freezingDrizzle";
-    case 7101: return "weather.heavyIcePellets";
-    case 7000: return "weather.icePellets";
-    case 7102: return "weather.lightIcePellets";
-    case 5101: return "weather.heavySnow";
-    case 5000: return "weather.snow";
-    case 5100: return "weather.lightSnow";
-    case 5001: return "weather.flurries";
-    case 8000: return "weather.thunderStorm";
-    case 4201: return "weather.heavyRain";
-    case 4001: return "weather.rain";
-    case 4200: return "weather.lightRain";
-    case 4000: return "weather.drizzle";
-    case 2100: return "weather.lightFog";
-    case 2000: return "weather.fog";
-    case 1001: return "weather.cloudy";
-    case 1102: return "weather.mostlyCloudy";
-    case 1101: return "weather.partlyCloudy";
-    case 1100: return "weather.mostlyClear";
-    case 1000: return "weather.clear";
-    case 3001: return "weather.wind";
-    case 3000: return "weather.lightWind";
-    case 3002: return "weather.strongWind";
-    default: return "";
-  }
-}
-
-/**
  * Fullscreen screensaver / sleep-mode overlay.
  *
  * Single DOM tree shared by stages 1 and 2 — class names on the root drive
@@ -97,8 +38,6 @@ function conditionKey(code) {
 const ScreenSaver = ({ stage }) => {
   const { i18n } = useTranslation();
   const {
-    currentWeatherData,
-    tempUnit,
     clockTime,
     mapTimezone,
   } = useContext(AppContext);
@@ -234,28 +173,10 @@ const ScreenSaver = ({ stage }) => {
     timeZone: mapTimezone || undefined,
   });
 
-  // Footer: weather glyph + temperature + condition. Falls back gracefully
-  // when no weather payload is loaded yet (cold boot, network blip).
-  const values = currentWeatherData?.data?.timelines?.[0]?.intervals?.[0]?.values;
-  const tempC = values?.temperature;
-  const code = values?.weatherCode;
-  let tempPart = "";
-  if (typeof tempC === "number") {
-    let tempVal = tempC;
-    let tempUnitStr = "°C";
-    if (tempUnit === "f") {
-      tempVal = (tempC * 9) / 5 + 32;
-      tempUnitStr = "°F";
-    } else if (tempUnit === "k") {
-      tempVal = tempC + 273.15;
-      tempUnitStr = "K";
-    }
-    // \u00a0 = non-breaking space, matching the mock's "7\u00a0°C"
-    tempPart = `${Math.round(tempVal)}\u00a0${tempUnitStr}`;
-  }
-  const condKey = code !== undefined ? conditionKey(code) : "";
-  const condStr = condKey ? i18n.t(condKey) : "";
-  const glyph = code !== undefined ? weatherGlyph(code) : "☁";
+  // The screensaver footer used to show a weather glyph, temperature and
+  // condition from Tomorrow.io. That source went in the radar rework, so
+  // the idle screen is now date + time only — which is what an ambient
+  // clock wants to be anyway.
 
   // The fadingOut class is applied when we're holding the overlay
   // mounted in transparent absorber mode. Stops the post-wake ghost
@@ -278,14 +199,6 @@ const ScreenSaver = ({ stage }) => {
       <main className={styles.stage}>
         <div className={styles.date}>{dateStr}</div>
         <div className={styles.time}>{timeStr}</div>
-        {(tempPart || condStr) ? (
-          <div className={styles.footer}>
-            <span className={styles.icon}>{glyph}</span>
-            {tempPart}
-            {tempPart && condStr ? <span className={styles.dotSep}>·</span> : null}
-            {condStr}
-          </div>
-        ) : null}
       </main>
       <div
         className={styles.pixel}

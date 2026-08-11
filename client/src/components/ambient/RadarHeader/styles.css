@@ -1,0 +1,110 @@
+/* Header slab for the radar viewer — place name + clock.
+ *
+ * Replaces the HeroBand / HeroCompact / TimeBlock stack, which carried
+ * temperature, condition, feels-like, sun/moon meta and a seasonal
+ * countdown. Everything that fed those is gone, so this is deliberately
+ * a small translucent slab that floats over the map rather than a
+ * dashboard panel competing with it.
+ *
+ * Surface tokens come from the active palette (day / dusk / night /
+ * nightRed) exactly as the other map overlays do, so it re-tints with
+ * the kiosk's time-of-day mode without per-palette rules here. */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.12));
+  background: var(--c-surface, rgba(255, 250, 240, 0.94));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--c-text, #3a3938);
+  /* The map itself is never scaled by the font-size preference (Leaflet
+   * stays at native resolution — see the TYPOGRAPHY NOTE in
+   * WeatherMap/styles.css), so overlay text scales via calc() instead. */
+  font-family: "Geist Mono", monospace;
+}
+
+.placeRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The place name is a button because it opens the coordinate/timezone
+ * popover — reset the UA button chrome rather than restyling it. */
+.placeButton {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--c-text-dim, #8a8578);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  font-size: calc(12px * var(--c-font-scale, 1));
+  letter-spacing: 0.02em;
+}
+
+.placeButton:active {
+  opacity: 0.7;
+}
+
+.clockRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.time {
+  font-size: calc(34px * var(--c-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.05;
+  /* Tabular figures so the minute digits don't shift the block's width
+   * on every tick — visible jitter on an always-on display. */
+  font-variant-numeric: tabular-nums;
+}
+
+.amPm {
+  font-size: calc(13px * var(--c-font-scale, 1));
+  font-weight: 500;
+  color: var(--c-text-dim, #8a8578);
+}
+
+.date {
+  font-size: calc(11px * var(--c-font-scale, 1));
+  color: var(--c-text-dim, #8a8578);
+  letter-spacing: 0.06em;
+}
+
+/* Compact variant for the Pi / mobile rail, where horizontal room is the
+ * binding constraint rather than vertical. */
+.compact {
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.compact .time {
+  font-size: calc(26px * var(--c-font-scale, 1));
+}
+
+.compact .date {
+  font-size: calc(10px * var(--c-font-scale, 1));
+}
+
+/* Short screens (the 7" kiosk): trim the slab so the rail below keeps
+ * room for the alert stack. */
+@media (max-height: 520px) {
+  .header {
+    padding: 6px 10px;
+  }
+
+  .time {
+    font-size: calc(22px * var(--c-font-scale, 1));
+  }
+}

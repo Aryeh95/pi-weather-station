@@ -1045,7 +1045,7 @@ const BucketClient = ({ data, lang, gridTwoWide }) => {
   // The Settings panel shows the *default* coords (`customLat`/`customLon`);
   // this row shows the *currently selected* coords the user navigated
   // to — same distinction v2 Debug surfaces in its Client KPI block.
-  const { mapGeo, currentMapZoom, aqhiInfo } = useContext(AppContext);
+  const { mapGeo, currentMapZoom } = useContext(AppContext);
   const { pageLoad, heap, apiCalls, screen, fps } = useClientMetrics();
   const coordsString = mapGeo
     ? `${mapGeo.latitude.toFixed(6)}, ${mapGeo.longitude.toFixed(6)}`
@@ -1085,12 +1085,6 @@ const BucketClient = ({ data, lang, gridTwoWide }) => {
           v={mapGeo ? mapGeo.longitude.toFixed(6) : "—"}
         />
         <KV k="zoom" v={currentMapZoom != null ? currentMapZoom : "—"} />
-        <KV
-          k="aqhi"
-          v={aqhiInfo?.value != null
-            ? `${aqhiInfo.value}${aqhiInfo.category ? ` · ${aqhiInfo.category}` : ""}`
-            : "—"}
-        />
       </div>
       {coordsString ? (
         <div className={styles.copyCoordRow}>
