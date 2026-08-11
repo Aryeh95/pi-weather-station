@@ -750,8 +750,12 @@ const SectionConfig = ({ ctx, lang, remote }) => {
         )}
         <Seg
           label={lbl(lang, "Radar source", "Source radar", "Fuente radar")}
-          options={[{ v: "rainviewer", l: "RainViewer" }, { v: "eccc", l: "ECCC" }]}
-          value={radarSource || "rainviewer"}
+          options={[
+            { v: "iem", l: "NEXRAD" },
+            { v: "rainviewer", l: "RainViewer" },
+            { v: "eccc", l: "ECCC" },
+          ]}
+          value={radarSource || "iem"}
           onChange={saveRadarSource}
           disabled={remote}
         />

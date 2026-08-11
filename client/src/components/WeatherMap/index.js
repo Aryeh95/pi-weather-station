@@ -66,6 +66,19 @@ import axios from "axios";
 import styles from "./styles.css";
 import RadarLegend from "./RadarLegend";
 import RadarTimeline from "./RadarTimeline";
+import RadarFrameAge from "./RadarFrameAge";
+import useIemRadarFrames from "./useIemRadarFrames";
+import {
+  IEM_ATTRIBUTION,
+  buildMosaicFrames,
+  siteTileUrl,
+  layerOpacities,
+  layerVisibility,
+  MOSAIC_MAX_NATIVE_ZOOM,
+  SITE_MAX_NATIVE_ZOOM,
+  SITE_MIN_ZOOM,
+  MOSAIC_MAX_ZOOM,
+} from "./iemRadar";
 import RiskRing from "./RiskRing";
 import RingLabels from "./RingLabels";
 import MapResizer from "./MapResizer";
@@ -108,6 +121,14 @@ const NO_ALERTS = Object.freeze([]);
  * and Safari iPad at high zoom. Hiding them frees the SVG layer
  * and restores smooth panning. */
 const RING_HIDE_ZOOM = 13;
+
+/* Base interval between animation frames, in ms; divided by the user's
+ * radarSpeed (1× / 2× / 4×) to get the actual tick. Module scope because
+ * BOTH the RainViewer loop and the IEM loop read it, and the IEM effect
+ * is declared above where the component's other timing constants sit —
+ * a component-scoped const would work (effect callbacks run after the
+ * body) but only by accident of timing. */
+const MAP_CYCLE_RATE = 1000; //ms
 
 // Visual nudge for the nearby-alerts radius ring when it would land exactly
 // on a drawn radar analysis ring. This only happens in KM mode at 50 / 100 km
@@ -881,6 +902,165 @@ const WeatherMap = ({ zoom, dark }) => {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  // ── IEM two-layer radar ───────────────────────────────────────────
+  // Active only when the user has selected the "iem" source. Two layers
+  // answering two different questions:
+  //
+  //   mosaic     — national N0Q composite, wide-area situational
+  //                awareness at low zoom. Frames come from IEM's fixed
+  //                5-minute generation schedule, so they're computed
+  //                locally with no discovery needed.
+  //   single-site — super-res base reflectivity (N0B) from the covering
+  //                NEXRAD, for detail near home at high zoom. Its scan
+  //                times are irregular (4-6 min, VCP-dependent) and must
+  //                be polled from the server.
+  //
+  // Both stay mounted across an overlap band and crossfade by zoom
+  // rather than hard-swapping — the two products look different enough
+  // that an instant cutover reads as a rendering glitch.
+  const iemActive = radarSource === "iem";
+  // Mirror of `iemActive` for the mount-once RainViewer polling effect
+  // below, which must read the CURRENT source without re-subscribing.
+  const iemActiveRef = useRef(iemActive);
+  iemActiveRef.current = iemActive;
+  const {
+    site: iemSite,
+    frames: iemSiteFrames,
+    stale: iemStale,
+    available: iemSiteAvailable,
+  } = useIemRadarFrames({
+    latitude: mapGeo ? mapGeo.latitude : null,
+    longitude: mapGeo ? mapGeo.longitude : null,
+    enabled: iemActive,
+  });
+
+  // Mosaic frame list, recomputed whenever the single-site list
+  // refreshes so both age displays advance together. The dependency on
+  // `iemSiteFrames` is deliberate: it's the app's existing 60 s
+  // heartbeat, and the mosaic offsets are cheap to rebuild.
+  const iemMosaicFrames = useMemo(
+    () => (iemActive ? buildMosaicFrames() : []),
+    [iemActive, iemSiteFrames]  // eslint-disable-line react-hooks/exhaustive-deps -- iemSiteFrames is the intentional 60s recompute heartbeat
+  );
+
+  // Playhead for the IEM layers, kept separate from the RainViewer
+  // `radarFrameIdx` above: the two sources have different frame counts
+  // and cadences, so sharing one index would land on a wrong or
+  // out-of-range frame when switching between them. -1 = latest.
+  const [iemFrameIdx, setIemFrameIdx] = useState(-1);
+
+  // Resolve the playhead against each layer independently. The two
+  // lists are different lengths (11 mosaic offsets vs ~12 scans), so
+  // the index is applied as a position from the END — "3 frames back"
+  // means the same thing on both even when the counts differ, which
+  // keeps the layers in step through the crossfade band.
+  const iemFromEnd = iemFrameIdx < 0 ? 0 : Math.max(0, iemFrameIdx);
+  const pickFromEnd = (list, back) => {
+    if (!list || !list.length) return null;
+    return list[Math.max(0, list.length - 1 - back)];
+  };
+  const currentMosaicFrame = pickFromEnd(iemMosaicFrames, iemFromEnd);
+  const currentSiteFrame = pickFromEnd(iemSiteFrames, iemFromEnd);
+
+  // Per-layer opacity for the zoom crossfade, scaled by the user's
+  // radar-opacity preference so the fade never overrides their setting.
+  const iemBaseOpacity = dark ? radarOpacityDark : radarOpacityLight;
+  const iemOpacity = layerOpacities(currentMapZoom, iemBaseOpacity);
+
+  // Mount gating comes from the same module as the opacity ramp, so a
+  // layer is never mounted at opacity 0 (wasted tile fetches) nor
+  // unmounted while the crossfade still wants to draw it (a gap in the
+  // band). The single-site layer additionally needs a resolved site and
+  // at least one discovered frame before it has anything to show.
+  const iemVisible = layerVisibility(currentMapZoom);
+  const showIemSite = iemActive
+    && iemVisible.site
+    && iemSiteAvailable
+    && Boolean(iemSite)
+    && Boolean(currentSiteFrame);
+  const showIemMosaic = iemActive
+    && iemVisible.mosaic
+    && Boolean(currentMosaicFrame);
+
+  // Which frame the age chip describes: whichever layer is currently
+  // dominant. At high zoom the single-site layer is what the user is
+  // reading, so its (real, scan-derived) timestamp is the honest one;
+  // at low zoom the mosaic's schedule-derived time applies and is
+  // marked approximate.
+  const iemAgeFrame = showIemSite && iemOpacity.site >= iemOpacity.mosaic
+    ? currentSiteFrame
+    : currentMosaicFrame;
+  const iemAgeIsApproximate = !(showIemSite && iemOpacity.site >= iemOpacity.mosaic);
+
+  // Timeline-shaped view of the mosaic frames. RadarTimeline was built
+  // against RainViewer's frame objects (`time` in UNIX *seconds*, plus a
+  // past/nowcast `kind`), so adapting here reuses the whole scrubber —
+  // labels, playhead, speed control — instead of duplicating it.
+  //
+  // The MOSAIC list is what the scrubber always drives, even at high
+  // zoom where the single-site layer is the visible one: it's a stable
+  // 11-frame fixed 5-minute grid that exists regardless of location,
+  // whereas the scan list changes length as volume scans complete. A
+  // scrubber whose track silently re-scaled under the user would be
+  // worse than one that stays put; the single-site layer follows along
+  // through the shared "frames from the end" offset.
+  //
+  // Every IEM frame is `kind: "past"` — NEXRAD products are observations,
+  // and unlike RainViewer there is no nowcast to scrub forward into.
+  const iemTimelineFrames = useMemo(
+    () => iemMosaicFrames.map((f) => ({ time: Math.round(f.epoch / 1000), kind: "past" })),
+    [iemMosaicFrames]
+  );
+
+  // The timeline hands back an absolute index into the list it was
+  // given; the layers consume a from-the-end offset so the two
+  // differently-sized frame lists stay aligned. One conversion point.
+  const handleIemScrub = useCallback((idx) => {
+    setIemFrameIdx(Math.max(0, iemMosaicFrames.length - 1 - idx));
+  }, [iemMosaicFrames.length]);
+
+  // Animation for the IEM layers, mirroring the RainViewer loop above:
+  // walk the playhead from oldest to newest, then wrap. Frozen in the
+  // Pi MAX view for the same reason — there the map is a ~190 px
+  // decorative thumbnail and cycling tiles just burns the GPU.
+  useEffect(() => {
+    if (!iemActive || !animateWeatherMap || isPiMaxView(piLayoutState)) return undefined;
+    if (!iemMosaicFrames.length) return undefined;
+    const id = setInterval(() => {
+      // Counts DOWN because the index is an offset from the newest
+      // frame: the oldest frame is the largest offset, so stepping
+      // toward 0 plays forward in time. Wraps back to the oldest.
+      setIemFrameIdx((prev) => {
+        const cur = prev < 0 ? 0 : prev;
+        return cur <= 0 ? iemMosaicFrames.length - 1 : cur - 1;
+      });
+    }, MAP_CYCLE_RATE / radarSpeed);
+    return () => clearInterval(id);
+  }, [iemActive, animateWeatherMap, radarSpeed, iemMosaicFrames.length, piLayoutState]);
+
+  // Snap back to the newest frame whenever the scrubber is dismissed or
+  // the source changes, so the user is never left parked on an old
+  // frame with no visible control explaining why.
+  useEffect(() => {
+    if (!radarTimelineVisible || !iemActive) setIemFrameIdx(-1);
+  }, [radarTimelineVisible, iemActive]);
+
+  // Publish the newest available frame time to RadarStateContext, which
+  // is the app-wide radar-freshness signal (NowcastLine gates its
+  // radar-anchored calm copy on it). Without this the value stays null
+  // under the IEM source and NowcastLine reports "radar unavailable"
+  // even though radar is displaying normally.
+  //
+  // Always the NEWEST frame, never the scrubbed one — this reports how
+  // current the DATA is, which scrubbing back through history does not
+  // change. The single-site list is preferred when present because its
+  // timestamps are real scan times; the mosaic's are schedule-derived.
+  useEffect(() => {
+    if (!iemActive) return;
+    const newest = (iemSiteFrames.length ? iemSiteFrames : iemMosaicFrames).slice(-1)[0];
+    setRadarFrameTs(newest ? newest.epoch : null);
+  }, [iemActive, iemSiteFrames, iemMosaicFrames, setRadarFrameTs]);
+
   // Risk levels for the dashed circles live in AppContext (see InfoPanel's
   // AlertBanner, which reads the same state to surface the alert text). We
   // only keep the polling logic here because it's gated by the same
@@ -892,7 +1072,6 @@ const WeatherMap = ({ zoom, dark }) => {
   const riskIntervalRef = useRef(null);
 
   const MAP_TIMESTAMP_REFRESH_FREQUENCY = 1000 * 60 * 10; //update every 10 minutes
-  const MAP_CYCLE_RATE = 1000; //ms
   const RISK_REFRESH_INTERVAL = 5 * 60 * 1000; // RainViewer cycles every 10 min; 5 min keeps us close to fresh
 
   const getMapApiKeyCallback = useCallback(() => getMapApiKey(), [
@@ -905,6 +1084,14 @@ const WeatherMap = ({ zoom, dark }) => {
     });
 
     const updateTimeStamps = () => {
+      // Skip the RainViewer frame-index fetch entirely while the IEM
+      // source is selected — nothing consumes the result then, and the
+      // stale-data complaint that motivated the IEM work makes a
+      // background poll of the source we moved away from actively
+      // undesirable. Read through a ref so a mid-session source switch
+      // is honoured without turning this mount-once effect into one
+      // that re-subscribes (its interval must survive re-renders).
+      if (iemActiveRef.current) return;
       getMapTimestamps()
         .then((res) => {
           setMapTimestamps(res);
@@ -1206,12 +1393,28 @@ const WeatherMap = ({ zoom, dark }) => {
   // before. ONE boolean drives BOTH the wrapper padding AND the actual render
   // below, so they can't desync (no half-pane flash on a MIN→MID exit).
   const priorityActive = priorityViewsEnabled() && piLayoutState != null;
-  const timelineShown = Boolean(mapTimestamps && mapTimestamps.length > 0)
-    && radarSource === "rainviewer"
+  // The scrubber is available on both frame-based sources — RainViewer's
+  // discovered frame list, and IEM's fixed 5-minute mosaic grid. ECCC
+  // stays excluded (its WMS exposes no time dimension here). The
+  // visibility RULES are identical across sources; only the question of
+  // "are there frames at all" differs, so that's the only branch.
+  const hasScrubbableFrames = iemActive
+    ? iemTimelineFrames.length > 0
+    : (radarSource === "rainviewer" && Boolean(mapTimestamps && mapTimestamps.length > 0));
+  const timelineShown = hasScrubbableFrames
     && (priorityActive
       ? (piLayoutState === "min" && piScrubberOpen)
       : (radarTimelineVisible && !isPiMaxView(piLayoutState)));
-  const legendShown = Boolean(mapTimestamps) && radarSource === "rainviewer" && !hideRadarLegend;
+  // The legend's precipitation scale is QUALITATIVE — six segments
+  // labelled only "Light" → "Extreme", with no numeric key. Its swatches
+  // are RainViewer's exact palette, but as a coarse low-to-high ramp it
+  // reads correctly against IEM's NEXRAD reflectivity colouring too
+  // (both run cool → green → yellow → orange → red → magenta). Shown for
+  // both reflectivity sources on that basis; if the legend ever gains
+  // numeric dBZ labels it will need a per-source palette instead.
+  // ECCC stays excluded — that's a precipitation-RATE product.
+  const legendShown = (iemActive || (Boolean(mapTimestamps) && radarSource === "rainviewer"))
+    && !hideRadarLegend;
 
   return (
     <div className={`${styles.mapWrapper} ${timelineShown ? styles.withTimeline : ""} ${legendShown ? styles.withLegend : ""}`}>
@@ -1319,7 +1522,59 @@ const WeatherMap = ({ zoom, dark }) => {
            * on Pi kiosk too. */
           updateWhenIdle={true}
         />
-        {radarSource === "eccc" ? (
+        {iemActive ? (
+          <>
+            {/* ── Layer 1: composite mosaic (low zoom) ──────────────
+              * IEM's national N0Q reflectivity mosaic — wide-area
+              * situational awareness. Frames are addressed by fixed
+              * 5-minute offsets baked into the layer name, so the
+              * animation needs no frame discovery at all.
+              *
+              * TILE CONFIG IS DELIBERATELY NOT the RainViewer config
+              * above. That one (tileSize 512 / zoomOffset -1) was tuned
+              * for RainViewer's 512 px tiles; IEM serves 256 px tiles
+              * (measured at every zoom 6-15), so carrying those props
+              * over would put every tile at the wrong scale and offset.
+              *
+              * `maxNativeZoom` is a data-resolution choice rather than a
+              * server limit — see the note in iemRadar.js. */}
+            {showIemMosaic ? (
+              <TileLayer
+                key="iem-mosaic"
+                attribution={IEM_ATTRIBUTION}
+                url={currentMosaicFrame.url}
+                opacity={iemOpacity.mosaic}
+                maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
+                maxZoom={MOSAIC_MAX_ZOOM}
+                updateWhenIdle={true}
+                keepBuffer={2}
+              />
+            ) : null}
+            {/* ── Layer 2: single-site super-res (high zoom) ────────
+              * N0B base reflectivity from the covering NEXRAD: 0.5°
+              * tilt at 0.25 km gates, native radial data rather than a
+              * resampled mosaic — the same product RadarScope shows by
+              * default. Coverage is 230 km from the site and fades at
+              * the edges, which is fine for a fixed kiosk.
+              *
+              * The timestamp is a REAL scan time from the frame poller,
+              * never the `-0` "latest" sentinel: `-0` would render but
+              * gives no way to know how old the picture is, and making
+              * frame age visible is the point of this work. */}
+            {showIemSite ? (
+              <TileLayer
+                key={`iem-site-${iemSite}-${currentSiteFrame.stamp}`}
+                attribution={IEM_ATTRIBUTION}
+                url={siteTileUrl(iemSite, currentSiteFrame.stamp)}
+                opacity={iemOpacity.site}
+                maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
+                minZoom={SITE_MIN_ZOOM}
+                updateWhenIdle={true}
+                keepBuffer={2}
+              />
+            ) : null}
+          </>
+        ) : radarSource === "eccc" ? (
           // Environment Canada radar (RADAR_1KM_RRAI = rain precipitation rate
           // at 1 km, NA composite). 6-min update cadence vs RainViewer's ~10
           // min, dedicated authority for the Canadian fleet. No time-dimension
@@ -1532,28 +1787,48 @@ const WeatherMap = ({ zoom, dark }) => {
           titleOff={t("controls.focusRadar", { defaultValue: "Focus radar" })}
         />
       )}
-      {/* Legend + timeline are RainViewer-specific (the legend's colour
-          scale matches RainViewer's intensity-encoded palette, and the
-          timeline drives RainViewer's frame URLs). Hidden entirely when
-          radarSource is ECCC — Phase A doesn't bring scrubbing across.
+      {/* Frame-age chip — the freshness surface. Radar that is quietly
+          15 min behind looks exactly like current radar, and some of
+          that lag is irreducible (a NEXRAD volume scan needs 4-6 min to
+          complete before any product exists), so the age is shown
+          rather than hidden. IEM-only for now: RainViewer's timeline
+          already carries its own relative-time chip, and ECCC exposes
+          no frame timestamp to report. */}
+      {iemActive && !isPiMaxView(piLayoutState) && iemAgeFrame && (
+        <RadarFrameAge
+          epoch={iemAgeFrame.epoch}
+          approximate={iemAgeIsApproximate}
+          sourceStale={iemStale}
+          site={showIemSite ? iemSite : null}
+          dark={dark}
+        />
+      )}
+      {/* Legend + timeline serve both reflectivity sources (RainViewer
+          and IEM); the legend's dBZ colour ramp describes either. Hidden
+          when radarSource is ECCC — that's a precipitation-RATE product
+          on a different scale, and its WMS exposes no time dimension to
+          scrub.
 
           Short screens (≤ 520 px height) with the timeline open get the
           legend as a compact "(i)" chip instead of the card — the Q5
           mutual-exclusion rule from the Phase 3 design: both can't fit
           in the 7" kiosk's vertical budget, but the legend stays one
           tap away instead of vanishing. */}
-      {mapTimestamps && radarSource === "rainviewer" && !hideRadarLegend && !isPiMaxView(piLayoutState) && (
+      {legendShown && !isPiMaxView(piLayoutState) && (
         <RadarLegend dark={dark} chipMode={radarTimelineVisible && isSmallScreen} />
       )}
       {timelineShown && (
         <RadarTimeline
-          frames={mapTimestamps}
-          currentIdx={currentMapTimestampIdx}
-          onScrub={setRadarFrameIdx}
+          frames={iemActive ? iemTimelineFrames : mapTimestamps}
+          currentIdx={iemActive
+            ? Math.max(0, iemTimelineFrames.length - 1 - iemFromEnd)
+            : currentMapTimestampIdx}
+          onScrub={iemActive ? handleIemScrub : setRadarFrameIdx}
           timezone={mapTimezone}
           dark={dark}
           compact={isSmallScreen || isNarrow}
-          sourceStale={timestampsStale}
+          sourceStale={iemActive ? iemStale : timestampsStale}
+          sourceName={iemActive ? "NEXRAD" : "RainViewer"}
         />
       )}
     </div>

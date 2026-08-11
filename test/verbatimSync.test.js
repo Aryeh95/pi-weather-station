@@ -97,6 +97,12 @@ const PAIRS = [
     testFile: "test/radarGeometry.test.js",
   },
   {
+    // Marker-delimited copy of WeatherMap/iemRadar.js — the two-layer
+    // NEXRAD zoom band and frame-age classifier. Registered on creation
+    // for the same reason as radarGeometry above.
+    testFile: "test/iemRadarLayers.test.js",
+  },
+  {
     testFile: "test/conversions.test.js",
     // Marker-delimited. The copy drops the source's leftover
     // `console.log` diagnostics and condenses `else if` chains into

@@ -351,9 +351,11 @@ const ControlButtons = () => {
   // controls" — the previous play-triangle was misleading because
   // tapping doesn't start playback, it just shows the scrubber UI
   // which has its own play button inside. Hidden when radarSource
-  // is ECCC (the timeline scrubber drives RainViewer frame URLs
-  // and has no equivalent on the WMS layer).
-  const btnTimeline = radarSource === "rainviewer" ? (
+  // is ECCC — that layer is a single WMS frame with no time
+  // dimension exposed, so there is nothing to scrub. Both
+  // frame-based sources (RainViewer's discovered list, IEM's fixed
+  // 5-minute mosaic grid) get the control.
+  const btnTimeline = (radarSource === "rainviewer" || radarSource === "iem") ? (
     <div
       key="timeline"
       /* `data-dock-priority="secondary"` flags this button for
@@ -455,7 +457,10 @@ const ControlButtons = () => {
   // clicking it just flips `hideRadarLegend` regardless of whether
   // a legend is currently painted. When timestamps eventually
   // load, the legend follows the preference.
-  const btnLegend = radarSource === "rainviewer" ? (
+  // Same source gating as the timeline button: the legend's dBZ colour
+  // ramp describes both reflectivity sources, but not ECCC's
+  // precipitation-rate product.
+  const btnLegend = (radarSource === "rainviewer" || radarSource === "iem") ? (
     <div
       key="legend"
       /* Same maximized-mobile promotion as the timeline button above. */

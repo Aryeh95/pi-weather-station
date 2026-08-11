@@ -1216,3 +1216,120 @@
     height: 11px;
   }
 }
+
+/* ============================================================
+ * Radar frame age — top-left chip under the zoom stack.
+ *
+ * Exists because stale radar and current radar look identical:
+ * the original complaint was data that appeared ~15 min behind,
+ * and part of that lag is irreducible (a NEXRAD volume scan takes
+ * 4-6 min to complete before any product exists, then mosaicking
+ * adds more). Since the latency can't be fully removed, it is
+ * shown instead — staleness becomes a fact on screen rather than
+ * a suspicion.
+ *
+ * Three states carry the meaning: fresh (< 6 min, as current as
+ * NEXRAD gets), aging (6-12 min, past a normal scan interval),
+ * stale (12 min+, something upstream is wrong). Colour is a
+ * REINFORCEMENT, never the sole channel — the minute count is
+ * always spelled out, and a failing refresh adds a "!" glyph, so
+ * the state survives both the nightRed palette (where hue
+ * distinctions collapse) and colour-vision differences.
+ * ============================================================ */
+.frame-age {
+  position: absolute;
+  /* Below the 40px zoom stack + the focus toggle beneath it. */
+  top: 158px;
+  left: var(--c-edge-gap, 16px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.12));
+  background: var(--c-surface, rgba(255, 250, 240, 0.94));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: "Geist Mono", monospace;
+  font-weight: 500;
+  /* Follows the S/M/L type preference like the other map overlays —
+   * the geometry stays fixed, only the text scales (see TYPOGRAPHY
+   * NOTE above). */
+  font-size: calc(11px * var(--c-font-scale, 1));
+  line-height: 1;
+  color: var(--c-text, #3a3938);
+  /* Read-only status — never intercept map drags. */
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+:global(.ambientRoot[data-layout="pi"]) .frame-age {
+  top: 148px;
+}
+
+.frame-age-light {
+  color: var(--c-text, #3a3938);
+}
+
+.frame-age-dark {
+  color: var(--c-text, #f6f6f4);
+  background: var(--c-surface, rgba(30, 30, 32, 0.92));
+  border-color: var(--c-border, rgba(255, 255, 255, 0.12));
+}
+
+/* The site id (e.g. "DIX") when the single-site layer is the one being
+ * described — dimmed, since it's context rather than the value. */
+.frame-age-site {
+  color: var(--c-text-dim, #8a8578);
+  letter-spacing: 0.04em;
+}
+
+/* State dot. Reuses the alert-tier variables so the chip speaks the
+ * same colour language as the rest of the map chrome, including the
+ * nightRed collapse to the red family. */
+.frame-age-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--rc-ink-3, #a39a82);
+}
+
+.frame-age-fresh .frame-age-dot {
+  background: var(--rc-tile-2, #00c800);
+}
+
+.frame-age-aging .frame-age-dot {
+  background: var(--rc-alert-watch, #ee7710);
+}
+
+.frame-age-stale .frame-age-dot {
+  background: var(--rc-alert-warn, #e60000);
+}
+
+/* At the stale tier the value itself takes the colour too — by then the
+ * chip is a warning, not a status line, and the dot alone is easy to
+ * miss at kiosk glance distance. */
+.frame-age-stale .frame-age-value {
+  color: var(--rc-alert-warn, #e60000);
+  font-weight: 600;
+}
+
+.frame-age-warn {
+  color: var(--rc-alert-warn, #e60000);
+  font-weight: 700;
+}
+
+/* Short screens (the 7" kiosk): the chip moves up under the zoom stack
+ * where the focus toggle is hidden anyway, keeping the bottom half of
+ * the map clear for the legend and timeline. */
+@media (max-height: 520px) {
+  .frame-age {
+    top: 110px;
+    height: 24px;
+    font-size: calc(10px * var(--c-font-scale, 1));
+  }
+}

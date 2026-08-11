@@ -121,7 +121,12 @@ const AUTO_SELECT_TAB_STORAGE_KEY = "autoSelectTab";
 const SHOW_ALERT_RING_STORAGE_KEY = "showAlertRing";
 const HIDE_RADAR_LEGEND_STORAGE_KEY = "hideRadarLegend";
 const RADAR_SOURCE_STORAGE_KEY = "radarSource";
-const RADAR_SOURCE_VALUES = ["rainviewer", "eccc"];
+// "iem" is the two-layer NEXRAD view (national N0Q mosaic at low zoom,
+// single-site N0B super-res at high zoom) and is the default for this
+// US-based install: it's the only source here that shows native radial
+// data rather than a resampled composite, and the only one that can
+// report a real per-frame timestamp for the age display.
+const RADAR_SOURCE_VALUES = ["iem", "rainviewer", "eccc"];
 
 /**
  * App context provider.
@@ -731,13 +736,22 @@ export function AppContextProvider({ children }) {
   // useAutoTabSelector via UiPrefsContext.
   const [autoSelectTab, setAutoSelectTab] = useState(false);
   const [hideRadarLegend, setHideRadarLegend] = useState(false);
-  // Visual radar source on the map. "rainviewer" (default) keeps the existing
-  // CDN-cached PNG tiles + timeline scrubber; "eccc" swaps to Environment
-  // Canada's WMS for fresher (6-min) Canadian-authority radar at the cost of
-  // the timeline (ECCC's WMS time-dimension support is a Phase B item). The
-  // server-side radar analyzer always uses RainViewer regardless — this
-  // setting only affects the visible tile layer.
-  const [radarSource, setRadarSource] = useState("rainviewer");
+  // Visual radar source on the map.
+  //
+  // "iem" (default) is the two-layer NEXRAD view: IEM's national N0Q
+  // mosaic for wide-area awareness at low zoom, crossfading into
+  // single-site N0B super-res base reflectivity (0.5° tilt, 0.25 km
+  // gates — native radial data, the product RadarScope shows by
+  // default) for detail at high zoom. Frame timestamps are real scan
+  // times, so the map can display how old the picture actually is.
+  //
+  // "rainviewer" keeps the older CDN-cached PNG tiles; "eccc" swaps to
+  // Environment Canada's WMS for Canadian-authority radar at the cost
+  // of the timeline (its WMS exposes no time dimension here).
+  //
+  // The server-side radar analyzer always uses RainViewer regardless —
+  // this setting only affects the visible tile layer.
+  const [radarSource, setRadarSource] = useState("iem");
   const [sunriseTime, setSunriseTime] = useState(null);
   const [sunsetTime, setSunsetTime] = useState(null);
   // Full sunrise-sunset.org payloads for today AND tomorrow, used by

@@ -187,6 +187,83 @@ Proxies Mapbox raster tiles.
 
 ---
 
+## NEXRAD Radar (IEM)
+
+Supports the two-layer radar view. Radar **tiles are not proxied** — they
+are keyless, public, and fetched direct from IEM by Leaflet. Only the
+frame-discovery JSON goes through the server, which gives one shared
+cache and keeps the NWS courtesy `User-Agent` server-side.
+
+The composite mosaic layer needs no endpoint at all: IEM regenerates it
+on a fixed 5-minute schedule, so its animation frames are addressed by
+fixed offsets (`-m05m` … `-m50m`) computed on the client.
+
+### `GET /api/radar/site`
+Resolves the NEXRAD site covering a coordinate, so the single-site layer
+never hardcodes one.
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:** `lat`, `lon` (required)
+- **Source:** `api.weather.gov/points/{lat},{lon}` → `radarStation`
+  (e.g. `KDIX`), normalised to IEM's 3-letter form (`DIX`). Falls back to
+  IEM's own `operation=available`, filtered to NEXRAD and sorted by
+  distance, when NWS is unreachable.
+- **Cached:** 24 h per coordinate (rounded to ~1 km)
+
+```json
+{ "available": true, "site": "DIX", "name": null, "source": "nws" }
+```
+
+- A location with no NEXRAD coverage returns HTTP 200 with
+  `{"available": false}` — that is a normal answer, not a fault, and the
+  client simply stays on the mosaic layer.
+- **Errors:** HTTP 400 on invalid coordinates
+
+### `GET /api/radar/frames`
+The frame-list poller. Returns the actual volume-scan timestamps that
+build `ridge::<site>-<product>-<stamp>` tile URLs.
+
+This endpoint exists because these timestamps **cannot be computed**: a
+NEXRAD volume scan completes every 4–6 minutes depending on the VCP the
+radar is running, and that changes with the weather (3–4 min gaps
+measured during active weather). A fabricated timestamp returns HTTP 503
+from IEM rather than a blank tile, so guessing is not an option.
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `site` | — | 3- or 4-letter NEXRAD id. Omit to use `lat`/`lon` instead |
+| `lat`, `lon` | — | Resolve the site first (one request instead of two on startup) |
+| `product` | `N0B` | IEM product id. `N0B` = super-res base reflectivity |
+| `count` | `12` | Most recent N frames (max 30) |
+
+- **Source:** `mesonet.agron.iastate.edu/json/radar.py?operation=list`
+- **Cached:** 45 s per site+product — a new scan lands every 3–6 min, so
+  this keeps the displayed frame age honest without re-asking per poll.
+
+```json
+{
+  "available": true,
+  "site": "DIX",
+  "product": "N0B",
+  "frames": [
+    { "stamp": "202608112151", "ts": "2026-08-11T21:51Z", "epoch": 1786485060000 }
+  ],
+  "generatedAt": "2026-08-11T22:02:00Z"
+}
+```
+
+`stamp` is the tile-URL segment; `epoch` drives the on-map frame-age
+display. Frames are oldest-first, so the last entry is the newest.
+
+- **Errors:** HTTP 400 if neither `site` nor valid `lat`/`lon` is given.
+  HTTP 503 when IEM is unreachable — the client keeps its last good frame
+  list on screen and flags it stale rather than blanking the radar.
+
+---
+
 ## Geocoding
 
 ### `GET /api/reverse-geocode`

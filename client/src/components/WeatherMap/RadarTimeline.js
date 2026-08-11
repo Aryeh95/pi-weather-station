@@ -61,13 +61,14 @@ function formatTickLabel(offsetMin) {
  * --past-frac set inline below. Auto-hides when no frames are loaded.
  *
  * @param {object} props
- * @param {Array} props.frames Combined past+nowcast frame list from RainViewer
+ * @param {Array} props.frames Frame list — objects carry `time` (UNIX seconds) and `kind`
  * @param {number} props.currentIdx Resolved index into `frames`
  * @param {Function} props.onScrub Called with the new index when user scrubs
  * @param {string} props.timezone IANA timezone for the time-of-day label
  * @param {boolean} props.dark Dark-palette variant
  * @param {boolean} props.compact Short-screen variant (7" kiosk) — shortens the source chip
  * @param {boolean} props.sourceStale Last frame-list refresh failed — chip flips to the warn tone
+ * @param {string} [props.sourceName] Name shown in the source chip (defaults to RainViewer)
  * @returns {JSX.Element|null} Timeline overlay
  */
 const RadarTimeline = ({
@@ -78,6 +79,7 @@ const RadarTimeline = ({
   dark,
   compact,
   sourceStale,
+  sourceName = "RainViewer",
 }) => {
   const { t } = useTranslation();
   const { cycleRadarSpeed, toggleAnimateWeatherMap } = useContext(AppActionsContext);
@@ -207,16 +209,18 @@ const RadarTimeline = ({
     ? Math.round(((frames[0].time + frames[lastPastIdx].time) / 2 - nowSec) / 60)
     : 0;
 
-  // Source chip — RainViewer cadence measured from the actual frame
-  // spacing (10 min nominally, but derived so an upstream change
-  // never leaves a stale hardcode). Shortened on the 7" kiosk and
-  // narrow (mobile) layouts.
+  // Source chip — the source NAME comes from the caller (the scrubber
+  // now drives RainViewer's frame list or IEM's mosaic grid, and a
+  // hardcoded name would mislabel whichever one it isn't), while the
+  // cadence stays measured from the actual frame spacing so an upstream
+  // schedule change never leaves a stale hardcode. Shortened on the 7"
+  // kiosk and narrow (mobile) layouts.
   const cadenceMin = frames.length > 1
     ? Math.max(1, Math.round((frames[1].time - frames[0].time) / 60))
     : null;
   const sourceLabel = compact || cadenceMin == null
-    ? "RainViewer"
-    : `RainViewer · ${cadenceMin} min`;
+    ? sourceName
+    : `${sourceName} · ${cadenceMin} min`;
 
   return (
     <div className={`${styles.radarTimeline} ${dark ? styles.radarTimelineDark : styles.radarTimelineLight}`}>
@@ -352,6 +356,7 @@ RadarTimeline.propTypes = {
   dark: PropTypes.bool,
   compact: PropTypes.bool,
   sourceStale: PropTypes.bool,
+  sourceName: PropTypes.string,
 };
 
 export default RadarTimeline;

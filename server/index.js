@@ -756,6 +756,17 @@ const nearbyAlertsConcurrencyGuard = createPerPeerConcurrencyGuard({
 });
 app.get("/api/nearby-alerts",       apiLimiter, nearbyAlertsConcurrencyGuard, getNearbyAlerts);
 
+// IEM NEXRAD radar support for the two-layer radar view. `/site` resolves the
+// 3-letter NEXRAD site covering a coordinate (so the single-site super-res
+// layer never hardcodes one); `/frames` is the frame-list poller that
+// discovers actual volume-scan timestamps — those are NOT on a predictable
+// grid, which is the one thing the mosaic layer's fixed 5-min offsets can't
+// solve. Tiles themselves are fetched direct from IEM by Leaflet (keyless and
+// public, same as the RainViewer / ECCC layers), so there is no tile route.
+const { getRadarSite, getRadarFrames } = require("./iemRadarCtrl");
+app.get("/api/radar/site",          apiLimiter, getRadarSite);
+app.get("/api/radar/frames",        apiLimiter, getRadarFrames);
+
 // Radar risk-level overlay for the dashed circles in WeatherMap. Reads the
 // "right now" intensity sampled on each ring and maps to a colour tier
 // (calm / yellow / orange / red) aligned with WMO / Météo-France / NWS
