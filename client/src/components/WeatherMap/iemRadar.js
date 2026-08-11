@@ -196,7 +196,7 @@ export function layerOpacities(zoom, baseOpacity = 1) {
  * (a visible gap in the band). One source of truth for both.
  *
  * @param {Number} zoom current Leaflet zoom
- * @returns {{mosaic: Boolean, site: Boolean}}
+ * @returns {{mosaic: Boolean, site: Boolean}} whether to mount each layer
  */
 export function layerVisibility(zoom) {
   if (!Number.isFinite(zoom)) return { mosaic: true, site: false };
@@ -226,7 +226,7 @@ export const FRAME_STALE_MS = 12 * 60 * 1000;
  *
  * @param {Number|null} epoch frame timestamp in epoch ms
  * @param {Number} [now] epoch ms
- * @returns {{ageMs: Number|null, ageMinutes: Number|null, level: "fresh"|"aging"|"stale"|"unknown"}}
+ * @returns {{ageMs: Number|null, ageMinutes: Number|null, level: "fresh"|"aging"|"stale"|"unknown"}} the frame's age and its display tier
  */
 export function frameAge(epoch, now = Date.now()) {
   if (!Number.isFinite(epoch)) {

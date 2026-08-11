@@ -61,11 +61,13 @@ const COPY_END_RE = /^\/\/ -{4,} end of verbatim copy -{4,}\s*$/m;
 // not be discovered as standalone declarations.
 const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|const\s+(\w+)\s*=)/gm;
 
-// Inventory size as of 2026-06 (12 + 8 + 6 + 1 + 9 + 4). Guards against the
-// discovery silently finding nothing (which would fake-pass the suite).
+// Inventory size as of 2026-08 (12 + 9 + 8 + 6 + 1 + 9 + 4). Guards against
+// the discovery silently finding nothing (which would fake-pass the suite).
 // If a copied declaration is legitimately removed from a test file,
 // lower this consciously.
-const EXPECTED_CHECK_COUNT = 40;
+// 2026-08: +9 for test/iemRadarLayers.test.js (the IEM two-layer radar
+// zoom band and frame-age classifier).
+const EXPECTED_CHECK_COUNT = 49;
 
 /**
  * The six copy-carrying test files and how to find their copies.

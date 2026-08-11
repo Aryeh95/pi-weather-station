@@ -46,7 +46,8 @@ Animation via fixed 5-minute offsets in the layer segment: `900913-m05m`,
 `-m10m` … `-m50m`, with plain `900913` = current. No frame discovery needed —
 generated on a schedule.
 
-Set roughly `maxZoom: 7`.
+Zoom band as built: mosaic alone at **z ≤ 7**, blended at **z = 8**, gone by
+**z ≥ 9**. See the crossfade note under Layer 2.
 
 ### Layer 2 — single-site super-res (high zoom)
 
@@ -61,34 +62,86 @@ https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::XXX-N0B-0/{z}/{x}/{
   `radarStation` field in `https://api.weather.gov/points/{lat},{lon}` rather
   than hardcoding.
 - Trailing `-0` = latest; substitute `YYYYMMDDHHMM` (UTC) for a specific frame.
-- Set roughly `minZoom: 8`. Tune the boundary; consider keeping both layers
-  mounted across a zoom or two and crossfading opacity, since a hard cutover
-  looks abrupt.
+  **Always use a real timestamp**, never `-0`: the sentinel renders fine but
+  gives no way to display frame age, which is half the point of this work.
+- Crossfade band as built: single-site appears at **z ≥ 8**, alone from
+  **z ≥ 9**. The band **must be at least two zoom levels wide**. Leaflet's
+  default `zoomSnap` is 1, so the map only sits on integer zooms — a one-level
+  band (mosaic `< 8`, site `> 7`) is satisfied by *no* integer zoom and
+  silently degrades into the hard cutover it was meant to avoid. Locked by a
+  test in `test/iemRadarLayers.test.js`.
 - Coverage is 230 km from the site and fades at the edges — fine for a fixed
   kiosk, which is the use case.
 
-### Frame timestamp discovery (the one real problem)
+### Frame timestamp discovery — SOLVED (verified 2026-08-11)
 
 Single-site frames are **not** on a predictable grid — volume scans complete
-every 4–6 min depending on the VCP in use, which changes with weather. Cannot
-compute client-side.
+every 4–6 min depending on the VCP in use, which changes with weather (3–4 min
+gaps measured live during active weather). Cannot compute client-side. A
+fabricated timestamp returns **503, not a blank tile**, so guessing is not an
+option.
 
-IEM RIDGE exposes browser-navigable per-site folders of recent imagery, each
-image with a world file and a JSON metadata file. Poll that listing, take the
-last N timestamps, build `ridge::XXX-N0B-<timestamp>` URLs.
+The folder-scraping approach guessed at above turned out to be unnecessary.
+IEM exposes a proper JSON API — all three operations verified live:
 
-**Verify the exact folder path against IEM's RIDGE docs before writing the
-fetcher** — this was not confirmed. Everything else above is a URL swap.
+```
+/json/radar.py?operation=available&lat=&lon=   → radars near a point, with type
+/json/radar.py?operation=products&radar=DIX    → products available at a site
+/json/radar.py?operation=list&radar=&product=&start=&end=
+    → {"scans":[{"ts":"2026-08-11T21:51Z"}, …]}
+```
+
+- `operation=list` is the frame poller. `2026-08-11T21:51Z` → `202608112151`
+  for the tile segment (strip separators; do NOT reformat via a local-time
+  `Date`).
+- `operation=products` confirms **N0B is present** ("Base Reflectivity (Super
+  Res)"), alongside N0S.
+- `operation=available` returns NEXRAD / TWDR / COMPOSITE entries — filter to
+  `type === "NEXRAD"`; it is the fallback when NWS is unreachable.
+- `api.weather.gov/points/` returns a **4-character** id (`KDIX`); IEM wants 3
+  (`DIX`). Strip the leading region letter — correct for `PAHG`→`AHG`,
+  `TJUA`→`JUA` too.
+
+Implemented in `server/iemRadarCtrl.js` → `/api/radar/site`, `/api/radar/frames`
+(see `docs/api.md`).
 
 ### Server proxy
 
-Shrinks to ~two passthrough routes plus the frame-list poller.
+Two JSON routes plus the frame-list poller. **Tiles are not proxied** — they are
+keyless and public, fetched direct by Leaflet exactly as the RainViewer and ECCC
+layers already were. (CORS on IEM and NWS is `*`, so the browser could call the
+JSON directly too; it goes through the server anyway for the shared 45 s cache,
+rate limiting, and health-panel integration.)
 
-## Tile rendering note
+## Tile rendering note — MEASURED (2026-08-11)
 
-The existing `tileSize: 512` / `zoomOffset: -1` / `maxNativeZoom: 8` config was
-tuned for RainViewer (came from elewin PR #76/#77). IEM's native zoom ceiling
-differs — **re-tune these**, don't carry them over blindly.
+The old `tileSize: 512` / `zoomOffset: -1` / `maxNativeZoom: 8` config was tuned
+for RainViewer (came from elewin PR #76/#77). Re-tuned rather than carried over,
+against actual measurements:
+
+- IEM's `tile.py` is an **on-demand renderer, not a fixed pyramid**. It returns
+  **256 × 256** at every zoom tested (6 → 15), rendering to whatever zoom is
+  asked for. So `tileSize: 512` / `zoomOffset: -1` must be **absent** — carrying
+  them over puts every tile at the wrong scale and offset.
+- There is **no hard zoom cliff**. A deep request returns a real (oversampled)
+  render, not a 404. (A 334-byte PNG means "no echo in this tile", *not* a
+  ceiling — checking only one tile is misleading, since a neighbouring tile at
+  the same zoom returns full data.)
+- `maxNativeZoom` is therefore a **data-resolution choice**, not a server limit:
+  mosaic 8 (N0Q is a ~1 km grid ≈ 469 m/px at z8, already ~2× oversampled),
+  single-site 12 (N0B 0.25 km gates ≈ 29 m/px at z12).
+
+## Frame age display
+
+Built as a chip on the map (`RadarFrameAge`). Thresholds encode NEXRAD's
+irreducible latency floor — a volume scan needs 4–6 min to complete before any
+product exists, so fresh data must not be flagged:
+
+- **fresh** < 6 min · **aging** 6–12 min · **stale** ≥ 12 min
+- The minute count is always spelled out, so the state never depends on colour
+  alone (matters for the nightRed palette, where hue distinctions collapse).
+- A failing frame-list refresh is flagged rather than left frozen — the last
+  good frames stay on screen marked stale.
 
 ## Deferred / stretch
 
@@ -139,7 +192,21 @@ No good free option.
 
 ## Suggested sequence
 
-1. Two tile layers + frame age display + rip out tomorrow.io/RainViewer/AI summary
+1. **Two tile layers + frame age display — DONE** (2026-08-11). Added as radar
+   source `"iem"`, now the default; RainViewer and ECCC still selectable. Full
+   suite passes (618/620 — the 2 failures are pre-existing Windows POSIX-mode
+   tests, they pass on Linux), client builds clean.
+1b. **Rip out tomorrow.io / RainViewer / AI summary — NOT STARTED.** Deferred
+   deliberately so the layers could be verified before a large deletion.
 2. STI storm tracks
 3. Lightning
 4. Level II, only if warranted
+
+## Environment notes
+
+- The repo is now a **git repository** (`git init` 2026-08-11). It was not one
+  before; the first commit is the untouched upstream state.
+- On the **Windows** editing box: `npm test`'s glob (`'test/**/*.test.js'`) does
+  not expand under PowerShell and silently runs **zero** tests. Pass the files
+  explicitly there. Two `settingsCtrl` tests also fail on Windows because NTFS
+  has no POSIX `0600` — both pass on the Ubuntu target.

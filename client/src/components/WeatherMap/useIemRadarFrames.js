@@ -23,11 +23,11 @@ const COORD_EPSILON = 0.05;
 /**
  * Poll the server for the current single-site radar frame list.
  *
- * @param {Object} params
+ * @param {object} params
  * @param {Number|null} params.latitude
  * @param {Number|null} params.longitude
  * @param {Boolean} params.enabled false pauses polling entirely (layer hidden / other source selected)
- * @returns {{site: String|null, frames: Array, stale: Boolean, loading: Boolean, available: Boolean}}
+ * @returns {{site: String|null, frames: Array, stale: Boolean, loading: Boolean, available: Boolean}} the resolved site and its recent frames
  */
 export default function useIemRadarFrames({ latitude, longitude, enabled }) {
   const [state, setState] = useState({

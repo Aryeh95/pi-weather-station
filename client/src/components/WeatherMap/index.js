@@ -1057,7 +1057,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // timestamps are real scan times; the mosaic's are schedule-derived.
   useEffect(() => {
     if (!iemActive) return;
-    const newest = (iemSiteFrames.length ? iemSiteFrames : iemMosaicFrames).slice(-1)[0];
+    const [newest] = (iemSiteFrames.length ? iemSiteFrames : iemMosaicFrames).slice(-1);
     setRadarFrameTs(newest ? newest.epoch : null);
   }, [iemActive, iemSiteFrames, iemMosaicFrames, setRadarFrameTs]);
 
