@@ -9,7 +9,7 @@ import styles from "./styles.css";
  *
  * The design intent is a single glance-readable signal: an actively
  * electrified storm is a dense bright cluster of bolts; a decaying one
- * visibly fades out over the 15-minute window. Recency is encoded twice
+ * visibly fades out over the 5-minute window. Recency is encoded twice
  * (colour steps down AND opacity steps down) so the fade survives both
  * palettes and colour-vision differences.
  *
@@ -38,13 +38,13 @@ const MAX_RENDERED = 800;
 // Classic bolt silhouette in a 12 × 16 box, anchored at its centre.
 const BOLT_PATH = "M7.5 0 L1 9.5 H5 L3.5 16 L11 6 H6.5 L9.5 0 Z";
 
-// Age tiers, seconds → visual. Bright white-hot for the freshest two
-// minutes, then amber fading out to the window edge.
+// Age tiers, seconds → visual, spanning the 5-minute window. Bright
+// white-hot for the freshest minute, then amber fading out to the edge.
 const TIERS = [
-  { maxAge: 120, opacity: 1.0, size: 15, fresh: true },
-  { maxAge: 300, opacity: 0.7, size: 12, fresh: false },
-  { maxAge: 600, opacity: 0.4, size: 11, fresh: false },
-  { maxAge: Infinity, opacity: 0.2, size: 10, fresh: false },
+  { maxAge: 60, opacity: 1.0, size: 15, fresh: true },
+  { maxAge: 150, opacity: 0.7, size: 12, fresh: false },
+  { maxAge: 240, opacity: 0.4, size: 11, fresh: false },
+  { maxAge: Infinity, opacity: 0.25, size: 10, fresh: false },
 ];
 
 /**
@@ -97,7 +97,7 @@ const LightningOverlay = ({ flashes, fetchedAt, dark = false, nightRed = false }
     const elapsed = fetchedAt ? Math.round((now - fetchedAt) / 1000) : 0;
     return (flashes || [])
       .map(([lat, lon, age]) => ({ lat, lon, ageSec: age + elapsed }))
-      .filter((f) => Number.isFinite(f.lat) && Number.isFinite(f.lon) && f.ageSec < 15 * 60)
+      .filter((f) => Number.isFinite(f.lat) && Number.isFinite(f.lon) && f.ageSec < 5 * 60)
       .sort((a, b) => a.ageSec - b.ageSec)
       .slice(0, MAX_RENDERED)
       .map((f) => ({ ...f, tier: TIERS.findIndex((t) => f.ageSec < t.maxAge) }));

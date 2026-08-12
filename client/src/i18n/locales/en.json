@@ -387,8 +387,8 @@
     "legendStorm": "T-storm",
     "legendFlood": "Flood",
     "legendLightning": "Lightning",
-    "lightningCount_one": "{{count}} flash · 15 min",
-    "lightningCount_other": "{{count}} flashes · 15 min"
+    "lightningCount_one": "{{count}} flash · 5 min",
+    "lightningCount_other": "{{count}} flashes · 5 min"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",

@@ -387,8 +387,8 @@
     "legendStorm": "Orage",
     "legendFlood": "Inondation",
     "legendLightning": "Foudre",
-    "lightningCount_one": "{{count}} éclair · 15 min",
-    "lightningCount_other": "{{count}} éclairs · 15 min"
+    "lightningCount_one": "{{count}} éclair · 5 min",
+    "lightningCount_other": "{{count}} éclairs · 5 min"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",

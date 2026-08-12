@@ -19,7 +19,7 @@
 // electrified" indicator, not a strike locator, and the client renders
 // it accordingly.
 //
-// WINDOW ASSEMBLY: a rolling window (default 15 min ≈ 45 files) is kept
+// WINDOW ASSEMBLY: a rolling window (default 5 min ≈ 15 files) is kept
 // as a per-file cache keyed by object key, so each poll only fetches the
 // 1-3 files that appeared since the last one. The first request after a
 // cold start pulls the whole window (~10-14 MB, fetched 6 at a time) —
@@ -36,9 +36,9 @@ const BUCKET_BASE = "https://noaa-goes19.s3.amazonaws.com";
 const PREFIX = "GLM-L2-LCFA";
 const API_TIMEOUT_MS = 15_000;
 
-const WINDOW_MINUTES = 15;
-// Per-file flash cache: 45 files cover the window; 96 leaves headroom
-// for clock skew and a window that straddles a list refresh.
+const WINDOW_MINUTES = 5;
+// Per-file flash cache: ~15 files cover the window; 96 leaves generous
+// headroom for clock skew and a window that straddles a list refresh.
 const fileCache = new BoundedMap(96);
 // Assembled-response cache — one 20 s product cadence means anything
 // fresher than 20 s is identical anyway.
@@ -233,8 +233,8 @@ async function assembleWindow(nowMs) {
 /**
  * GET /api/lightning?lat&lon&radiusKm=300
  *
- * Flash positions from the last 15 minutes within the radius, each as
- * [lat, lon, ageSeconds]. The client fades markers by age.
+ * Flash positions from the last WINDOW_MINUTES within the radius, each
+ * as [lat, lon, ageSeconds]. The client fades markers by age.
  *
  * @param {Object} req
  * @param {Object} res

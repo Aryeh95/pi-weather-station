@@ -265,7 +265,8 @@ line — one 20-second file.
   One ~320 KB file per 20 s (~103/hour), listable with the same
   hour-prefixed `?list-type=2` pattern the L3 controllers use. Keyless.
 - Shape of the feature: server polls ~1/min, fetches the ~3 new files,
-  keeps a rolling 10-15 min window of flash points, serves them like
+  keeps a rolling window of flash points (built at 15 min, tightened to
+  5 min by user preference 2026-08-12), serves them like
   storm tracks; client renders age-faded markers + a count chip, dock
   toggle (bolt icon), off by default. In-cloud detection means storms
   show electrification minutes before the first CG strike — better for
@@ -331,10 +332,10 @@ line — one 20-second file.
    the decode path testable offline; the scaling contract (dBZ = min +
    level × inc) is asserted against the parser's own table.
 4. **Lightning — DONE** (2026-08-12). `server/glmLightningCtrl.js` →
-   `/api/lightning?lat&lon&radiusKm` (rolling 15-min window, per-file
+   `/api/lightning?lat&lon&radiusKm` (rolling 5-min window, per-file
    cache, single-flight assembly, ~2 s cold start measured) +
-   `LightningOverlay` (age-faded dots: white-hot < 2 min, amber fading to
-   the window edge, capped at the 800 newest) + legend count section +
+   `LightningOverlay` (age-faded dots: white-hot < 2 min, amber fading to the
+   5-min window edge, capped at the 800 newest) + legend count section +
    dock toggle (bolt icon, off by default). GLM fixture committed
    (test/fixtures/OR_GLM-L2-LCFA_*) so the h5wasm decode stays testable
    offline. Verified live: 1,728 flashes within 300 km of the Kentucky

@@ -387,8 +387,8 @@
     "legendStorm": "Tormenta",
     "legendFlood": "Inundación",
     "legendLightning": "Rayos",
-    "lightningCount_one": "{{count}} destello · 15 min",
-    "lightningCount_other": "{{count}} destellos · 15 min"
+    "lightningCount_one": "{{count}} destello · 5 min",
+    "lightningCount_other": "{{count}} destellos · 5 min"
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",

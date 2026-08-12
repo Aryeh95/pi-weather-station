@@ -320,7 +320,8 @@ factor, not the bin size.
   client falls back to the IEM tiles in both soft cases.
 
 ### `GET /api/lightning`
-GOES GLM total-lightning flash positions for the map overlay. In-cloud
+GOES GLM total-lightning flash positions for the map overlay (rolling
+5-minute window). In-cloud
 flashes included — storms show electrification minutes before the first
 cloud-to-ground strike.
 
@@ -328,14 +329,14 @@ cloud-to-ground strike.
 - **Query params:** `lat`, `lon` (required); `radiusKm` (default 300, max 800)
 - **Source:** `noaa-goes19` bucket (GOES-East), one ~320 KB HDF5 file per
   20 s, decoded in-process via `h5wasm` — no Python sidecar. A rolling
-  15-minute per-file cache means each poll fetches only the new files;
-  the first request after a cold start pulls the window (~2 s measured).
+  per-file cache means each poll fetches only the new files; the first
+  request after a cold start pulls the window (a second or two).
 - **Cached:** 20 s per (lat, lon, radius)
 
 ```json
 {
   "available": true,
-  "windowMinutes": 15,
+  "windowMinutes": 5,
   "count": 1679,
   "flashes": [[35.925, -84.239, 897]],
   "generatedAt": "2026-08-12T01:41:00.000Z"

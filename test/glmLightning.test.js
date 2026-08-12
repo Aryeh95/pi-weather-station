@@ -89,5 +89,5 @@ test("filterFlashes: zero radius keeps nothing, wide radius keeps all", () => {
 });
 
 test("window constant matches the documented design", () => {
-  assert.equal(WINDOW_MINUTES, 15);
+  assert.equal(WINDOW_MINUTES, 5);
 });
