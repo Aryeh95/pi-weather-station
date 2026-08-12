@@ -66,6 +66,7 @@ function registerKnownServices() {
     "ipapi.co",
     "sunrise-sunset.org",
     "IEM (radar)",
+    "GOES GLM (lightning)",
     "NWS (severe weather alerts)",
     "Environment Canada (severe weather alerts)",
   ].forEach(registerService);
@@ -731,6 +732,13 @@ app.get("/api/storm-tracks",        apiLimiter, getStormTracks);
 // volume scan, cached 60 s; the client polls once a minute.
 const { getRadarRadial } = require("./radarRadialCtrl");
 app.get("/api/radar/radial",        apiLimiter, getRadarRadial);
+
+// GOES GLM lightning — total-lightning flash positions (in-cloud included,
+// which shows electrification minutes before the first CG strike) from the
+// public noaa-goes19 bucket, decoded in-process via h5wasm. Radius-filtered
+// server-side so the JSON stays small.
+const { getLightning } = require("./glmLightningCtrl");
+app.get("/api/lightning",           apiLimiter, getLightning);
 
 // The radar risk-level sampler (/api/radar-risk) was removed in the radar
 // rework. It sampled RainViewer tiles pixel-by-pixel to colour the dashed

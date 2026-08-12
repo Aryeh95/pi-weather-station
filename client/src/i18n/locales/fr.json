@@ -385,7 +385,10 @@
     "legendPrecip": "Précipitations",
     "legendTornado": "Tornade",
     "legendStorm": "Orage",
-    "legendFlood": "Inondation"
+    "legendFlood": "Inondation",
+    "legendLightning": "Foudre",
+    "lightningCount_one": "{{count}} éclair · 15 min",
+    "lightningCount_other": "{{count}} éclairs · 15 min"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",
@@ -430,7 +433,9 @@
     "openPlaces": "Ouvrir les lieux",
     "closePlaces": "Fermer les lieux",
     "showStormTracks": "Afficher les trajectoires d'orage",
-    "hideStormTracks": "Masquer les trajectoires d'orage"
+    "hideStormTracks": "Masquer les trajectoires d'orage",
+    "showLightning": "Afficher la foudre",
+    "hideLightning": "Masquer la foudre"
   },
   "mobile": {
     "settingsHint": "Pour les réglages avancés, ouvre l'app depuis le Pi en local."
@@ -467,7 +472,9 @@
     "updateRemoteNotice": "Mise à jour disponible — avisez l'admin du kiosque",
     "favoriteDefaultSet": "Emplacement par défaut mis à jour",
     "stormTracksOn": "Trajectoires d'orage activées",
-    "stormTracksOff": "Trajectoires d'orage désactivées"
+    "stormTracksOff": "Trajectoires d'orage désactivées",
+    "lightningOn": "Foudre activée",
+    "lightningOff": "Foudre désactivée"
   },
   "health": {
     "title": "État des services",

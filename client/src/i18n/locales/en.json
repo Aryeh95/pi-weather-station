@@ -385,7 +385,10 @@
     "legendPrecip": "Precipitation",
     "legendTornado": "Tornado",
     "legendStorm": "T-storm",
-    "legendFlood": "Flood"
+    "legendFlood": "Flood",
+    "legendLightning": "Lightning",
+    "lightningCount_one": "{{count}} flash · 15 min",
+    "lightningCount_other": "{{count}} flashes · 15 min"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",
@@ -430,7 +433,9 @@
     "openPlaces": "Open places",
     "closePlaces": "Close places",
     "showStormTracks": "Show storm tracks",
-    "hideStormTracks": "Hide storm tracks"
+    "hideStormTracks": "Hide storm tracks",
+    "showLightning": "Show lightning",
+    "hideLightning": "Hide lightning"
   },
   "mobile": {
     "settingsHint": "Open the app on the Pi locally for advanced settings."
@@ -467,7 +472,9 @@
     "updateRemoteNotice": "Update available — ask the kiosk admin",
     "favoriteDefaultSet": "Default location updated",
     "stormTracksOn": "Storm tracks on",
-    "stormTracksOff": "Storm tracks off"
+    "stormTracksOff": "Storm tracks off",
+    "lightningOn": "Lightning on",
+    "lightningOff": "Lightning off"
   },
   "health": {
     "title": "Service health",

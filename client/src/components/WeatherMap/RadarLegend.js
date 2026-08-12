@@ -56,7 +56,7 @@ const PrecipScale = () => (
  * @param {boolean} props.chipMode Render the compact chip instead of the card (short screens with the timeline open)
  * @returns {JSX.Element} Legend overlay
  */
-const RadarLegend = ({ dark, chipMode }) => {
+const RadarLegend = ({ dark, chipMode, lightningCount = null }) => {
   const { t } = useTranslation();
   const {
     showWeatherAlerts,
@@ -103,6 +103,14 @@ const RadarLegend = ({ dark, chipMode }) => {
           <span>{t("radar.extreme")}</span>
         </div>
       </div>
+      {lightningCount != null ? (
+        <div className={styles.legendSection}>
+          <div className={styles.legendTitle}>{t("radar.legendLightning")}</div>
+          <div className={styles.alertCount}>
+            {t("radar.lightningCount", { count: lightningCount })}
+          </div>
+        </div>
+      ) : null}
       {showWeatherAlerts ? (
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.nearbyTitle")}</div>
@@ -203,6 +211,7 @@ const RadarLegend = ({ dark, chipMode }) => {
 RadarLegend.propTypes = {
   dark: PropTypes.bool,
   chipMode: PropTypes.bool,
+  lightningCount: PropTypes.number,
 };
 
 export default RadarLegend;

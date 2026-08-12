@@ -24,6 +24,7 @@ import timePlotIcon from "@iconify/icons-carbon/time-plot";
 import legendIcon from "@iconify/icons-carbon/legend";
 import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
+import lightningIcon from "@iconify/icons-carbon/lightning";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -106,6 +107,7 @@ const ControlButtons = () => {
     toggleRadarTimelineVisible,
     toggleWeatherAlerts,
     toggleStormTracks,
+    toggleLightning,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -135,6 +137,7 @@ const ControlButtons = () => {
   const {
     showWeatherAlerts,
     showStormTracks,
+    showLightning,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -522,6 +525,31 @@ const ControlButtons = () => {
       <InlineIcon icon={stormTracksIcon} />
     </div>
   );
+  // GLM lightning toggle -- same overlay gating as its neighbours.
+  const btnLightning = (
+    <div
+      key="lightning"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleLightning();
+        notify(showLightning ? "toasts.lightningOff" : "toasts.lightningOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${showLightning && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showLightning ? "controls.hideLightning" : "controls.showLightning")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showLightning ? "controls.hideLightning" : "controls.showLightning")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={lightningIcon} />
+    </div>
+  );
   const btnContrast = (
     <div
       key="contrast"
@@ -706,6 +734,7 @@ const ControlButtons = () => {
         {btnLegend}
         {btnWeatherAlerts}
         {btnStormTracks}
+        {btnLightning}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

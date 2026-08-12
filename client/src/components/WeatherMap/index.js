@@ -67,6 +67,8 @@ import RadarTimeline from "./RadarTimeline";
 import RadarFrameAge from "./RadarFrameAge";
 import useIemRadarFrames from "./useIemRadarFrames";
 import useStormTracks from "./useStormTracks";
+import useLightning from "./useLightning";
+import LightningOverlay from "./LightningOverlay";
 import useRadarRadial from "./useRadarRadial";
 import StormTracks from "./StormTracks";
 import {
@@ -694,6 +696,7 @@ const WeatherMap = ({ zoom, dark }) => {
     // default until the Phase 3 dock toggle wires it up.
     showWeatherAlerts,
     showStormTracks,
+    showLightning,
     showAlertRing,
     nearbyAlerts,
     alertRadiusKm,
@@ -922,6 +925,13 @@ const WeatherMap = ({ zoom, dark }) => {
   const { cells: stormCells } = useStormTracks({
     site: iemSite,
     enabled: showStormTracks && Boolean(iemSite),
+  });
+
+  // GLM lightning, centred on the map position like the alert survey.
+  const lightning = useLightning({
+    latitude: mapGeo ? mapGeo.latitude : null,
+    longitude: mapGeo ? mapGeo.longitude : null,
+    enabled: showLightning && Boolean(mapGeo),
   });
 
   // Timeline-shaped view of the mosaic frames. RadarTimeline was built
@@ -1303,6 +1313,16 @@ const WeatherMap = ({ zoom, dark }) => {
         {showStormTracks ? (
           <StormTracks cells={stormCells} dark={dark} nightRed={nightRed} />
         ) : null}
+        {/* GLM lightning flashes -- age-faded dots, painted last so the
+            freshest strikes read over every other overlay. */}
+        {showLightning ? (
+          <LightningOverlay
+            flashes={lightning.flashes}
+            fetchedAt={lightning.fetchedAt}
+            dark={dark}
+            nightRed={nightRed}
+          />
+        ) : null}
         {/* Survey tap popup (Phase 3b): opens at the tapped point when it
             landed inside one or more alert polygons. Lightweight subject +
             a single "Re-center here" that re-activates the point-based path. */}
@@ -1367,7 +1387,7 @@ const WeatherMap = ({ zoom, dark }) => {
           in the 7" kiosk's vertical budget, but the legend stays one
           tap away instead of vanishing. */}
       {legendShown && !isPiMaxView(piLayoutState) && (
-        <RadarLegend dark={dark} chipMode={radarTimelineVisible && isSmallScreen} />
+        <RadarLegend dark={dark} chipMode={radarTimelineVisible && isSmallScreen} lightningCount={showLightning ? lightning.count : null} />
       )}
       {timelineShown && (
         <RadarTimeline

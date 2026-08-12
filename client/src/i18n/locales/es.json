@@ -385,7 +385,10 @@
     "legendPrecip": "Precipitación",
     "legendTornado": "Tornado",
     "legendStorm": "Tormenta",
-    "legendFlood": "Inundación"
+    "legendFlood": "Inundación",
+    "legendLightning": "Rayos",
+    "lightningCount_one": "{{count}} destello · 15 min",
+    "lightningCount_other": "{{count}} destellos · 15 min"
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",
@@ -430,7 +433,9 @@
     "openPlaces": "Abrir lugares",
     "closePlaces": "Cerrar lugares",
     "showStormTracks": "Mostrar trayectorias de tormenta",
-    "hideStormTracks": "Ocultar trayectorias de tormenta"
+    "hideStormTracks": "Ocultar trayectorias de tormenta",
+    "showLightning": "Mostrar rayos",
+    "hideLightning": "Ocultar rayos"
   },
   "mobile": {
     "settingsHint": "Para los ajustes avanzados, abre la app desde el Pi en local."
@@ -467,7 +472,9 @@
     "updateRemoteNotice": "Actualización disponible — avisa al admin del kiosco",
     "favoriteDefaultSet": "Ubicación por defecto actualizada",
     "stormTracksOn": "Trayectorias de tormenta activadas",
-    "stormTracksOff": "Trayectorias de tormenta desactivadas"
+    "stormTracksOff": "Trayectorias de tormenta desactivadas",
+    "lightningOn": "Rayos activados",
+    "lightningOff": "Rayos desactivados"
   },
   "health": {
     "title": "Estado de los servicios",

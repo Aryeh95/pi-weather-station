@@ -330,8 +330,15 @@ line — one 20-second file.
    over comparable echo. A committed fixture (test/fixtures/DIX_N0B_*) keeps
    the decode path testable offline; the scaling contract (dBZ = min +
    level × inc) is asserted against the parser's own table.
-4. Lightning — feasibility verified 2026-08-12 (pure JS via h5wasm, no
-   sidecar); see the Lightning section. Ready to build when wanted.
+4. **Lightning — DONE** (2026-08-12). `server/glmLightningCtrl.js` →
+   `/api/lightning?lat&lon&radiusKm` (rolling 15-min window, per-file
+   cache, single-flight assembly, ~2 s cold start measured) +
+   `LightningOverlay` (age-faded dots: white-hot < 2 min, amber fading to
+   the window edge, capped at the 800 newest) + legend count section +
+   dock toggle (bolt icon, off by default). GLM fixture committed
+   (test/fixtures/OR_GLM-L2-LCFA_*) so the h5wasm decode stays testable
+   offline. Verified live: 1,728 flashes within 300 km of the Kentucky
+   kiosk position during an active severe evening.
 5. Level II, only if latency/tilts/dual-pol still warrant it after (3)
 
 ## Environment notes

@@ -516,6 +516,21 @@ export function AppContextProvider({ children }) {
       return next;
     });
   }, []);
+
+  // GOES GLM lightning overlay. Per-device, OFF by default like the
+  // other radar overlays -- and the cold-start window fetch (~10 MB from
+  // the GOES bucket) only ever happens when someone actually wants it.
+  const [showLightning, setShowLightning] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("showLightning") === "true";
+  });
+  const toggleLightning = useCallback(() => {
+    setShowLightning((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("showLightning", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
   // Whether the dashed radius ring is drawn alongside the nearby-alerts
   // layer. Per-device display preference (localStorage), DEFAULT ON so the
   // existing "polygons + ring" look is preserved; a user who wants the bare
@@ -1959,6 +1974,7 @@ export function AppContextProvider({ children }) {
     toggleDirectionArrows,
     toggleWeatherAlerts,
     toggleStormTracks,
+    toggleLightning,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2034,6 +2050,7 @@ export function AppContextProvider({ children }) {
     toggleDirectionArrows,
     toggleWeatherAlerts,
     toggleStormTracks,
+    toggleLightning,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2273,6 +2290,7 @@ export function AppContextProvider({ children }) {
     nearbyResidualCount,
     showWeatherAlerts,
     showStormTracks,
+    showLightning,
     showAlertRing,
     alertRadiusKm,
   }), [
@@ -2284,6 +2302,7 @@ export function AppContextProvider({ children }) {
     nearbyResidualCount,
     showWeatherAlerts,
     showStormTracks,
+    showLightning,
     showAlertRing,
     alertRadiusKm,
   ]);
