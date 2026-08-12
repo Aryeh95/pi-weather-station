@@ -141,41 +141,68 @@ test("scaling contract: raw level decodes to the parser's own scaled value", () 
   assert.ok(checked >= 100, `only ${checked} data bins checked — fixture too empty?`);
 });
 
-test("packRadials: buckets by start angle, zero-fills gaps", () => {
+test("packRadials: coverage-based bucketing, off-boundary angles collide nowhere", () => {
+  // Radials starting OFF the 0.5-degree boundaries — the real-sweep case
+  // that broke the old floor() packing. Each bucket's centre must be
+  // claimed by the radial whose sweep covers it.
   const radials = [
-    { startAngle: 0.0, bins: [10, 11] },
-    { startAngle: 90.0, bins: [20] },          // short radial — rest stays 0
-    { startAngle: 359.5, bins: [30, 31] },
-    { startAngle: 360.0, bins: [40, 41] },     // 360 % 360 wraps onto bucket 0
+    { startAngle: 0.3, angleDelta: 0.5, bins: [10, 11] },   // covers centre 0.75 -> bucket 1
+    { startAngle: 0.8, angleDelta: 0.5, bins: [20, 21] },   // covers centre 1.25 -> bucket 2
+    { startAngle: 359.8, angleDelta: 0.5, bins: [30, 31] }, // wraps: covers centre 0.25 -> bucket 0
   ];
   const out = packRadials(radials, 2);
   assert.equal(out.length, NUM_BUCKETS * 2);
-  // 360.0 wraps to bucket 0 and overwrites the 0.0 radial — last wins.
-  assert.deepEqual([out[0], out[1]], [40, 41]);
-  const b90 = Math.floor(90 / 0.5) * 2;
-  assert.deepEqual([out[b90], out[b90 + 1]], [20, 0]);
-  const b3595 = Math.floor(359.5 / 0.5) * 2;
-  assert.deepEqual([out[b3595], out[b3595 + 1]], [30, 31]);
+  assert.deepEqual([out[0], out[1]], [30, 31]);   // wraparound radial owns bucket 0
+  assert.deepEqual([out[2], out[3]], [10, 11]);   // bucket 1
+  assert.deepEqual([out[4], out[5]], [20, 21]);   // bucket 2
 });
 
-test("packRadials: fixture packs with no data lost to bucket collisions", () => {
+test("packRadials: short radials zero-pad, uncovered buckets fill from neighbours", () => {
+  const radials = [
+    { startAngle: 90.0, angleDelta: 0.5, bins: [20] },      // covers bucket 180, 1 bin short of 2
+  ];
+  const out = packRadials(radials, 2);
+  const b = 180 * 2;
+  // Short radial: the reported bucket zero-pads (radar said nothing there).
+  assert.deepEqual([out[b], out[b + 1]], [20, 0]);
+  // Adjacent uncovered buckets are filled from it — the anti-spoke rule —
+  // out to the +/-4 search limit, and stay empty beyond it.
+  assert.deepEqual([out[b + 2], out[b + 3]], [20, 0]);       // 1 bucket away: filled
+  assert.deepEqual([out[b + 8], out[b + 9]], [20, 0]);       // 4 away: filled
+  assert.deepEqual([out[b + 10], out[b + 11]], [0, 0]);      // 5 away: beyond the limit
+});
+
+test("packRadials: fixture has no spokes and loses nothing", () => {
+  // The user-visible regression (kiosk report, 2026-08-11): the old
+  // floor() packing left ~0.27% of buckets empty between two data-bearing
+  // neighbours, each rendering as a dark ray across the storm. Coverage
+  // packing must leave ZERO such buckets, and — because nothing collides
+  // any more — must also carry every data bin through.
   const parsed = parseLevel3(fs.readFileSync(FIXTURE));
   const packet = parsed.radialPackets[0];
   const out = packRadials(packet.radialsRaw, packet.numberBins);
-  // Count data bins in and out. Real start angles don't land exactly on
-  // 0.5-degree boundaries, so a small number of radials floor into the
-  // same bucket and last-wins drops the earlier one — measured 0.27% on
-  // this fixture, invisible at gate scale. The guard is against a BROKEN
-  // bucket formula (mass collisions), not against that inherent sliver.
+  const nb = packet.numberBins;
+  const hasData = (b) => {
+    const base = b * nb;
+    for (let i = 0; i < nb; i += 1) if (out[base + i] > 1) return true;
+    return false;
+  };
+  const flags = Array.from({ length: NUM_BUCKETS }, (_, b) => hasData(b));
+  let spokes = 0;
+  for (let b = 0; b < NUM_BUCKETS; b += 1) {
+    const prev = flags[(b - 1 + NUM_BUCKETS) % NUM_BUCKETS];
+    const next = flags[(b + 1) % NUM_BUCKETS];
+    if (!flags[b] && prev && next) spokes += 1;
+  }
+  assert.equal(spokes, 0, `${spokes} empty bucket(s) between data — spokes on screen`);
+
   let inCount = 0;
   for (const r of packet.radialsRaw) {
-    for (const b of r.bins) if (b > 1) inCount += 1;
+    for (const v of r.bins) if (v > 1) inCount += 1;
   }
   let outCount = 0;
-  for (const b of out) if (b > 1) outCount += 1;
-  assert.ok(outCount <= inCount, "packing must never invent data");
-  assert.ok(outCount >= inCount * 0.99,
-    `lost ${inCount - outCount} of ${inCount} data bins (> 1%) — bucket formula broken?`);
+  for (const v of out) if (v > 1) outCount += 1;
+  assert.equal(outCount, inCount, "coverage packing must not lose or invent data bins");
 });
 
 test("colorForDbz: transparent below the ramp, capped above it", () => {

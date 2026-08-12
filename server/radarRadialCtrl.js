@@ -73,9 +73,25 @@ const NUM_BUCKETS = 360 / BUCKET_DEG;
 
 /**
  * Re-bucket radials into fixed azimuth slots and flatten to one byte
- * array. Radials arrive in scan order with arbitrary start angles; the
- * client wants O(1) lookup by azimuth. Slots that no radial covers stay
- * zero-filled (= no data), which is also the correct rendering for them.
+ * array.
+ *
+ * COVERAGE-BASED, not floor-based — and that distinction is visible on
+ * screen. Real start angles don't land on 0.5° boundaries, so flooring
+ * each radial into one slot lets two consecutive radials collide into
+ * the same bucket and leaves the neighbouring bucket EMPTY — which
+ * rendered as a transparent spoke from the radar out to the edge of
+ * coverage (user-reported from the kiosk, 2026-08-11: dark lines
+ * radiating across the storm). Instead, each radial is written to every
+ * bucket whose CENTER its sweep [startAngle, startAngle + angleDelta)
+ * actually covers; a continuous sweep then covers every bucket by
+ * construction. Overlaps resolve last-wins, same as before.
+ *
+ * Buckets no radial covered (a sweep gap wider than half a bucket) are
+ * filled from the nearest covered neighbour, up to ±4 buckets away.
+ * The honesty line: a bucket the radar REPORTED (written, all zero —
+ * genuinely no echo) is never touched; only buckets we had no radial
+ * for are interpolated, which is the same nearest-radial lookup any
+ * polar renderer does implicitly.
  *
  * @param {Array<Object>} radialsRaw parser's `radialsRaw` (raw byte bins)
  * @param {Number} numBins bins per radial
@@ -83,12 +99,39 @@ const NUM_BUCKETS = 360 / BUCKET_DEG;
  */
 function packRadials(radialsRaw, numBins) {
   const out = Buffer.alloc(NUM_BUCKETS * numBins);
+  const written = new Uint8Array(NUM_BUCKETS);
+
   for (const radial of radialsRaw || []) {
-    const bucket = Math.floor((((radial.startAngle % 360) + 360) % 360) / BUCKET_DEG);
-    const base = bucket * numBins;
+    const start = ((radial.startAngle % 360) + 360) % 360;
+    const delta = radial.angleDelta || BUCKET_DEG;
+    // Buckets whose centre (b + 0.5) × BUCKET_DEG lies in [start, start + delta).
+    const bStart = Math.ceil(start / BUCKET_DEG - 0.5);
+    const bEnd = Math.ceil((start + delta) / BUCKET_DEG - 0.5);
     const bins = radial.bins || [];
     const n = Math.min(bins.length, numBins);
-    for (let i = 0; i < n; i += 1) out[base + i] = bins[i];
+    for (let b = bStart; b < bEnd; b += 1) {
+      const bucket = ((b % NUM_BUCKETS) + NUM_BUCKETS) % NUM_BUCKETS;
+      const base = bucket * numBins;
+      // Reset then copy — last-wins must not blend two radials when the
+      // later one is shorter than the earlier.
+      out.fill(0, base, base + numBins);
+      for (let i = 0; i < n; i += 1) out[base + i] = bins[i];
+      written[bucket] = 1;
+    }
+  }
+
+  // Fill uncovered buckets from the nearest covered neighbour.
+  for (let bucket = 0; bucket < NUM_BUCKETS; bucket += 1) {
+    if (written[bucket]) continue;
+    for (let d = 1; d <= 4; d += 1) {
+      const lo = (bucket - d + NUM_BUCKETS) % NUM_BUCKETS;
+      const hi = (bucket + d) % NUM_BUCKETS;
+      const src = written[lo] ? lo : (written[hi] ? hi : -1);
+      if (src >= 0) {
+        out.copy(out, bucket * numBins, src * numBins, (src + 1) * numBins);
+        break;
+      }
+    }
   }
   return out;
 }
