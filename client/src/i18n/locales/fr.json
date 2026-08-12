@@ -382,7 +382,10 @@
     "legendOpen": "Ouvrir la légende",
     "legendClose": "Fermer",
     "legendRadii": "Rayons d'analyse",
-    "legendPrecip": "Précipitations"
+    "legendPrecip": "Précipitations",
+    "legendTornado": "Tornade",
+    "legendStorm": "Orage",
+    "legendFlood": "Inondation"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",

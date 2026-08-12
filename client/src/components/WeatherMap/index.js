@@ -86,6 +86,7 @@ import {
   hasVal,
   panWithRailOffset,
   buildAlertPolygonLayers,
+  warningPaintRank,
   buildRadiusRingOptions,
   pointInGeometry,
 } from "./geometry";
@@ -120,16 +121,12 @@ const RING_HIDE_ZOOM = 13;
  * body) but only by accident of timing. */
 const MAP_CYCLE_RATE = 1000; //ms
 
-// Paint order for the nearby-alerts survey polygons, keyed by display tier.
-// Leaflet paints later-inserted vector layers ON TOP, and the survey routinely
-// contains overlapping — or identical — NWS geometries (a Flood Warning nested
-// in a Flood Watch + Advisory; or two zone-based alerts sharing one county
-// polygon). The incoming list is sorted worst-first, so a naive map() inserts
-// the most severe FIRST (bottom) and the least severe LAST (top) — the yellow
-// Advisory then buries the red Warning, and a shared zone reads yellow even
-// though a Warning covers it. Rendering in ASCENDING severity puts the worst
-// tier last so it paints on top. See issue #252.
-const TIER_PAINT_ORDER = { yellow: 0, orange: 1, red: 2 };
+// Paint order for overlapping warning polygons comes from
+// `warningPaintRank` (geometry.js): Leaflet paints later-inserted vector
+// layers ON TOP, and a Tornado Warning nested inside a Severe
+// Thunderstorm Warning must paint last so it is never buried. (This
+// replaced the old tier-based ordering when the polygons switched to
+// RadarScope-style per-event colours.)
 
 /**
  * Build the custom DivIcon used for the user's location marker. v2.14.64
@@ -487,7 +484,7 @@ const AlertGeometryOverlay = ({ highlightedAlertId = null, govAlerts = NO_ALERTS
   // lifts the warm hues off the light basemap (2 px solid border + 15 %
   // fill on top, distinct from the dashed radar circles).
   const layers = useMemo(
-    () => (alert ? buildAlertPolygonLayers(alert.tier, nightRed, dark) : null),
+    () => (alert ? buildAlertPolygonLayers(alert.eventType, nightRed, dark) : null),
     [alert, nightRed, dark]
   );
   // fitBounds when the alert (or its geometry) changes. Generous
@@ -549,15 +546,14 @@ AlertGeometryOverlay.propTypes = {
  */
 const NearbyAlertsOverlay = ({ alerts = NO_ALERTS, nightRed, dark = false }) => {
   if (!Array.isArray(alerts) || alerts.length === 0) return null;
-  // Sort ascending by severity tier so the most severe polygon is inserted
-  // last and Leaflet paints it on top of any lower-tier polygon it overlaps
-  // (see TIER_PAINT_ORDER). Without this the worst-first input would bury the
-  // red Warning under a yellow Advisory drawn over it. A stable sort keeps the
-  // server's worst-first order within a single tier. Copy first — never mutate
-  // the prop.
+  // Sort ascending by warning paint rank so the most important polygon is
+  // inserted last and Leaflet paints it on top of anything it overlaps --
+  // a Tornado Warning inside a Severe Thunderstorm Warning paints over
+  // it, never under. Stable sort keeps the server's order within a rank.
+  // Copy first -- never mutate the prop.
   const painted = [...alerts]
     .filter((a) => a && a.geometry && a.id)
-    .sort((a, b) => (TIER_PAINT_ORDER[a.tier] || 0) - (TIER_PAINT_ORDER[b.tier] || 0));
+    .sort((a, b) => warningPaintRank(a.eventType) - warningPaintRank(b.eventType));
   return (
     <>
       {painted.map((a) => {
@@ -566,7 +562,7 @@ const NearbyAlertsOverlay = ({ alerts = NO_ALERTS, nightRed, dark = false }) => 
         // through and the solid border stays distinct from the dashed
         // radar/risk circles. Ascending-severity sort keeps the worst
         // alert's coloured stroke painting last.
-        const layers = buildAlertPolygonLayers(a.tier, nightRed, dark);
+        const layers = buildAlertPolygonLayers(a.eventType, nightRed, dark);
         return layers.map((ly, i) => (
           <GeoJSON key={`${a.id}-${i}`} data={a.geometry} style={() => ly} />
         ));

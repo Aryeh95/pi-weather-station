@@ -7,6 +7,7 @@ import {
   AlertsContext,
 } from "~/AppContext";
 import { priorityViewsEnabled } from "~/ui/piLayout";
+import { warningClass, warningPaintRank } from "~/components/WeatherMap/geometry";
 import PlacesPopover from "~/components/ambient/PlacesPopover";
 import styles from "./styles.css";
 import { InlineIcon } from "@iconify/react";
@@ -58,12 +59,18 @@ import renewIcon from "@iconify/icons-carbon/renew";
 // signal. See ControlButtons styles + state-rendering notes below.
 const MOON_COLOR = "#c44040";
 
-// Worst-tier colour for the nearby-alerts count badge. Dark ink on the
-// yellow tier (the gold is too light for white text); white otherwise.
-const NEARBY_TIER_BADGE = {
-  red: { bg: "#e60000", fg: "#fff" },
-  orange: { bg: "#ee7710", fg: "#fff" },
-  yellow: { bg: "#f0c000", fg: "#2a2008" },
+// Worst-warning colour for the nearby-alerts count badge, keyed by the
+// warning FAMILY (RadarScope convention) so the badge always agrees
+// with the polygon colours on the map — a Severe Thunderstorm Warning
+// is CAP-severe, and the old tier-keyed badge painted it red while its
+// polygon was yellow. Dark ink on the yellow family (too light for
+// white text); white otherwise.
+const NEARBY_WARNING_BADGE = {
+  tornado: { bg: "#e60000", fg: "#fff" },
+  thunderstorm: { bg: "#f0d000", fg: "#2a2008" },
+  flood: { bg: "#00a839", fg: "#fff" },
+  snowSquall: { bg: "#c71585", fg: "#fff" },
+  other: { bg: "#ee7710", fg: "#fff" },
 };
 
 // Toast auto-dismiss window. 2500 ms is long enough to read a short
@@ -159,10 +166,18 @@ const ControlButtons = () => {
   const radarOverlaysDisabled = mobileRadarMaximized === false;
 
   // Nearby-alerts count badge — number in the radius, coloured to the
-  // worst tier present. nearbyAlerts is server-sorted severity-desc, so
-  // entry 0 is the worst. Feeds the badge only; never the trigger path.
+  // highest-ranked warning family present (tornado > thunderstorm >
+  // flood > other), matching the map polygons. Feeds the badge only;
+  // never the trigger path.
   const nearbyAlertCount = Array.isArray(nearbyAlerts) ? nearbyAlerts.length : 0;
-  const nearbyWorst = NEARBY_TIER_BADGE[nearbyAlerts && nearbyAlerts[0] && nearbyAlerts[0].tier] || { bg: "#888888", fg: "#fff" };
+  const nearbyWorstClass = (Array.isArray(nearbyAlerts) ? nearbyAlerts : []).reduce(
+    (best, a) => {
+      const rank = warningPaintRank(a && a.eventType);
+      return rank > best.rank ? { rank, cls: warningClass(a && a.eventType) } : best;
+    },
+    { rank: -1, cls: "none" },
+  ).cls;
+  const nearbyWorst = NEARBY_WARNING_BADGE[nearbyWorstClass] || { bg: "#888888", fg: "#fff" };
 
   // Toast state — short transient label shown just above the dock to
   // confirm "what just happened" when the user taps a toggle. Each

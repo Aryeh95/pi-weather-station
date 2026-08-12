@@ -382,7 +382,10 @@
     "legendOpen": "Open the legend",
     "legendClose": "Close",
     "legendRadii": "Analysis radii",
-    "legendPrecip": "Precipitation"
+    "legendPrecip": "Precipitation",
+    "legendTornado": "Tornado",
+    "legendStorm": "T-storm",
+    "legendFlood": "Flood"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",

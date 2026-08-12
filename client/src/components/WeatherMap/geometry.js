@@ -455,31 +455,67 @@ export function panWithRailOffset(map, latLng, offset, opts = {}) {
 }
 
 /**
- * Tier → display colour for an alert polygon / chip. Matches the
- * SeverityChip + AlertBanner palette so the map overlay and the banner
- * agree. Falls back to a neutral grey for an unexpected tier value.
+ * Classify a warning's event name into its display family. The map is
+ * warnings-only, so RadarScope's convention (which is the NWS
+ * storm-warning standard) applies cleanly: colour by WHAT the warning
+ * is, not by CAP severity.
  *
- * In nightRed, app-painted alert chrome collapses to the red family
- * (Phase 3 design rule A1) — opacity steps carry the tier hierarchy.
- * The values mirror the `--rc-alert-*` nightRed tokens in styles.css
- * so the on-map polygons/markers and the legend key recolour together.
+ * Matching on the name keeps watches consistent too when one is shown
+ * via the panel's "view on map" path -- RadarScope draws a Tornado Watch
+ * in the red family and a Severe Thunderstorm Watch in yellow, which is
+ * exactly what family classification produces.
  *
- * @param {?String} tier "red" | "orange" | "yellow"
- * @param {Boolean} [nightRed] Night-vision palette active
- * @returns {String} CSS colour (hex or rgba)
+ * @param {?String} eventType NWS event name, e.g. "Tornado Warning"
+ * @returns {"tornado"|"thunderstorm"|"flood"|"snowSquall"|"other"} family
  */
-export function tierColour(tier, nightRed = false) {
-  if (nightRed) {
-    if (tier === "red") return "#e85858";
-    if (tier === "orange") return "rgba(232, 88, 88, 0.6)";
-    if (tier === "yellow") return "rgba(232, 88, 88, 0.32)";
-    return "rgba(232, 88, 88, 0.4)";
-  }
-  if (tier === "red") return "#e60000";
-  if (tier === "orange") return "#ee7710";
-  if (tier === "yellow") return "#f0c000";
-  return "#888888";
+export function warningClass(eventType) {
+  const s = String(eventType || "").toLowerCase();
+  if (s.includes("tornado")) return "tornado";
+  if (s.includes("thunderstorm")) return "thunderstorm";
+  if (s.includes("flood")) return "flood";
+  if (s.includes("snow squall")) return "snowSquall";
+  return "other";
 }
+
+/**
+ * Paint rank for overlapping warning polygons -- higher paints LATER,
+ * i.e. on top. A Tornado Warning nested inside a Severe Thunderstorm
+ * Warning (the classic supercell case) must never be buried under it.
+ *
+ * @param {?String} eventType NWS event name
+ * @returns {Number} ascending paint priority
+ */
+export function warningPaintRank(eventType) {
+  const rank = { other: 0, snowSquall: 1, flood: 2, thunderstorm: 3, tornado: 4 };
+  return rank[warningClass(eventType)];
+}
+
+/**
+ * Warning family -> stroke/fill colour, RadarScope / NWS convention:
+ * tornado red, severe thunderstorm yellow, flash flood green, snow
+ * squall violet (the NWS map colour -- RadarScope has no fixed one),
+ * anything else (zone-based winter / wind / marine warnings) orange.
+ *
+ * nightRed collapses to the red family like all map chrome, but keeps
+ * a prominence step: a tornado warning stays full red, everything else
+ * drops to the dimmer red so the worst thing on screen still leads.
+ *
+ * @param {?String} eventType NWS event name
+ * @param {Boolean} [nightRed] night-vision palette active
+ * @returns {String} CSS colour
+ */
+export function warningColour(eventType, nightRed = false) {
+  const cls = warningClass(eventType);
+  if (nightRed) {
+    return cls === "tornado" ? "#e85858" : "rgba(232, 88, 88, 0.55)";
+  }
+  if (cls === "tornado") return "#e60000";
+  if (cls === "thunderstorm") return "#f0d000";
+  if (cls === "flood") return "#00a839";
+  if (cls === "snowSquall") return "#c71585";
+  return "#ee7710";
+}
+
 
 /**
  * Tier → Leaflet path layers for an alert polygon. Returned innermost-first
@@ -497,13 +533,14 @@ export function tierColour(tier, nightRed = false) {
  * coloured layer only. The 15 % fill rides the coloured (top) layer; the
  * casing is stroke-only so the interior isn't double-filled.
  *
- * @param {?String} tier "red" | "orange" | "yellow"
- * @param {Boolean} [nightRed] night-vision palette active (tiers → red family)
+ * @param {?String} eventType NWS event name (colour follows the RadarScope
+ *   warning convention -- see `warningColour`)
+ * @param {Boolean} [nightRed] night-vision palette active (families collapse to red)
  * @param {Boolean} [dark] dark-mode flag
  * @returns {Array<object>} one (dark / nightRed) or two (light) path-option objects
  */
-export function buildAlertPolygonLayers(tier, nightRed = false, dark = false) {
-  const colour = tierColour(tier, nightRed);
+export function buildAlertPolygonLayers(eventType, nightRed = false, dark = false) {
+  const colour = warningColour(eventType, nightRed);
   const fill = {
     color: colour,
     weight: 2,

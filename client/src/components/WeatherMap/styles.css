@@ -35,6 +35,11 @@
   --rc-alert-warn: #e60000;
   --rc-alert-watch: #ee7710;
   --rc-alert-adv: #f0c000;
+  /* Warning-family colours (RadarScope convention) -- must match
+   * warningColour() in geometry.js, which paints the map polygons. */
+  --rc-warn-tor: #e60000;
+  --rc-warn-svr: #f0d000;
+  --rc-warn-ffw: #00a839;
   --rc-surface-2: #f3ecd9;
   --rc-ink-3: #a39a82;
   --map-circle: rgba(40, 30, 20, 0.4);
@@ -67,6 +72,9 @@
   --rc-alert-warn: #e85858;
   --rc-alert-watch: rgba(232, 88, 88, 0.6);
   --rc-alert-adv: rgba(232, 88, 88, 0.32);
+  --rc-warn-tor: #e85858;
+  --rc-warn-svr: rgba(232, 88, 88, 0.55);
+  --rc-warn-ffw: rgba(232, 88, 88, 0.55);
 }
 
 /* TYPOGRAPHY NOTE (post-Phase 3/5 field feedback): the user's S/M/L
@@ -221,6 +229,9 @@
 .alert-tier-swatch-warn { background: var(--rc-alert-warn); }
 .alert-tier-swatch-watch { background: var(--rc-alert-watch); }
 .alert-tier-swatch-adv { background: var(--rc-alert-adv); }
+.alert-tier-swatch-tor { background: var(--rc-warn-tor); }
+.alert-tier-swatch-svr { background: var(--rc-warn-svr); }
+.alert-tier-swatch-ffw { background: var(--rc-warn-ffw); }
 
 .alert-count {
   font-size: calc(10px * var(--c-font-scale, 1));

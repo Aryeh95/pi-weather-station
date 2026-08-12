@@ -11,12 +11,14 @@ import styles from "./styles.css";
 // fixed across all four palettes — see styles.css).
 const TILE_SEGMENTS = ["t1", "t2", "t3", "t4", "t5", "t6"];
 
-// Nearby-alert tier rows: swatch class (backed by --rc-alert-*, which
-// nightRed overrides to the red family) + SeverityChip i18n key.
-const ALERT_TIERS = [
-  { swatch: "alertTierSwatchWarn", key: "Warning" },
-  { swatch: "alertTierSwatchWatch", key: "Watch" },
-  { swatch: "alertTierSwatchAdv", key: "Advisory" },
+// Warning-family rows, RadarScope convention (the map overlay is
+// warnings-only and coloured by event type): tornado red, severe
+// thunderstorm yellow, flash flood green. Swatches are backed by the
+// --rc-warn-* vars, which nightRed overrides to the red family.
+const WARNING_KEY = [
+  { swatch: "alertTierSwatchTor", key: "legendTornado" },
+  { swatch: "alertTierSwatchSvr", key: "legendStorm" },
+  { swatch: "alertTierSwatchFfw", key: "legendFlood" },
 ];
 
 /**
@@ -105,10 +107,10 @@ const RadarLegend = ({ dark, chipMode }) => {
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.nearbyTitle")}</div>
           <div className={styles.alertTiers}>
-            {ALERT_TIERS.map(({ swatch, key }) => (
+            {WARNING_KEY.map(({ swatch, key }) => (
               <span key={key} className={styles.alertTier}>
                 <i className={`${styles.alertTierSwatch} ${styles[swatch]}`} />
-                {t(`alert.severity${key}`)}
+                {t(`radar.${key}`)}
               </span>
             ))}
           </div>
