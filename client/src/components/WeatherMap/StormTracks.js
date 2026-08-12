@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
 import PropTypes from "prop-types";
-import { Polyline, CircleMarker, Tooltip } from "react-leaflet";
+import { Polyline, CircleMarker, Marker, Tooltip } from "react-leaflet";
+import L from "leaflet";
+import styles from "./styles.css";
 
 /**
  * Storm-track overlay — SCIT cells drawn in the RadarScope convention:
@@ -21,6 +23,13 @@ import { Polyline, CircleMarker, Tooltip } from "react-leaflet";
  * track is a single point, so it draws as a hollow dot with no line —
  * the honest rendering, since SCIT genuinely doesn't know where it's
  * going yet.
+ *
+ * MESOCYCLONE / TVS markers (NMD product, same payload) render as the
+ * RadarScope-style cell attributes: a white disc with a ring ("⊙") for
+ * a mesocyclone, and a tornado-funnel glyph when the circulation's TVS
+ * flag is set. The dedicated TVS product stopped being archived in the
+ * bucket after 2021, so the flag comes from the NMD table — see
+ * server/stormTracksCtrl.js.
  */
 
 // Tick geometry in degrees of latitude: half-length of the regular
@@ -69,13 +78,41 @@ function tickSegment(at, travelBearing, halfDeg) {
 }
 
 /**
+ * Build the shared meso / TVS divIcons for a palette. Two instances
+ * total, reused by every marker.
+ *
+ * @param {Boolean} nightRed night-vision palette active
+ * @returns {{meso: import("leaflet").DivIcon, tvs: import("leaflet").DivIcon}} icon pair
+ */
+function buildAttrIcons(nightRed) {
+  const disc = nightRed ? "#2a0f0f" : "#ffffff";
+  const glyph = nightRed ? "#e85858" : "#1a1a1a";
+  const mesoHtml = `<svg width="18" height="18" viewBox="0 0 18 18">`
+    + `<circle cx="9" cy="9" r="8" fill="${disc}" stroke="${glyph}" stroke-width="1.6"/>`
+    + `<circle cx="9" cy="9" r="3" fill="none" stroke="${glyph}" stroke-width="1.6"/>`
+    + `</svg>`;
+  const tvsHtml = `<svg width="20" height="20" viewBox="0 0 20 20">`
+    + `<circle cx="10" cy="10" r="9" fill="${disc}" stroke="${glyph}" stroke-width="1.6"/>`
+    + `<path d="M5.5 5.5 H14.5 L11 11 L10.4 15 L9.6 11 Z" fill="${glyph}"/>`
+    + `</svg>`;
+  const mk = (html, size) => L.divIcon({
+    className: styles.flashIcon,
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+  return { meso: mk(mesoHtml, 18), tvs: mk(tvsHtml, 20) };
+}
+
+/**
  * @param {object} props
  * @param {Array<object>} props.cells storm cells from /api/storm-tracks
+ * @param {Array<object>} [props.mesos] mesocyclone features from the same payload
  * @param {Boolean} [props.dark] dark palette active
  * @param {Boolean} [props.nightRed] night-vision palette active
  * @returns {JSX.Element|null} overlay layers, or null when there are no cells
  */
-const StormTracks = ({ cells, dark = false, nightRed = false }) => {
+const StormTracks = ({ cells, mesos, dark = false, nightRed = false }) => {
   // RadarScope draws tracks in plain white on its dark basemap. White
   // needs a dark counterpart in light mode; nightRed collapses to the
   // red family like the rest of the map chrome.
@@ -99,7 +136,11 @@ const StormTracks = ({ cells, dark = false, nightRed = false }) => {
       return { cell: c, path, ticks };
     }), [cells]);
 
-  if (!layers.length) return null;
+  const attrIcons = useMemo(() => buildAttrIcons(nightRed), [nightRed]);
+  const mesoMarkers = (mesos || [])
+    .filter((m) => m && Number.isFinite(m.lat) && Number.isFinite(m.lon));
+
+  if (!layers.length && !mesoMarkers.length) return null;
 
   return (
     <>
@@ -131,6 +172,32 @@ const StormTracks = ({ cells, dark = false, nightRed = false }) => {
           </CircleMarker>
         </React.Fragment>
       ))}
+      {/* Mesocyclone / TVS markers sit on the marker pane, above the
+          track vectors — RadarScope stacks them the same way. Non-
+          interactive except for the tooltip carrier: like the location
+          pin, they must not eat a map tap, so the tooltip rides a
+          transparent CircleMarker underneath instead. */}
+      {mesoMarkers.map((m) => (
+        <React.Fragment key={`meso-${m.id}-${m.lat.toFixed(3)}`}>
+          <Marker
+            position={[m.lat, m.lon]}
+            icon={m.tvs ? attrIcons.tvs : attrIcons.meso}
+            interactive={false}
+            keyboard={false}
+          />
+          <CircleMarker
+            center={[m.lat, m.lon]}
+            radius={9}
+            pathOptions={{ opacity: 0, fillOpacity: 0 }}
+          >
+            <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+              {m.tvs ? "TVS" : "MESO"}
+              {m.stormId ? ` · ${m.stormId}` : ""}
+              {m.strengthRank ? ` · SR ${m.strengthRank}` : ""}
+            </Tooltip>
+          </CircleMarker>
+        </React.Fragment>
+      ))}
     </>
   );
 };
@@ -138,6 +205,8 @@ const StormTracks = ({ cells, dark = false, nightRed = false }) => {
 StormTracks.propTypes = {
   // eslint-disable-next-line react/forbid-prop-types -- payload-shaped, not statically typed
   cells: PropTypes.array,
+  // eslint-disable-next-line react/forbid-prop-types -- payload-shaped, not statically typed
+  mesos: PropTypes.array,
   dark: PropTypes.bool,
   nightRed: PropTypes.bool,
 };

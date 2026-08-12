@@ -22,6 +22,21 @@
 //     T3      48/110   308/ 22      51/111    54/112    56/114    59/116
 //     E4      33/ 61     NEW       NO DATA   NO DATA   NO DATA   NO DATA
 //
+// ── Mesocyclone / TVS markers (added 2026-08-12) ─────────────────────
+// The same endpoint also serves NMD (product 141, Mesocyclone Detection)
+// features. The dedicated TVS product (NTV, 61) STOPPED BEING ARCHIVED
+// in this bucket after 2021 — probed across sites, nothing newer exists —
+// but the NMD tabular carries a per-mesocyclone TVS column (Y/N), which
+// is how the tornado-vortex icon is driven instead. NMD rows look like:
+//
+//    CIRC  AZRAN   SR STM |-LOW LEVEL-|  |--DEPTH--|  |-MAX RV-| TVS  MOTION   MSI
+//     238  161/105  8  B1  35   44  <13   >20   78      17     35  N  331/ 21  3609
+//
+// Only the id, position, strength rank, parent storm id and TVS flag are
+// used; the shear diagnostics stay in the product. A freshness gate keeps
+// a radar that stopped producing NMD (clear air) from showing hours-old
+// circulations: features older than MESO_MAX_AGE_MS are dropped.
+//
 // ── The one trap worth stating loudly ────────────────────────────────
 // The MOVEMENT column is the direction the storm comes FROM, not the
 // direction it is heading. Verified against this very product on
@@ -179,6 +194,101 @@ function toGeoCell(row, radarLat, radarLon) {
   };
 }
 
+// Mesocyclones are volume-scan features; anything older than this is a
+// radar that has stopped producing NMD, not a current circulation.
+const MESO_MAX_AGE_MS = 20 * 60 * 1000;
+
+/**
+ * Epoch ms from a Level III bucket key (`SSS_PPP_YYYY_MM_DD_HH_MM_SS`).
+ *
+ * @param {String} key bucket object key
+ * @returns {Number|null} epoch ms, or null when the key doesn't match
+ */
+function l3KeyEpoch(key) {
+  const m = /_(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})$/.exec(key || "");
+  if (!m) return null;
+  const [, y, mo, d, hh, mm, ss] = m.map(Number);
+  return Date.UTC(y, mo - 1, d, hh, mm, ss);
+}
+
+/**
+ * Extract mesocyclone rows from the NMD tabular page.
+ *
+ * Same normalise-then-tokenise approach as the STI parser: collapse the
+ * spaces inside `deg/ nm` pairs, split on whitespace, and require the
+ * row shape rather than trusting column offsets. A data row starts with
+ * a numeric circulation id followed by an az/range pair; the TVS flag
+ * is the third token from the end ("… TVS MOTION MSI"), which survives
+ * the variable-width shear columns between.
+ *
+ * @param {Array<String>} lines page 0 of the NMD tabular block
+ * @returns {Array<Object>} [{id, position, strengthRank, stormId, tvs}]
+ */
+function parseMesoRows(lines) {
+  const rows = [];
+  for (const raw of lines || []) {
+    const line = String(raw || "").replace(/\s*\/\s*/g, "/").trim();
+    if (!line) continue;
+    const tok = line.split(/\s+/);
+    if (tok.length < 7) continue;
+    if (!/^\d{1,4}$/.test(tok[0])) continue;
+    const position = parsePair(tok[1]);
+    if (!position) continue;
+    // TVS flag: the only standalone single-letter Y/N token in a data
+    // row. Found by value, NOT by position from the end -- the MOTION
+    // column can be entirely empty (seen live: circulation 299 at UDX),
+    // which shifts every from-the-end index by one.
+    const yn = tok.slice(4).find((t) => t === "Y" || t === "N");
+    rows.push({
+      id: tok[0],
+      position,
+      // Strength rank can carry an L suffix (low-topped), e.g. "5L".
+      strengthRank: /^\d{1,2}L?$/.test(tok[2]) ? tok[2] : null,
+      stormId: /^[A-Z0-9]{2,3}$/.test(tok[3]) ? tok[3] : null,
+      tvs: yn === "Y",
+    });
+  }
+  return rows;
+}
+
+/**
+ * Fetch + parse the newest NMD product for a site into map-ready
+ * mesocyclone markers. Soft-fails to [] — a missing or stale NMD must
+ * never take the storm tracks down with it.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {Number} radarLat radar site latitude (from the STI product)
+ * @param {Number} radarLon radar site longitude
+ * @returns {Promise<Array<Object>>} mesocyclone features
+ */
+async function fetchMesos(site, radarLat, radarLon) {
+  try {
+    const key = await newestKey(site, "NMD");
+    if (!key) return [];
+    const epoch = l3KeyEpoch(key);
+    if (epoch == null || Date.now() - epoch > MESO_MAX_AGE_MS) return [];
+    const res = await axios.get(`${BUCKET_BASE}/${key}`, {
+      responseType: "arraybuffer",
+      timeout: API_TIMEOUT_MS,
+    });
+    increment("nexrad-l3", "nmd");
+    const parsed = parseLevel3(Buffer.from(res.data));
+    const page = (parsed.tabular && parsed.tabular.pages && parsed.tabular.pages[0]) || [];
+    return parseMesoRows(page).map((r) => {
+      const at = offsetLatLon(radarLat, radarLon, r.position.azimuth, r.position.rangeNm * NM_TO_KM);
+      return {
+        id: r.id,
+        stormId: r.stormId,
+        strengthRank: r.strengthRank,
+        tvs: r.tvs,
+        ...at,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * List the bucket and return the newest Level III key for a site+product.
  *
@@ -252,6 +362,10 @@ async function fetchTracks(site) {
   const page = (parsed.tabular && parsed.tabular.pages && parsed.tabular.pages[0]) || [];
   const cells = parseCellRows(page).map((r) => toGeoCell(r, radarLat, radarLon));
 
+  // Mesocyclone / TVS markers ride the same payload and toggle — they
+  // are storm attributes, not a separate layer.
+  const mesos = await fetchMesos(site, radarLat, radarLon);
+
   // Scan time: the product prints its volume-scan date as a Julian day
   // (days since 1970-01-01, 1-based) plus seconds past midnight UTC.
   let scanTime = null;
@@ -266,6 +380,7 @@ async function fetchTracks(site) {
     scanTime,
     radar: { lat: radarLat, lon: radarLon },
     cells,
+    mesos,
     generatedAt: new Date().toISOString(),
   };
   tracksCache.set(site, { value, expires: Date.now() + TRACKS_TTL_MS });
@@ -306,6 +421,8 @@ module.exports = {
   toGeoCell,
   offsetLatLon,
   parsePair,
+  parseMesoRows,
+  l3KeyEpoch,
   // Shared with radarRadialCtrl — same bucket, same key shape.
   newestKey,
   BUCKET_BASE,

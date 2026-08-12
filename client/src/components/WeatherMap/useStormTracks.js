@@ -19,10 +19,10 @@ const POLL_INTERVAL_MS = 60 * 1000;
  * @param {Object} params
  * @param {String|null} params.site 3-letter NEXRAD id, from the radar frame poller
  * @param {Boolean} params.enabled false pauses polling (toggle off / no site yet)
- * @returns {{cells: Array, scanTime: String|null, stale: Boolean}} current cells
+ * @returns {{cells: Array, mesos: Array, scanTime: String|null, stale: Boolean}} current cells + mesocyclone features
  */
 export default function useStormTracks({ site, enabled }) {
-  const [state, setState] = useState({ cells: [], scanTime: null, stale: false });
+  const [state, setState] = useState({ cells: [], mesos: [], scanTime: null, stale: false });
   const cancelledRef = useRef(false);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function useStormTracks({ site, enabled }) {
     if (!enabled || !site) {
       // Clear on disable so a re-enable never flashes the previous site's
       // cells before the first fetch lands.
-      setState({ cells: [], scanTime: null, stale: false });
+      setState({ cells: [], mesos: [], scanTime: null, stale: false });
       return () => { cancelledRef.current = true; };
     }
 
@@ -38,9 +38,10 @@ export default function useStormTracks({ site, enabled }) {
       axios.get("/api/storm-tracks", { params: { site } })
         .then((res) => {
           if (cancelledRef.current) return;
-          const { cells, scanTime } = res.data || {};
+          const { cells, mesos, scanTime } = res.data || {};
           setState({
             cells: Array.isArray(cells) ? cells : [],
+            mesos: Array.isArray(mesos) ? mesos : [],
             scanTime: scanTime || null,
             stale: false,
           });

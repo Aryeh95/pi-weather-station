@@ -18,12 +18,19 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 const {
   parseCellRows,
   toGeoCell,
   offsetLatLon,
   parsePair,
+  parseMesoRows,
+  l3KeyEpoch,
 } = require("../server/stormTracksCtrl");
+
+const NMD_FIXTURE = path.join(__dirname, "fixtures", "UDX_NMD_2026_08_12_02_05_20.bin");
 
 // Real page-0 rows captured from DIX_NST_2026_08_12_00_22_49 — the same
 // live file the feature was verified against. Header lines included so
@@ -150,4 +157,50 @@ test("offsetLatLon: cardinal sanity at radar scale", () => {
   const east = offsetLatLon(40, -75, 90, 100);
   assert.ok(Math.abs(east.lat - 40) < 0.05);
   assert.ok(east.lon > -75);
+});
+
+test("l3KeyEpoch parses bucket key times as UTC", () => {
+  assert.equal(
+    new Date(l3KeyEpoch("UDX_NMD_2026_08_12_02_05_20")).toISOString(),
+    "2026-08-12T02:05:20.000Z"
+  );
+  assert.equal(l3KeyEpoch("not-a-key"), null);
+});
+
+test("parseMesoRows: live NMD fixture yields both circulations", () => {
+  // The committed file is the UDX product captured 2026-08-12 02:05 UTC.
+  // Circulation 299's MOTION column is ENTIRELY EMPTY in this file --
+  // the case that breaks any position-from-the-end token indexing, and
+  // the reason the TVS flag is found by value instead.
+  const parse = require("nexrad-level-3-data");
+  const parsed = parse(fs.readFileSync(NMD_FIXTURE));
+  const rows = parseMesoRows(parsed.tabular.pages[0]);
+  assert.deepEqual(rows.map((r) => r.id), ["238", "299"]);
+  assert.deepEqual(rows.map((r) => r.stormId), ["B1", "B1"]);
+  assert.deepEqual(rows.map((r) => r.strengthRank), ["7", "6"]);
+  assert.deepEqual(rows.map((r) => r.tvs), [false, false]);
+});
+
+test("parseMesoRows: TVS flag survives a missing MOTION column", () => {
+  // Synthetic: a TVS=Y circulation whose MOTION column is empty, like
+  // circulation 299 in the fixture. From-the-end indexing would land on
+  // the max-RV number and silently report tvs=false.
+  const rows = parseMesoRows([
+    " CIRC  AZRAN   SR STM |-LOW LEVEL-|  |--DEPTH--|  |-MAX RV-| TVS  MOTION   MSI  ",
+    " 589  021/117  5L R4  26   40  <16   >28   66      21     57  Y           3436  ",
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].tvs, true);
+  assert.equal(rows[0].strengthRank, "5L");
+  assert.deepEqual(rows[0].position, { azimuth: 21, rangeNm: 117 });
+});
+
+test("parseMesoRows: header lines never parse as circulations", () => {
+  const rows = parseMesoRows([
+    "                        MESOCYCLONE DETECTION ALGORITHM                         ",
+    "     RADAR ID: 532     DATE: 08/12/2026   TIME: 02:05:20   Avg dir/spd: 311/ 20 ",
+    " CIRC  AZRAN   SR STM |-LOW LEVEL-|  |--DEPTH--|  |-MAX RV-| TVS  MOTION   MSI  ",
+    "  ID   deg/nm     ID  RV   DV  BASE  kft STMREL%  kft    kts     deg/kts        ",
+  ]);
+  assert.deepEqual(rows, []);
 });

@@ -530,8 +530,9 @@ export function warningColour(eventType, nightRed = false) {
  * glanceable edge. Dark mode already contrasts the same hues against the
  * near-black basemap, and nightRed deliberately keeps a single red family
  * (Phase 3 A1) that a grey casing would break — both render the single
- * coloured layer only. The 15 % fill rides the coloured (top) layer; the
- * casing is stroke-only so the interior isn't double-filled.
+ * coloured layer only. All layers are stroke-only: the interior is
+ * deliberately unshaded so the radar reads at full contrast inside a
+ * warning box.
  *
  * @param {?String} eventType NWS event name (colour follows the RadarScope
  *   warning convention -- see `warningColour`)
@@ -541,16 +542,19 @@ export function warningColour(eventType, nightRed = false) {
  */
 export function buildAlertPolygonLayers(eventType, nightRed = false, dark = false) {
   const colour = warningColour(eventType, nightRed);
-  const fill = {
+  const outline = {
     color: colour,
     weight: 2,
-    fillColor: colour,
-    fillOpacity: 0.15,
+    // Outline only, RadarScope-style (user request 2026-08-12): no
+    // interior shading, so reflectivity inside a warning box reads at
+    // full contrast. Tap detection is unaffected — the map click path
+    // does its own point-in-polygon, not a Leaflet fill hit-test.
+    fill: false,
     // Solid border — distinct from the dashed radar circles, so the user
     // reads "real alert boundary" vs "derived radar ring" at a glance.
     dashArray: null,
   };
-  if (nightRed || dark) return [fill];
+  if (nightRed || dark) return [outline];
   return [
     {
       color: RING_OUTLINE_COLOR,
@@ -559,7 +563,7 @@ export function buildAlertPolygonLayers(eventType, nightRed = false, dark = fals
       fill: false,
       dashArray: null,
     },
-    fill,
+    outline,
   ];
 }
 

@@ -290,6 +290,12 @@ current position, motion, and forecast positions 15/30/45/60 min out.
 }
 ```
 
+`mesos` (same payload, same toggle) carries NMD mesocyclone features:
+`{id, stormId, strengthRank, tvs, lat, lon}`. The `tvs` flag comes from
+the NMD table's TVS column — the dedicated NTV product stopped being
+archived in this bucket after 2021. A 20-minute freshness gate drops
+features from radars that have stopped producing NMD.
+
 `track` is the ready-to-draw polyline (current position + forecasts).
 **`movementFromDeg` is the direction the storm comes FROM** — the product's
 meteorological convention; never derive a heading from it (the tracks would

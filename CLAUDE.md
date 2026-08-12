@@ -192,6 +192,14 @@ What the build established — keep these if the feature is ever touched:
   Keys sort lexicographically = chronologically for this naming.
 - Known SCIT noise (drops cells, swaps IDs between adjacent cells, struggles
   with squall lines) is upstream behaviour. RadarScope shows the same product.
+- **Mesocyclone / TVS markers added 2026-08-12** from NMD (product 141), same
+  payload and toggle. Findings: the dedicated NTV product (61) **stopped being
+  archived in this bucket after 2021** (probed across sites) — the TVS flag
+  comes from the NMD table's per-circulation TVS column instead. The NMD
+  MOTION column can be entirely empty (seen live), so the row parser finds
+  the Y/N token by value, never by position from the end. Warning polygons
+  are outline-only (no interior shading) as of the same date, per user
+  request matching RadarScope.
 
 ### Raw radial rendering — FILED 2026-08-12 (the real RadarScope-parity fix)
 

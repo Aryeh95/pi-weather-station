@@ -922,7 +922,7 @@ const WeatherMap = ({ zoom, dark }) => {
 
   // Storm tracks reuse the NEXRAD site the frame poller already resolved,
   // so enabling the overlay costs no extra site lookup.
-  const { cells: stormCells } = useStormTracks({
+  const { cells: stormCells, mesos: stormMesos } = useStormTracks({
     site: iemSite,
     enabled: showStormTracks && Boolean(iemSite),
   });
@@ -1311,7 +1311,7 @@ const WeatherMap = ({ zoom, dark }) => {
             on top, and a filled warning polygon would otherwise bury the
             thin dashed track running through it. */}
         {showStormTracks ? (
-          <StormTracks cells={stormCells} dark={dark} nightRed={nightRed} />
+          <StormTracks cells={stormCells} mesos={stormMesos} dark={dark} nightRed={nightRed} />
         ) : null}
         {/* GLM lightning flashes -- age-faded dots, painted last so the
             freshest strikes read over every other overlay. */}
