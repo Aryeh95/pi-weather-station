@@ -113,29 +113,23 @@
   position: absolute;
   top: var(--c-edge-gap);
   left: calc(var(--c-edge-gap) + 70px);
-  /* The rail is `zoom: var(--c-font-scale)` so its visual width is
-   * rail-width × font-scale, not rail-width. The heroSlot needs to
-   * end before the rail's visual left edge — otherwise the date in
-   * the clock panel gets clipped by the rail at fontSize=L (320 px
-   * declared rail → 368 px visual at scale 1.15, while heroSlot.right
-   * stayed at 352 → 16 px overlap). Multiply the rail-width by the
-   * font-scale here so the gap holds at every preference. */
-  right: calc(var(--c-rail-width) * var(--c-font-scale, 1) + var(--c-edge-gap) * 2);
+  /* Shrink-wrapped to the RadarHeader inside it (2026-08-12). The slot
+   * used to span all the way to the rail — sized for the old HeroBand,
+   * which filled it. With the radar rework's compact place+clock header
+   * that left a huge invisible band which (a) looked like a giant panel
+   * whenever the header drew its surface, and (b) silently blocked map
+   * drags across the top of the screen, because the slot carries
+   * pointer-events: auto.
+   *
+   * max-width preserves the old right-edge constraint as a CEILING so
+   * a very long reverse-geocoded place name still cannot slide under
+   * the rail: rail visual width is rail-width × font-scale (the rail is
+   * zoomed by the font-size preference; see the note that used to live
+   * here about `zoom` not updating layout geometry). */
+  width: fit-content;
+  max-width: calc(100% - 70px - var(--c-rail-width) * var(--c-font-scale, 1) - var(--c-edge-gap) * 3);
   z-index: 10;
   pointer-events: auto;
-  transition: right 200ms ease-out;
-  /* No `zoom` here. Earlier Phase 7 polish applied
-   * `zoom: var(--c-font-scale, 1)` to scale the hero text at fontSize=L,
-   * but \`zoom\` visually expands the box without updating the layout
-   * engine's geometry — at scale 1.15 the slot rendered ~968 px wide
-   * while its declared width stayed 842, and the right rail (also
-   * at zoom 1.15 → 368 px visual width vs 320 declared) marched left,
-   * producing a ~150 px overlap that clipped the clock.
-   * The hero band is already large enough at native size; leaving it
-   * unscaled keeps the right edge anchored to its declared position
-   * and the rail stays cleanly to its right. The rail itself still
-   * honours the font-size preference (its contents reads denser/
-   * sparser by user choice). */
 }
 
 /* Right rail — overlays the map on the right edge. Internally scrolls
