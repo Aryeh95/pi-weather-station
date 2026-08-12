@@ -246,18 +246,36 @@ tutorials have the wrong name). Node decoder: `netbymatt/nexrad-level-2-data`
 (+ `nexrad-level-2-plot`). Only worth it if latency still annoys after the raw
 Level III renderer ships.
 
-### Lightning (do last — forces an architectural change)
+### Lightning — FEASIBLE IN PURE JS (verified 2026-08-12); GLM recommended
 
-No good free option.
+The old note below said GLM "likely needs a Python sidecar = second
+runtime". **That is stale — verified against a live file:** GLM L2 LCFA
+files are HDF5, and `h5wasm` (WebAssembly HDF5) decodes them in Node with
+no sidecar. Test run on `noaa-goes19` file created seconds earlier:
+`flash_lat` / `flash_lon` come out as plain Float32Array (not even
+packed — no scale/offset), plus `flash_energy`, `flash_quality_flag`
+(0 = good; 364/381 in the sample) and `product_time`. Flash positions
+cross-checked against that night's SVR-warned storms: 25 flashes in the
+warned South Carolina cell, 22 over Kentucky, 17 in the North Dakota
+line — one 20-second file.
 
-- **GOES GLM** — free on NOAA GOES buckets on AWS, ~20 s granularity, catches
-  in-cloud flashes. Downsides: netCDF decoding (awkward in Node, likely needs a
-  Python sidecar = second runtime), and it's flash-extent data, not tidy point
-  strikes. GOES-19 replaced GOES-16 as GOES-East in 2025 — older tutorials point
-  at the wrong bucket.
-- **Blitzortung.org** — volunteer TOA network, real-time feed, decent CG
-  accuracy. Non-commercial only; feed is unofficial/undocumented and can break
-  without notice. Acceptable for a personal display.
+- Bucket: `noaa-goes19` (GOES-19 = GOES-East since April 2025 — older
+  tutorials point at `noaa-goes16`). Keys:
+  `GLM-L2-LCFA/YYYY/DDD/HH/OR_GLM-L2-LCFA_G19_s…nc`, DDD = day-of-year.
+  One ~320 KB file per 20 s (~103/hour), listable with the same
+  hour-prefixed `?list-type=2` pattern the L3 controllers use. Keyless.
+- Shape of the feature: server polls ~1/min, fetches the ~3 new files,
+  keeps a rolling 10-15 min window of flash points, serves them like
+  storm tracks; client renders age-faded markers + a count chip, dock
+  toggle (bolt icon), off by default. In-cloud detection means storms
+  show electrification minutes before the first CG strike — better for
+  "is that incoming storm electrified" than a CG-only network.
+- GLM pixel ~8-14 km — fine for the purpose; not a strike locator.
+- Blitzortung was considered and rejected: more precise CG locations and
+  lower latency, but unofficial/undocumented and can break without
+  notice — it would be the only fragile dependency in an otherwise
+  all-official, keyless build, protecting a precision the display does
+  not need.
 
 ## Suggested sequence
 
@@ -312,7 +330,8 @@ No good free option.
    over comparable echo. A committed fixture (test/fixtures/DIX_N0B_*) keeps
    the decode path testable offline; the scaling contract (dBZ = min +
    level × inc) is asserted against the parser's own table.
-4. Lightning
+4. Lightning — feasibility verified 2026-08-12 (pure JS via h5wasm, no
+   sidecar); see the Lightning section. Ready to build when wanted.
 5. Level II, only if latency/tilts/dual-pol still warrant it after (3)
 
 ## Environment notes
