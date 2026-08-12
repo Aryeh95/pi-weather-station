@@ -518,7 +518,6 @@ const SectionConfig = ({ ctx, lang, remote }) => {
   const {
     mapApiKey, reverseGeoApiKey,
     customLat, customLon,
-    radarSource, saveRadarSource,
     brightnessPercent, brightnessAvailable, brightnessMinPercent, setBrightnessLive,
     displayScaleAvailable, displayScaleOverride, displayScaleAuto, displayScaleApplied,
     displayScaleChoices, saveDisplayScale, relaunchKiosk,
@@ -717,17 +716,6 @@ const SectionConfig = ({ ctx, lang, remote }) => {
               "Vacío = geolocalización automática.")}
           />
         )}
-        <Seg
-          label={lbl(lang, "Radar source", "Source radar", "Fuente radar")}
-          options={[
-            { v: "iem", l: "NEXRAD" },
-            { v: "rainviewer", l: "RainViewer" },
-            { v: "eccc", l: "ECCC" },
-          ]}
-          value={radarSource || "iem"}
-          onChange={saveRadarSource}
-          disabled={remote}
-        />
         {brightnessAvailable ? (
           <BrightnessSlider
             label={lbl(lang, "Brightness", "Luminosité", "Brillo")}
@@ -859,7 +847,7 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
       <SectionHeader
         index="3"
         title={lbl(lang, "Advanced", "Avancé", "Avanzado")}
-        subtitle={lbl(lang, "Display · AI · sleep", "Affichage · IA · veille", "Pantalla · IA · suspensión")}
+        subtitle={lbl(lang, "Display · alerts · sleep", "Affichage · alertes · veille", "Pantalla · alertas · suspensión")}
       />
       <div className={styles.advBody}>
           {/* ── Display ───────────────────────────────────────────── */}

@@ -112,20 +112,12 @@ const DARK_MODE_STORAGE_KEY = "darkMode";
 const NIGHT_MODE_STORAGE_KEY = "sleepNightMode";
 const DARK_MODE_AUTO_STORAGE_KEY = "darkModeAuto";
 const MARKER_VISIBLE_STORAGE_KEY = "markerIsVisible";
-const AI_USER_VISIBLE_STORAGE_KEY = "aiSummaryUserVisible";
 const MOUSE_HIDE_STORAGE_KEY = "mouseHide";
 const SHOW_ADVISORY_ALERTS_STORAGE_KEY = "showAdvisoryAlerts";
 const SHOW_TEST_ALERTS_STORAGE_KEY = "showTestAlerts";
 const AUTO_SELECT_TAB_STORAGE_KEY = "autoSelectTab";
 const SHOW_ALERT_RING_STORAGE_KEY = "showAlertRing";
 const HIDE_RADAR_LEGEND_STORAGE_KEY = "hideRadarLegend";
-const RADAR_SOURCE_STORAGE_KEY = "radarSource";
-// "iem" is the two-layer NEXRAD view (national N0Q mosaic at low zoom,
-// single-site N0B super-res at high zoom) and is the default for this
-// US-based install: it's the only source here that shows native radial
-// data rather than a resampled composite, and the only one that can
-// report a real per-frame timestamp for the age display.
-const RADAR_SOURCE_VALUES = ["iem", "rainviewer", "eccc"];
 
 /**
  * App context provider.
@@ -151,22 +143,18 @@ const RADAR_SOURCE_VALUES = ["iem", "rainviewer", "eccc"];
  * @returns {JSX.Element} Context provider
  */
 export function AppContextProvider({ children }) {
-  const [weatherApiKey, setWeatherApiKey] = useState(null);
   const [mapApiKey, setMapApiKey] = useState(null);
   const [reverseGeoApiKey, setReverseGeoApiKey] = useState(null);
-  const [anthropicApiKey, setAnthropicApiKey] = useState(null);
   // AirNow API key — drives the EPA AirNow source in /api/air-quality.
   // The badge silently falls through to the next source when this is
   // unset (so a Canadian-only install pays nothing for it). Lifted to
   // AppContext only so the Settings panel can write it back via
   // saveSettingsToJson; nothing else in the client reads the value
   // directly.
-  const [airNowApiKey, setAirNowApiKey] = useState(null);
   // OpenAQ API key — drives the global air-quality fallback. Same
   // skip-when-unset semantics as airNowApiKey; only material for
   // kiosks outside the AirNow + Canadian-MELCC + ECCC footprint
   // (i.e. anywhere outside US + Canada).
-  const [openAqApiKey, setOpenAqApiKey] = useState(null);
   const [browserGeo, setBrowserGeo] = useState(null);
   const [mapGeo, setMapGeo] = useState(null);
   // IANA timezone derived from mapGeo via tz-lookup. Used by Clock to
@@ -256,7 +244,6 @@ export function AppContextProvider({ children }) {
   // Starts true (optimistic) and is flipped to false when the server returns
   // 503 (no Anthropic API key configured). Used by WeatherMap to conditionally
   // show the 50 km radar-analysis circle around mapGeo.
-  const [aiSummaryAvailable, setAiSummaryAvailable] = useState(true);
   // v2.14.74: user-controlled AI summary visibility. `aiSummaryAvailable`
   // tracks whether the server has an Anthropic key configured (server-
   // driven, flipped to false on a 503 response). This is the user's
@@ -264,7 +251,6 @@ export function AppContextProvider({ children }) {
   // server has the key. Exposed via a dock toggle button (debug-mode
   // only) so users can hide the section temporarily without removing
   // their key. Default true, persisted in localStorage.
-  const [aiSummaryUserVisible, setAiSummaryUserVisible] = useState(true);
   // Advanced settings (advanced.ai.* in settings.json). Defaults mirror the
   // v2.6 baseline (radar analysis on, no extended radius, no doubled outer
   // points, no sampling-point overlay). Toggles flip independently and
@@ -277,7 +263,6 @@ export function AppContextProvider({ children }) {
   // clear), the server skips the Claude call entirely and returns a
   // templated summary. Default on; opt-out via Advanced settings → AI
   // weather summary → "Calm-day fast path".
-  const [calmDayFastPath, setCalmDayFastPath] = useState(true);
   // Mobile-only radar maximize state. LayoutMobile's `.mapCard` is
   // 220 px tall by default; tapping the maximize chevron in the
   // card's top-right corner promotes it to fill the scroll container
@@ -688,22 +673,6 @@ export function AppContextProvider({ children }) {
   // useAutoTabSelector via UiPrefsContext.
   const [autoSelectTab, setAutoSelectTab] = useState(false);
   const [hideRadarLegend, setHideRadarLegend] = useState(false);
-  // Visual radar source on the map.
-  //
-  // "iem" (default) is the two-layer NEXRAD view: IEM's national N0Q
-  // mosaic for wide-area awareness at low zoom, crossfading into
-  // single-site N0B super-res base reflectivity (0.5° tilt, 0.25 km
-  // gates — native radial data, the product RadarScope shows by
-  // default) for detail at high zoom. Frame timestamps are real scan
-  // times, so the map can display how old the picture actually is.
-  //
-  // "rainviewer" keeps the older CDN-cached PNG tiles; "eccc" swaps to
-  // Environment Canada's WMS for Canadian-authority radar at the cost
-  // of the timeline (its WMS exposes no time dimension here).
-  //
-  // The server-side radar analyzer always uses RainViewer regardless —
-  // this setting only affects the visible tile layer.
-  const [radarSource, setRadarSource] = useState("iem");
   const [sunriseTime, setSunriseTime] = useState(null);
   const [sunsetTime, setSunsetTime] = useState(null);
   // Full sunrise-sunset.org payloads for today AND tomorrow, used by
@@ -870,11 +839,6 @@ export function AppContextProvider({ children }) {
    *
    * @param {string} newVal
    */
-  const saveRadarSource = useCallback((newVal) => {
-    if (!RADAR_SOURCE_VALUES.includes(newVal)) return;
-    setRadarSource(newVal);
-    window.localStorage.setItem(RADAR_SOURCE_STORAGE_KEY, newVal);
-  }, []);
 
   // saveClockTime / saveTempUnit / saveSpeedUnit / saveLengthUnit /
   // saveDistanceUnit / saveFontSize all live in ~/hooks/useUiPreferences
@@ -893,20 +857,6 @@ export function AppContextProvider({ children }) {
     window.localStorage.setItem(DARK_MODE_AUTO_STORAGE_KEY, String(next));
   }, []);
 
-  /**
-   * Set AI summary user-visible preference + persist to localStorage.
-   * Separate from the server-driven `aiSummaryAvailable` so a user can
-   * hide the section temporarily without losing it when their Anthropic
-   * key still works server-side. Components rendering the AI summary
-   * should check both: `aiSummaryAvailable && aiSummaryUserVisible`.
-   *
-   * @param {Boolean} newVal next visibility
-   */
-  const saveAiSummaryUserVisible = useCallback((newVal) => {
-    const next = Boolean(newVal);
-    setAiSummaryUserVisible(next);
-    try { window.localStorage.setItem(AI_USER_VISIBLE_STORAGE_KEY, String(next)); } catch { /* localStorage may be unavailable */ }
-  }, []);
 
   /**
    * Manual dark/light toggle wrapper — same shape as setDarkMode for
@@ -1043,10 +993,6 @@ export function AppContextProvider({ children }) {
     }
     setHideRadarLegend(!!hideRadarLegend);
 
-    const storedRadarSource = window.localStorage.getItem(RADAR_SOURCE_STORAGE_KEY);
-    if (RADAR_SOURCE_VALUES.includes(storedRadarSource)) {
-      setRadarSource(storedRadarSource);
-    }
 
     const parsedZoom = parseInt(storedZoom, 10);
     if (Number.isFinite(parsedZoom)) {
@@ -1069,10 +1015,6 @@ export function AppContextProvider({ children }) {
     // only override when the persisted value is explicitly "false".
     const storedMarker = window.localStorage.getItem(MARKER_VISIBLE_STORAGE_KEY);
     if (storedMarker === "false") setMarkerIsVisible(false);
-    // AI summary user-visible — same pattern: default true, override
-    // only on explicit "false".
-    const storedAiVisible = window.localStorage.getItem(AI_USER_VISIBLE_STORAGE_KEY);
-    if (storedAiVisible === "false") setAiSummaryUserVisible(false);
     // sleepNightMode override — restored AFTER any server fetch in
     // `loadStoredData`'s caller chain so it wins. This makes the
     // remote-client palette toggle stick across reloads (user-
@@ -1107,15 +1049,6 @@ export function AppContextProvider({ children }) {
             // getting their own fetch or their own mount effect — see
             // docs/favorite-locations-design.md §8.6.
             hydrateFavorites(res.favorites);
-            if (res.anthropicApiKey) {
-              setAnthropicApiKey(res.anthropicApiKey);
-            }
-            if (res.airNowApiKey) {
-              setAirNowApiKey(res.airNowApiKey);
-            }
-            if (res.openAqApiKey) {
-              setOpenAqApiKey(res.openAqApiKey);
-            }
             // Advanced settings — radar analysis defaults to ON (matches the
             // baseline behaviour where the third paragraph always renders
             // when an Anthropic key is configured); the other three default
@@ -1127,9 +1060,6 @@ export function AppContextProvider({ children }) {
               }
               setExtendedRadarRadius(Boolean(advancedAi.extendedRadius));
               setShowSamplingPoints(Boolean(advancedAi.showSamplingPoints));
-              if (advancedAi.calmDayFastPath !== undefined) {
-                setCalmDayFastPath(Boolean(advancedAi.calmDayFastPath));
-              }
             }
             // Pollen badge — opt-in via advanced.pollen.enabled.
             // Defaults to OFF so installs that don't care about
@@ -1266,23 +1196,6 @@ export function AppContextProvider({ children }) {
    *
    * @returns {Promise} Weather API Key
    */
-  const getWeatherApiKey = useCallback(() => {
-    return new Promise((resolve, reject) => {
-      getSettings()
-        .then((res) => {
-          if (!res || (res && !res.weatherApiKey)) {
-            setSettingsMenuOpen(true);
-            return reject("Weather API key missing");
-          }
-          setWeatherApiKey(res && res.weatherApiKey ? res.weatherApiKey : null);
-          resolve();
-        })
-        .catch((err) => {
-          reject(err);
-        });
-    });
-  }, []);
-
   /**
    * Retrieves map API key and sets it
    *
@@ -1339,17 +1252,12 @@ export function AppContextProvider({ children }) {
   // isn't loaded here because WeatherMap triggers its own
   // getMapApiKey().
   useEffect(() => {
-    if (!weatherApiKey) {
-      getWeatherApiKey().catch((err) => {
-        console.log("error getting weather api key:", err);
-      });
-    }
     if (!reverseGeoApiKey) {
       getReverseGeoApiKey().catch((err) => {
         console.log("error getting reverse geo api key:", err);
       });
     }
-  }, [weatherApiKey, reverseGeoApiKey, getWeatherApiKey, getReverseGeoApiKey]);
+  }, [reverseGeoApiKey, getReverseGeoApiKey]);
 
 
 
@@ -1470,36 +1378,24 @@ export function AppContextProvider({ children }) {
    *
    * @param {object} settings User-supplied bundle of settings to persist.
    * @param {String} [settings.mapsKey] Mapbox API key (writes `mapApiKey`).
-   * @param {String} [settings.weatherKey] Tomorrow.io API key (writes `weatherApiKey`).
    * @param {String} [settings.geoKey] LocationIQ reverse-geocoding API key (writes `reverseGeoApiKey`).
-   * @param {String} [settings.anthropicKey] Anthropic API key for the AI summary (writes `anthropicApiKey`).
-   * @param {String} [settings.airNowKey] EPA AirNow API key (writes `airNowApiKey`); enables the US air-quality source.
-   * @param {String} [settings.openAqKey] OpenAQ API key (writes `openAqApiKey`); enables the global air-quality fallback.
    * @param {String} [settings.lat] Custom starting latitude as a string (writes `startingLat`).
    * @param {String} [settings.lon] Custom starting longitude as a string (writes `startingLon`).
    * @returns {Promise} Resolves when complete
    */
-  const saveSettingsToJson = useCallback(({ mapsKey, weatherKey, geoKey, anthropicKey, airNowKey, openAqKey, lat, lon }) => {
+  const saveSettingsToJson = useCallback(({ mapsKey, geoKey, lat, lon }) => {
     return new Promise((resolve, reject) => {
       axios
         .put("/settings", {
-          weatherApiKey: weatherKey,
           mapApiKey: mapsKey,
           reverseGeoApiKey: geoKey,
-          anthropicApiKey: anthropicKey,
-          airNowApiKey: airNowKey,
-          openAqApiKey: openAqKey,
           startingLat: lat,
           startingLon: lon,
         })
         .then((res) => {
           resolve(res);
           setMapApiKey(mapsKey);
-          setWeatherApiKey(weatherKey);
           setReverseGeoApiKey(geoKey);
-          setAnthropicApiKey(anthropicKey);
-          setAirNowApiKey(airNowKey);
-          setOpenAqApiKey(openAqKey);
           setCustomLat(lat);
           setCustomLon(lon);
           // Keep `browserGeo` in step with the newly saved default.
@@ -1589,7 +1485,6 @@ export function AppContextProvider({ children }) {
     radarAnalysisEnabled,
     extendedRadarRadius,
     showSamplingPoints,
-    calmDayFastPath,
     lightModeStyle,
     darkModeStyle,
     radarOpacityLight,
@@ -1608,8 +1503,7 @@ export function AppContextProvider({ children }) {
       radarAnalysisEnabled,
       extendedRadarRadius,
       showSamplingPoints,
-      calmDayFastPath,
-      lightModeStyle,
+        lightModeStyle,
       darkModeStyle,
       radarOpacityLight,
       radarOpacityDark,
@@ -1626,7 +1520,6 @@ export function AppContextProvider({ children }) {
     radarAnalysisEnabled,
     extendedRadarRadius,
     showSamplingPoints,
-    calmDayFastPath,
     lightModeStyle,
     darkModeStyle,
     radarOpacityLight,
@@ -1733,7 +1626,6 @@ export function AppContextProvider({ children }) {
     if (key === "radarAnalysisEnabled") setRadarAnalysisEnabled(value);
     if (key === "extendedRadius") setExtendedRadarRadius(value);
     if (key === "showSamplingPoints") setShowSamplingPoints(value);
-    if (key === "calmDayFastPath") setCalmDayFastPath(value);
     return axios
       .patch("/setting", { key: "advanced", val: buildAdvancedSubtree({ ai: { [key]: value } }) })
       .catch((err) => {
@@ -1992,7 +1884,6 @@ export function AppContextProvider({ children }) {
   const actionsSlice = useMemo(() => ({
     saveDisplayScale,
     relaunchKiosk,
-    getWeatherApiKey,
     getReverseGeoApiKey,
     getMapApiKey,
     getBrowserGeo,
@@ -2000,8 +1891,6 @@ export function AppContextProvider({ children }) {
     setDarkMode: setDarkModeManual,
     saveDarkModeAuto,
     setMapGeo,
-    setAiSummaryAvailable,
-    saveAiSummaryUserVisible,
     saveAdvancedAiFlag,
     saveAdvancedDisplayFlag,
     setRadarOpacityLightLive,
@@ -2057,7 +1946,6 @@ export function AppContextProvider({ children }) {
     saveAutoSelectTab,
     saveShowAlertRing,
     saveHideRadarLegend,
-    saveRadarSource,
     saveFontSize,
     updateSunriseSunset,
     checkIsLocal,
@@ -2071,7 +1959,6 @@ export function AppContextProvider({ children }) {
   }), [
     saveDisplayScale,
     relaunchKiosk,
-    getWeatherApiKey,
     getReverseGeoApiKey,
     getMapApiKey,
     getBrowserGeo,
@@ -2079,8 +1966,6 @@ export function AppContextProvider({ children }) {
     setDarkModeManual,
     saveDarkModeAuto,
     setMapGeo,
-    setAiSummaryAvailable,
-    saveAiSummaryUserVisible,
     saveAdvancedAiFlag,
     saveAdvancedDisplayFlag,
     setRadarOpacityLightLive,
@@ -2136,7 +2021,6 @@ export function AppContextProvider({ children }) {
     saveAutoSelectTab,
     saveShowAlertRing,
     saveHideRadarLegend,
-    saveRadarSource,
     saveFontSize,
     updateSunriseSunset,
     checkIsLocal,
@@ -2159,11 +2043,7 @@ export function AppContextProvider({ children }) {
     displayScaleApplied,
     displayScalePpi,
     displayScaleChoices,
-    weatherApiKey,
     reverseGeoApiKey,
-    anthropicApiKey,
-    airNowApiKey,
-    openAqApiKey,
     mapApiKey,
     isLocal,
     remoteSecurityEnabled,
@@ -2204,11 +2084,7 @@ export function AppContextProvider({ children }) {
     displayScaleApplied,
     displayScalePpi,
     displayScaleChoices,
-    weatherApiKey,
     reverseGeoApiKey,
-    anthropicApiKey,
-    airNowApiKey,
-    openAqApiKey,
     mapApiKey,
     isLocal,
     remoteSecurityEnabled,
@@ -2303,15 +2179,11 @@ export function AppContextProvider({ children }) {
     radarOpacityDark,
     mouseHide,
     hideRadarLegend,
-    radarSource,
     markerIsVisible,
     showDirectionArrows,
     showSamplingPoints,
     radarAnalysisEnabled,
     extendedRadarRadius,
-    calmDayFastPath,
-    aiSummaryAvailable,
-    aiSummaryUserVisible,
     pollenEnabled,
     defaultMapZoom,
     animateWeatherMap,
@@ -2336,15 +2208,11 @@ export function AppContextProvider({ children }) {
     radarOpacityDark,
     mouseHide,
     hideRadarLegend,
-    radarSource,
     markerIsVisible,
     showDirectionArrows,
     showSamplingPoints,
     radarAnalysisEnabled,
     extendedRadarRadius,
-    calmDayFastPath,
-    aiSummaryAvailable,
-    aiSummaryUserVisible,
     pollenEnabled,
     defaultMapZoom,
     animateWeatherMap,

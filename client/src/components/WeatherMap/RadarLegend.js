@@ -3,7 +3,6 @@ import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 
 import { AlertsContext, UiPrefsContext } from "~/AppContext";
-import { RADAR_GEOMETRY } from "./geometry";
 import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
@@ -35,7 +34,7 @@ const PrecipScale = () => (
 
 /**
  * Radar map legend (v3.1 Phase 3, Claude Design v2.1). Three sections:
- * analysis radii (only when the analysis rings are enabled — unit- and
+ * (the analysis-radii section was removed with the rings — unit- and
  * extended-radius-aware), the precipitation scale (the real 6-colour
  * tile palette), and the nearby-alert tier key + honest in-radius
  * count (only when the alert overlay is on).
@@ -63,7 +62,7 @@ const RadarLegend = ({ dark, chipMode }) => {
     nearbyResidualCount,
     alertRadiusKm,
   } = useContext(AlertsContext);
-  const { distanceUnit, radarAnalysisEnabled, extendedRadarRadius } = useContext(UiPrefsContext);
+  const { distanceUnit } = useContext(UiPrefsContext);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   // Escape closes the overlay — keyboard parity with the scrim/✕
@@ -78,16 +77,10 @@ const RadarLegend = ({ dark, chipMode }) => {
   }, [overlayOpen]);
 
   const nearbyCount = Array.isArray(nearbyAlerts) ? nearbyAlerts.length : 0;
-  // The alert-search radius is an independent km-native setting — in
-  // miles mode it converts (100 km → "62 mi"), deliberately NOT the
-  // round per-unit ring value (60 mi). The ring radii below ARE the
-  // round per-unit values from RADAR_GEOMETRY.
+  // The alert-search radius is km-native — in miles mode it converts
+  // (100 km → "62 mi").
   const radiusDisplay = distanceUnit === "mi" ? Math.round(alertRadiusKm / 1.609344) : alertRadiusKm;
   const unitLabel = distanceUnit === "mi" ? "mi" : "km";
-
-  const geometry = RADAR_GEOMETRY[distanceUnit] || RADAR_GEOMETRY.km;
-  const innerRadius = geometry.inner[geometry.inner.length - 1];
-  const outerRadius = geometry.outer[geometry.outer.length - 1];
 
   // Variant class on the CARD ONLY. The chip/strip/sheet must NOT carry
   // it: LayoutMobile's mini-card rules match the unhashed
@@ -100,23 +93,6 @@ const RadarLegend = ({ dark, chipMode }) => {
 
   const sections = (
     <>
-      {radarAnalysisEnabled ? (
-        <div className={styles.legendSection}>
-          <div className={styles.legendTitle}>{t("radar.legendRadii")}</div>
-          <div className={styles.legendCircleRow}>
-            <span className={styles.legendCircleSwatch} />
-            <span className={styles.legendRadii}>
-              {innerRadius} {unitLabel}
-              {extendedRadarRadius ? (
-                <>
-                  <span className={styles.legendRadiiSep}> · </span>
-                  {outerRadius} {unitLabel}
-                </>
-              ) : null}
-            </span>
-          </div>
-        </div>
-      ) : null}
       <div className={styles.legendSection}>
         <div className={styles.legendTitle}>{t("radar.legendPrecip")}</div>
         <PrecipScale />
@@ -171,14 +147,6 @@ const RadarLegend = ({ dark, chipMode }) => {
         </div>
       )}
       <div className={styles.legendMobileStrip}>
-        {radarAnalysisEnabled ? (
-          <span>
-            {innerRadius}
-            {extendedRadarRadius ? `/${outerRadius}` : ""}
-            {" "}
-            {unitLabel}
-          </span>
-        ) : null}
         <PrecipScale />
         {showWeatherAlerts && nearbyCount > 0 ? (
           <span className={styles.legendMobileAlert}>

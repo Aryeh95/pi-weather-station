@@ -24,7 +24,10 @@ age* so staleness is visible rather than suspected.
 ## Decisions already made
 
 - **Drop tomorrow.io entirely** (forecast, current conditions, nowcast).
-- **Drop RainViewer.**
+- **Drop RainViewer.** Done in two steps: everything depending on it went in
+  the teardown, and the tile layer itself (plus the ECCC WMS layer and the
+  whole `radarSource` setting) was removed on 2026-08-11. NEXRAD is now the
+  only source — there is no radar-source picker.
 - **Drop the Claude AI summary + radar-analysis sampler.** Not wanted.
 - **Drop the direction-arrow motion overlay** and RADAR-tier alert confidence
   logic (they depended on RainViewer frame sampling).
@@ -236,6 +239,16 @@ No good free option.
    Only two API keys remain relevant: **Mapbox** (basemap, required) and
    **LocationIQ** (place name, optional). Tomorrow.io / Anthropic / AirNow /
    OpenAQ keys are no longer read.
+
+1c. **Remove the radar-source picker — DONE** (2026-08-11). RainViewer and
+   ECCC tile layers, the `radarSource` pref and its localStorage key, the
+   RainViewer frame poller / playhead / animation loop, and the legend's
+   stale "analysis radii" section (those rings went with the sampler).
+
+   Fixed a latent bug found on the way: the "missing API key" prompt that
+   force-opens Settings was keyed on `weatherApiKey`, which nothing sets any
+   more — so a fresh install would have nagged forever. It now keys on
+   `mapApiKey`, the only genuinely required key.
 2. STI storm tracks
 3. Lightning
 4. Level II, only if warranted

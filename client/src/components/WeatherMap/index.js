@@ -9,7 +9,6 @@ import React, {
 import {
   MapContainer,
   TileLayer,
-  WMSTileLayer,
   AttributionControl,
   ZoomControl,
   Marker,
@@ -60,7 +59,6 @@ import { useTimeOfDay } from "~/ui/hybrid";
 import { isPiMaxView, priorityViewsEnabled } from "~/ui/piLayout";
 import { useTranslation } from "react-i18next";
 import debounce from "debounce";
-import axios from "axios";
 import styles from "./styles.css";
 import RadarLegend from "./RadarLegend";
 import RadarTimeline from "./RadarTimeline";
@@ -677,7 +675,6 @@ const WeatherMap = ({ zoom, dark }) => {
     animateWeatherMap,
     radarSpeed,
     radarTimelineVisible,
-    radarSource,
     hideRadarLegend,
     lightModeStyle,
     darkModeStyle,
@@ -783,23 +780,6 @@ const WeatherMap = ({ zoom, dark }) => {
     [handleMapClick]
   );
 
-  const [mapTimestamps, setMapTimestamps] = useState(null);
-  // True when the most recent RainViewer frame-list refresh failed —
-  // drives the timeline's source chip into its degraded (warn) state
-  // so a stale frame window is never a silent failure (Phase 3 design:
-  // "no silent failure" on the freshness chip).
-  const [timestampsStale, setTimestampsStale] = useState(false);
-  const [mapTimestamp, setMapTimestamp] = useState(null);
-  // Current playback position in the timeline. -1 = "use the most recent
-  // past frame" (initial mount). Kept as local state — earlier we tried
-  // hoisting it to AppContext for theoretical centralisation, but every
-  // animation tick (1× per second at 1× speed) then re-rendered all of
-  // AppContext's ~50 consumers, which queued button-click handlers
-  // behind a flood of re-renders and made the play/pause button take
-  // 1-2 s to react. RadarTimeline is rendered by us and receives the
-  // index via props, so context buys nothing.
-  const [radarFrameIdx, setRadarFrameIdx] = useState(-1);
-  const animationIntervalRef = useRef(null);
 
   // Small-screen detection used to auto-hide the radar legend while
   // the radar timeline is open. On the 7" Pi kiosk (height ≤ 520 px,
@@ -854,11 +834,6 @@ const WeatherMap = ({ zoom, dark }) => {
   // Both stay mounted across an overlap band and crossfade by zoom
   // rather than hard-swapping — the two products look different enough
   // that an instant cutover reads as a rendering glitch.
-  const iemActive = radarSource === "iem";
-  // Mirror of `iemActive` for the mount-once RainViewer polling effect
-  // below, which must read the CURRENT source without re-subscribing.
-  const iemActiveRef = useRef(iemActive);
-  iemActiveRef.current = iemActive;
   const {
     site: iemSite,
     frames: iemSiteFrames,
@@ -867,7 +842,7 @@ const WeatherMap = ({ zoom, dark }) => {
   } = useIemRadarFrames({
     latitude: mapGeo ? mapGeo.latitude : null,
     longitude: mapGeo ? mapGeo.longitude : null,
-    enabled: iemActive,
+    enabled: true,
   });
 
   // Mosaic frame list, recomputed whenever the single-site list
@@ -875,8 +850,8 @@ const WeatherMap = ({ zoom, dark }) => {
   // `iemSiteFrames` is deliberate: it's the app's existing 60 s
   // heartbeat, and the mosaic offsets are cheap to rebuild.
   const iemMosaicFrames = useMemo(
-    () => (iemActive ? buildMosaicFrames() : []),
-    [iemActive, iemSiteFrames]  // eslint-disable-line react-hooks/exhaustive-deps -- iemSiteFrames is the intentional 60s recompute heartbeat
+    () => buildMosaicFrames(),
+    [iemSiteFrames]  // eslint-disable-line react-hooks/exhaustive-deps -- iemSiteFrames is the intentional 60s recompute heartbeat
   );
 
   // Playhead for the IEM layers, kept separate from the RainViewer
@@ -909,13 +884,11 @@ const WeatherMap = ({ zoom, dark }) => {
   // band). The single-site layer additionally needs a resolved site and
   // at least one discovered frame before it has anything to show.
   const iemVisible = layerVisibility(currentMapZoom);
-  const showIemSite = iemActive
-    && iemVisible.site
+  const showIemSite = iemVisible.site
     && iemSiteAvailable
     && Boolean(iemSite)
     && Boolean(currentSiteFrame);
-  const showIemMosaic = iemActive
-    && iemVisible.mosaic
+  const showIemMosaic = iemVisible.mosaic
     && Boolean(currentMosaicFrame);
 
   // Which frame the age chip describes: whichever layer is currently
@@ -960,7 +933,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // Pi MAX view for the same reason — there the map is a ~190 px
   // decorative thumbnail and cycling tiles just burns the GPU.
   useEffect(() => {
-    if (!iemActive || !animateWeatherMap || isPiMaxView(piLayoutState)) return undefined;
+    if (!animateWeatherMap || isPiMaxView(piLayoutState)) return undefined;
     if (!iemMosaicFrames.length) return undefined;
     const id = setInterval(() => {
       // Counts DOWN because the index is an offset from the newest
@@ -972,14 +945,14 @@ const WeatherMap = ({ zoom, dark }) => {
       });
     }, MAP_CYCLE_RATE / radarSpeed);
     return () => clearInterval(id);
-  }, [iemActive, animateWeatherMap, radarSpeed, iemMosaicFrames.length, piLayoutState]);
+  }, [animateWeatherMap, radarSpeed, iemMosaicFrames.length, piLayoutState]);
 
   // Snap back to the newest frame whenever the scrubber is dismissed or
   // the source changes, so the user is never left parked on an old
   // frame with no visible control explaining why.
   useEffect(() => {
-    if (!radarTimelineVisible || !iemActive) setIemFrameIdx(-1);
-  }, [radarTimelineVisible, iemActive]);
+    if (!radarTimelineVisible) setIemFrameIdx(-1);
+  }, [radarTimelineVisible]);
 
   // Publish the newest available frame time to RadarStateContext, which
   // is the app-wide radar-freshness signal (NowcastLine gates its
@@ -992,10 +965,9 @@ const WeatherMap = ({ zoom, dark }) => {
   // change. The single-site list is preferred when present because its
   // timestamps are real scan times; the mosaic's are schedule-derived.
   useEffect(() => {
-    if (!iemActive) return;
     const [newest] = (iemSiteFrames.length ? iemSiteFrames : iemMosaicFrames).slice(-1);
     setRadarFrameTs(newest ? newest.epoch : null);
-  }, [iemActive, iemSiteFrames, iemMosaicFrames, setRadarFrameTs]);
+  }, [iemSiteFrames, iemMosaicFrames, setRadarFrameTs]);
 
   // Risk levels for the dashed circles live in AppContext (see InfoPanel's
   // AlertBanner, which reads the same state to surface the alert text). We
@@ -1005,7 +977,6 @@ const WeatherMap = ({ zoom, dark }) => {
   // only the renderer below cares about them. Map keyed by `${dir}:${dist}`
   // so the dot lookup is O(1) regardless of how many points are visible.
 
-  const MAP_TIMESTAMP_REFRESH_FREQUENCY = 1000 * 60 * 10; //update every 10 minutes
 
   const getMapApiKeyCallback = useCallback(() => getMapApiKey(), [
     getMapApiKey,
@@ -1015,142 +986,11 @@ const WeatherMap = ({ zoom, dark }) => {
     getMapApiKeyCallback().catch((err) => {
       console.log("err!", err);
     });
-
-    const updateTimeStamps = () => {
-      // Skip the RainViewer frame-index fetch entirely while the IEM
-      // source is selected — nothing consumes the result then, and the
-      // stale-data complaint that motivated the IEM work makes a
-      // background poll of the source we moved away from actively
-      // undesirable. Read through a ref so a mid-session source switch
-      // is honoured without turning this mount-once effect into one
-      // that re-subscribes (its interval must survive re-renders).
-      if (iemActiveRef.current) return;
-      getMapTimestamps()
-        .then((res) => {
-          setMapTimestamps(res);
-          setTimestampsStale(false);
-          // Surface the newest *actual* (past) RainViewer frame timestamp so
-          // NowcastLine can gate its radar-anchored calm copy on data
-          // freshness (see NowcastLine RADAR_STALE_MS). `.time` is UNIX
-          // seconds; we expose ms. Forecast (nowcast) frames are future and
-          // are NOT the freshness signal, so only `kind: "past"` counts.
-          if (Array.isArray(res) && res.length > 0) {
-            let newestPastSec = null;
-            for (const f of res) {
-              if (f.kind === "past" && typeof f.time === "number") newestPastSec = f.time;
-            }
-            setRadarFrameTs(newestPastSec != null ? newestPastSec * 1000 : null);
-          }
-        })
-        .catch((err) => {
-          console.log("err", err);
-          // Keep the last good frame list on screen but flag it stale —
-          // the timeline's source chip flips to the warn tone. Leave the
-          // last-good radarFrameTs in place: the freshness gate will trip on
-          // its own once that timestamp ages past RADAR_STALE_MS.
-          setTimestampsStale(true);
-        });
-    };
-
-    const mapTimestampsInterval = setInterval(
-      updateTimeStamps,
-      MAP_TIMESTAMP_REFRESH_FREQUENCY
-    );
-    updateTimeStamps(); //initial update
-    return () => {
-      clearInterval(mapTimestampsInterval);
-    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initialization, runs once on mount
 
+  // Browser geolocation seeds MapContainer's initial centre; mapGeo (the
+  // user-selected point) drives everything after that.
   const { latitude, longitude } = browserGeo || {};
-
-  // Resolve the radarFrameIdx (which may be -1 = "default to latest past
-  // frame") into a concrete index of the loaded `mapTimestamps` array.
-  // Centralised so both the tile renderer and the animation effect read
-  // the same value. The "latest past frame" default is the index of the
-  // last `kind: "past"` entry — putting playhead there means the user
-  // initially sees current radar (not the first past frame, which is 90
-  // minutes old).
-  const lastPastIdx = useMemo(() => {
-    if (!mapTimestamps || mapTimestamps.length === 0) return 0;
-    let idx = -1;
-    mapTimestamps.forEach((f, i) => { if (f.kind === "past") idx = i; });
-    return idx >= 0 ? idx : mapTimestamps.length - 1;
-  }, [mapTimestamps]);
-  const currentMapTimestampIdx = useMemo(() => {
-    if (!mapTimestamps || mapTimestamps.length === 0) return 0;
-    if (radarFrameIdx < 0 || radarFrameIdx >= mapTimestamps.length) return lastPastIdx;
-    return radarFrameIdx;
-  }, [radarFrameIdx, mapTimestamps, lastPastIdx]);
-
-  // Keep the displayed timestamp in sync with the current index
-  useEffect(() => {
-    if (mapTimestamps) {
-      setMapTimestamp(mapTimestamps[currentMapTimestampIdx]);
-    }
-  }, [currentMapTimestampIdx, mapTimestamps]);
-
-  // Radar animation: start/stop interval based on animateWeatherMap toggle.
-  // Per-frame interval is MAP_CYCLE_RATE / radarSpeed so 1× / 2× / 4× cycling
-  // from the timeline's speed selector takes effect immediately. Using a ref
-  // for the interval avoids recreating it on every frame tick.
-  useEffect(() => {
-    if (animationIntervalRef.current) {
-      clearInterval(animationIntervalRef.current);
-      animationIntervalRef.current = null;
-    }
-
-    // Freeze the radar animation in the v3.2 MAX state: there the map is a
-    // decorative ~190 px thumbnail, so cycling RainViewer frames just burns
-    // the Pi GPU. This doesn't touch the user's `animateWeatherMap`
-    // preference — leaving MAX resumes it.
-    if (mapTimestamps && animateWeatherMap && !isPiMaxView(piLayoutState)) {
-      animationIntervalRef.current = setInterval(() => {
-        setRadarFrameIdx((prev) => {
-          // Advance from the resolved current index — which collapses
-          // -1 (uninitialised) and out-of-range values into a valid one
-          // — so a fresh play after a scrub or a frame-list reload
-          // always picks up at the right position.
-          const start = prev < 0 || prev >= mapTimestamps.length ? lastPastIdx : prev;
-          return start + 1 >= mapTimestamps.length ? 0 : start + 1;
-        });
-      }, MAP_CYCLE_RATE / radarSpeed);
-    }
-
-    return () => {
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current);
-        animationIntervalRef.current = null;
-      }
-    };
-    // radarFrameIdx is intentionally NOT in the deps — the function
-    // updater inside setInterval reads the latest value via React's
-    // closure over `prev`, so we don't need to recreate the interval
-    // on every frame tick. Including it would clear and re-create the
-    // interval every second, which previously starved button clicks.
-  }, [animateWeatherMap, mapTimestamps, radarSpeed, lastPastIdx, piLayoutState]);
-
-  // Initial mount: anchor the playhead at the most recent past frame
-  // once the timestamps load, so the first paint shows current radar
-  // (not the 90-min-old first historical frame). One-shot — once the
-  // user scrubs or starts animation, radarFrameIdx is no longer < 0.
-  useEffect(() => {
-    if (mapTimestamps && radarFrameIdx < 0) {
-      setRadarFrameIdx(lastPastIdx);
-    }
-  }, [mapTimestamps, lastPastIdx, radarFrameIdx]);
-
-  // When the timeline overlay is hidden, snap the playhead back to the
-  // most recent past frame so the user is never left looking at a stale
-  // historical frame or a forecast frame they had been scrubbing
-  // through. The toggleRadarTimelineVisible callback in AppContext also
-  // pauses any running animation, so the combination is "hide the bar
-  // and show me current radar."
-  useEffect(() => {
-    if (!radarTimelineVisible && mapTimestamps) {
-      setRadarFrameIdx(lastPastIdx);
-    }
-  }, [radarTimelineVisible, mapTimestamps, lastPastIdx]);
 
   // ── Referentially-stable props for the react-leaflet layers ─────────
   // react-leaflet v4 compares props by reference: a fresh array/object
@@ -1196,28 +1036,18 @@ const WeatherMap = ({ zoom, dark }) => {
   // before. ONE boolean drives BOTH the wrapper padding AND the actual render
   // below, so they can't desync (no half-pane flash on a MIN→MID exit).
   const priorityActive = priorityViewsEnabled() && piLayoutState != null;
-  // The scrubber is available on both frame-based sources — RainViewer's
-  // discovered frame list, and IEM's fixed 5-minute mosaic grid. ECCC
-  // stays excluded (its WMS exposes no time dimension here). The
-  // visibility RULES are identical across sources; only the question of
-  // "are there frames at all" differs, so that's the only branch.
-  const hasScrubbableFrames = iemActive
-    ? iemTimelineFrames.length > 0
-    : (radarSource === "rainviewer" && Boolean(mapTimestamps && mapTimestamps.length > 0));
-  const timelineShown = hasScrubbableFrames
+  const timelineShown = iemTimelineFrames.length > 0
     && (priorityActive
       ? (piLayoutState === "min" && piScrubberOpen)
       : (radarTimelineVisible && !isPiMaxView(piLayoutState)));
   // The legend's precipitation scale is QUALITATIVE — six segments
   // labelled only "Light" → "Extreme", with no numeric key. Its swatches
-  // are RainViewer's exact palette, but as a coarse low-to-high ramp it
-  // reads correctly against IEM's NEXRAD reflectivity colouring too
-  // (both run cool → green → yellow → orange → red → magenta). Shown for
-  // both reflectivity sources on that basis; if the legend ever gains
-  // numeric dBZ labels it will need a per-source palette instead.
-  // ECCC stays excluded — that's a precipitation-RATE product.
-  const legendShown = (iemActive || (Boolean(mapTimestamps) && radarSource === "rainviewer"))
-    && !hideRadarLegend;
+  // came from RainViewer's palette, but as a coarse low-to-high ramp it
+  // reads correctly against the NEXRAD reflectivity colouring too (both
+  // run cool → green → yellow → orange → red → magenta). If the legend
+  // ever gains numeric dBZ labels, re-derive the swatches from the N0Q
+  // colour table instead of inheriting them.
+  const legendShown = !hideRadarLegend;
 
   return (
     <div className={`${styles.mapWrapper} ${timelineShown ? styles.withTimeline : ""} ${legendShown ? styles.withLegend : ""}`}>
@@ -1319,114 +1149,56 @@ const WeatherMap = ({ zoom, dark }) => {
            * on Pi kiosk too. */
           updateWhenIdle={true}
         />
-        {iemActive ? (
-          <>
-            {/* ── Layer 1: composite mosaic (low zoom) ──────────────
-              * IEM's national N0Q reflectivity mosaic — wide-area
-              * situational awareness. Frames are addressed by fixed
-              * 5-minute offsets baked into the layer name, so the
-              * animation needs no frame discovery at all.
-              *
-              * TILE CONFIG IS DELIBERATELY NOT the RainViewer config
-              * above. That one (tileSize 512 / zoomOffset -1) was tuned
-              * for RainViewer's 512 px tiles; IEM serves 256 px tiles
-              * (measured at every zoom 6-15), so carrying those props
-              * over would put every tile at the wrong scale and offset.
-              *
-              * `maxNativeZoom` is a data-resolution choice rather than a
-              * server limit — see the note in iemRadar.js. */}
-            {showIemMosaic ? (
-              <TileLayer
-                key="iem-mosaic"
-                attribution={IEM_ATTRIBUTION}
-                url={currentMosaicFrame.url}
-                opacity={iemOpacity.mosaic}
-                maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
-                maxZoom={MOSAIC_MAX_ZOOM}
-                updateWhenIdle={true}
-                keepBuffer={2}
-              />
-            ) : null}
-            {/* ── Layer 2: single-site super-res (high zoom) ────────
-              * N0B base reflectivity from the covering NEXRAD: 0.5°
-              * tilt at 0.25 km gates, native radial data rather than a
-              * resampled mosaic — the same product RadarScope shows by
-              * default. Coverage is 230 km from the site and fades at
-              * the edges, which is fine for a fixed kiosk.
-              *
-              * The timestamp is a REAL scan time from the frame poller,
-              * never the `-0` "latest" sentinel: `-0` would render but
-              * gives no way to know how old the picture is, and making
-              * frame age visible is the point of this work. */}
-            {showIemSite ? (
-              <TileLayer
-                key={`iem-site-${iemSite}-${currentSiteFrame.stamp}`}
-                attribution={IEM_ATTRIBUTION}
-                url={siteTileUrl(iemSite, currentSiteFrame.stamp)}
-                opacity={iemOpacity.site}
-                maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
-                minZoom={SITE_MIN_ZOOM}
-                updateWhenIdle={true}
-                keepBuffer={2}
-              />
-            ) : null}
-          </>
-        ) : radarSource === "eccc" ? (
-          // Environment Canada radar (RADAR_1KM_RRAI = rain precipitation rate
-          // at 1 km, NA composite). 6-min update cadence vs RainViewer's ~10
-          // min, dedicated authority for the Canadian fleet. No time-dimension
-          // here — Phase A surfaces only the current frame; the timeline
-          // scrubber and animation are hidden when this source is active.
-          // Attribution per ECCC terms of use: "Canadian radar data was
-          // provided courtesy of Environment Canada".
-          <WMSTileLayer
-            attribution='Radar courtesy <a href="https://www.canada.ca/en/environment-climate-change.html">Environment Canada</a>'
-            url="https://geo.weather.gc.ca/geomet"
-            params={{
-              layers: "RADAR_1KM_RRAI",
-              format: "image/png",
-              transparent: true,
-              version: "1.3.0",
-            }}
-            opacity={dark ? radarOpacityDark : radarOpacityLight}
-            /* Radar has no useful resolution beyond z=12 (~1 km
-             * per pixel native). Capping here also stops Safari
-             * from upscaling the WMS PNG response via CSS transform
-             * past ~z=15, which is the iPad freeze trigger. The
-             * basemap keeps zooming up to z=18; only radar disappears. */
-            maxZoom={12}
-          />
-        ) : mapTimestamp ? (
+        {/* ── Layer 1: composite mosaic (low zoom) ──────────────
+          * IEM's national N0Q reflectivity mosaic — wide-area
+          * situational awareness. Frames are addressed by fixed
+          * 5-minute offsets baked into the layer name, so the
+          * animation needs no frame discovery at all.
+          *
+          * TILE CONFIG IS DELIBERATELY NOT the RainViewer config
+          * above. That one (tileSize 512 / zoomOffset -1) was tuned
+          * for RainViewer's 512 px tiles; IEM serves 256 px tiles
+          * (measured at every zoom 6-15), so carrying those props
+          * over would put every tile at the wrong scale and offset.
+          *
+          * `maxNativeZoom` is a data-resolution choice rather than a
+          * server limit — see the note in iemRadar.js. */}
+        {showIemMosaic ? (
           <TileLayer
-            attribution='<a href="https://www.rainviewer.com/">RainViewer</a>'
-            url={`https://tilecache.rainviewer.com${mapTimestamp.path}/512/{z}/{x}/{y}/6/1_1.png`}
-            opacity={dark ? radarOpacityDark : radarOpacityLight}
-            tileSize={512}
-            zoomOffset={-1}
-            maxNativeZoom={8}
-            /* Radar tiles disappear at z=13+. RainViewer's native
-             * zoom maxes at 8; the previous config inherited the
-             * map's maxZoom (20), so Leaflet upscaled z=8 tiles by
-             * up to 4096× via CSS transform — which crashed Safari
-             * iPad Pro M4 and earlier on extended street-level
-             * zoom. Capping at 12 keeps the radar useful (still
-             * showing 1 km resolution at city blocks) without the
-             * extreme upscale that iOS's tile compositor can't
-             * keep up with. The basemap below keeps zooming up to
-             * 18; only the radar overlay disappears past z=12. */
-            maxZoom={12}
-            /* `updateWhenIdle: true` defers tile re-rendering until
-             * the user finishes panning / zooming — easier on
-             * Safari iOS's GPU than the default continuous redraw
-             * on every move event. Side benefit: lower CPU on the
-             * Pi kiosk too. */
+            key="iem-mosaic"
+            attribution={IEM_ATTRIBUTION}
+            url={currentMosaicFrame.url}
+            opacity={iemOpacity.mosaic}
+            maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
+            maxZoom={MOSAIC_MAX_ZOOM}
             updateWhenIdle={true}
-            /* keepBuffer matched to the basemap (2, default) so the
-             * cache footprint stays bounded. */
             keepBuffer={2}
           />
         ) : null}
-        {markerIsVisible && markerPosition ? (
+        {/* ── Layer 2: single-site super-res (high zoom) ────────
+          * N0B base reflectivity from the covering NEXRAD: 0.5°
+          * tilt at 0.25 km gates, native radial data rather than a
+          * resampled mosaic — the same product RadarScope shows by
+          * default. Coverage is 230 km from the site and fades at
+          * the edges, which is fine for a fixed kiosk.
+          *
+          * The timestamp is a REAL scan time from the frame poller,
+          * never the `-0` "latest" sentinel: `-0` would render but
+          * gives no way to know how old the picture is, and making
+          * frame age visible is the point of this work. */}
+        {showIemSite ? (
+          <TileLayer
+            key={`iem-site-${iemSite}-${currentSiteFrame.stamp}`}
+            attribution={IEM_ATTRIBUTION}
+            url={siteTileUrl(iemSite, currentSiteFrame.stamp)}
+            opacity={iemOpacity.site}
+            maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
+            minZoom={SITE_MIN_ZOOM}
+            updateWhenIdle={true}
+            keepBuffer={2}
+          />
+        ) : null}
+      {markerIsVisible && markerPosition ? (
           /* v2.14.65: custom target icon only in nightRed mode. In every
            * other palette the default Leaflet blue teardrop pin stays —
            * it's a familiar map idiom and reads cleanly on the day /
@@ -1525,7 +1297,7 @@ const WeatherMap = ({ zoom, dark }) => {
           rather than hidden. IEM-only for now: RainViewer's timeline
           already carries its own relative-time chip, and ECCC exposes
           no frame timestamp to report. */}
-      {iemActive && !isPiMaxView(piLayoutState) && iemAgeFrame && (
+      {!isPiMaxView(piLayoutState) && iemAgeFrame && (
         <RadarFrameAge
           epoch={iemAgeFrame.epoch}
           approximate={iemAgeIsApproximate}
@@ -1550,16 +1322,14 @@ const WeatherMap = ({ zoom, dark }) => {
       )}
       {timelineShown && (
         <RadarTimeline
-          frames={iemActive ? iemTimelineFrames : mapTimestamps}
-          currentIdx={iemActive
-            ? Math.max(0, iemTimelineFrames.length - 1 - iemFromEnd)
-            : currentMapTimestampIdx}
-          onScrub={iemActive ? handleIemScrub : setRadarFrameIdx}
+          frames={iemTimelineFrames}
+          currentIdx={Math.max(0, iemTimelineFrames.length - 1 - iemFromEnd)}
+          onScrub={handleIemScrub}
           timezone={mapTimezone}
           dark={dark}
           compact={isSmallScreen || isNarrow}
-          sourceStale={iemActive ? iemStale : timestampsStale}
-          sourceName={iemActive ? "NEXRAD" : "RainViewer"}
+          sourceStale={iemStale}
+          sourceName="NEXRAD"
         />
       )}
     </div>
@@ -1571,29 +1341,5 @@ WeatherMap.propTypes = {
   dark: PropTypes.bool,
 };
 
-
-/**
- * Fetches the RainViewer frame index and returns past + nowcast frames as
- * a single time-ordered array, with each frame tagged `kind: "past" | "nowcast"`.
- * The nowcast frames (3 entries, every 10 min into the future) are RainViewer's
- * short-range precipitation forecast — surfacing them in the timeline lets the
- * user scrub past the present moment to see what's expected to drift in next.
- *
- * @returns {Promise<Array<{time: number, path: string, kind: "past"|"nowcast"}>>} Combined past + nowcast frames in time order.
- */
-function getMapTimestamps() {
-  return new Promise((resolve, reject) => {
-    axios
-      .get("https://api.rainviewer.com/public/weather-maps.json")
-      .then((res) => {
-        const past = (res.data?.radar?.past ?? []).map((f) => ({ ...f, kind: "past" }));
-        const nowcast = (res.data?.radar?.nowcast ?? []).map((f) => ({ ...f, kind: "nowcast" }));
-        resolve([...past, ...nowcast]);
-      })
-      .catch((err) => {
-        reject(err);
-      });
-  });
-}
 
 export default WeatherMap;

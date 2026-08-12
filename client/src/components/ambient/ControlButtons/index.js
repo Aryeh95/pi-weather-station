@@ -120,7 +120,6 @@ const ControlButtons = () => {
     darkModeAuto,
     markerIsVisible,
     radarTimelineVisible,
-    radarSource,
     hideRadarLegend,
     mouseHide,
   } = useContext(UiPrefsContext);
@@ -339,12 +338,8 @@ const ControlButtons = () => {
   // map. The icon (time-plot) signals "this opens time / chrono
   // controls" — the previous play-triangle was misleading because
   // tapping doesn't start playback, it just shows the scrubber UI
-  // which has its own play button inside. Hidden when radarSource
-  // is ECCC — that layer is a single WMS frame with no time
-  // dimension exposed, so there is nothing to scrub. Both
-  // frame-based sources (RainViewer's discovered list, IEM's fixed
-  // 5-minute mosaic grid) get the control.
-  const btnTimeline = (radarSource === "rainviewer" || radarSource === "iem") ? (
+  // which has its own play button inside.
+  const btnTimeline = (
     <div
       key="timeline"
       /* `data-dock-priority="secondary"` flags this button for
@@ -394,7 +389,7 @@ const ControlButtons = () => {
     >
       <InlineIcon icon={timePlotIcon} />
     </div>
-  ) : null;
+  );
   // Direction-arrows toggle. The wind-gusts glyph reads as
   // "directional weather phenomenon" — more specific than a
   // generic arrow and lit the feature better than the previous
@@ -418,10 +413,7 @@ const ControlButtons = () => {
   // clicking it just flips `hideRadarLegend` regardless of whether
   // a legend is currently painted. When timestamps eventually
   // load, the legend follows the preference.
-  // Same source gating as the timeline button: the legend's dBZ colour
-  // ramp describes both reflectivity sources, but not ECCC's
-  // precipitation-rate product.
-  const btnLegend = (radarSource === "rainviewer" || radarSource === "iem") ? (
+  const btnLegend = (
     <div
       key="legend"
       /* Same maximized-mobile promotion as the timeline button above. */
@@ -445,7 +437,7 @@ const ControlButtons = () => {
     >
       <InlineIcon icon={legendIcon} />
     </div>
-  ) : null;
+  );
   // Nearby-alerts overlay toggle (Phase 3). Warning-triangle glyph; same
   // localStorage-instant idiom + radarOverlaysDisabled gate as the legend
   // button. When ON and alerts are in range, a count badge coloured to
