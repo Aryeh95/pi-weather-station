@@ -1344,3 +1344,16 @@
     font-size: calc(10px * var(--c-font-scale, 1));
   }
 }
+
+/* ============================================================
+ * Lightning bolt markers (GLM overlay). Leaflet's default
+ * .leaflet-div-icon carries a white box + border; this class
+ * replaces it so only the inline-SVG bolt shows. Pointer events
+ * off as belt-and-braces alongside `interactive: false` — the
+ * markers must never eat a map tap.
+ * ============================================================ */
+.flash-icon {
+  background: none;
+  border: none;
+  pointer-events: none;
+}
