@@ -602,7 +602,12 @@
   position: absolute;
   bottom: 16px;
   left: var(--c-edge-gap, 16px);
-  right: calc(var(--c-rail-visible-width, 0px) + var(--c-edge-gap, 16px));
+  /* Narrowed 2026-08-12 (user request): the scrubber only carries the
+   * 11-frame mosaic grid, so a full-width bar was mostly empty track.
+   * 540 px is comfortable for 11 stops; the min() keeps it inside the
+   * rail + edge gaps on narrow viewports, preserving the old
+   * right-edge constraint as a ceiling. */
+  width: min(540px, calc(100% - var(--c-rail-visible-width, 0px) - var(--c-edge-gap, 16px) * 2));
   z-index: 500;
   border-radius: 12px;
   padding: 10px 14px 12px;
