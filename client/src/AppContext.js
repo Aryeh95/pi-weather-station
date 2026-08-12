@@ -10,6 +10,7 @@ import { useUiPreferences } from "~/hooks/useUiPreferences";
 import useIdleDetection from "~/hooks/useIdleDetection";
 import useFavoriteLocations from "~/hooks/useFavoriteLocations";
 import { placeLabelFromAddress } from "~/ui/placeLabel";
+import { eventProductType } from "~/ui/alertLogic";
 import axios from "axios";
 import tzlookup from "tz-lookup";
 
@@ -255,9 +256,6 @@ export function AppContextProvider({ children }) {
   // v2.6 baseline (radar analysis on, no extended radius, no doubled outer
   // points, no sampling-point overlay). Toggles flip independently and
   // persist via saveAdvancedAiFlag (no Save button — instant write on click).
-  const [radarAnalysisEnabled, setRadarAnalysisEnabled] = useState(true);
-  const [extendedRadarRadius, setExtendedRadarRadius] = useState(false);
-  const [showSamplingPoints, setShowSamplingPoints] = useState(false);
   // Calm-day fast path — when current conditions are clearly benign (no
   // active precipitation, low precip probability, period forecast also
   // clear), the server skips the Claude call entirely and returns a
@@ -528,7 +526,6 @@ export function AppContextProvider({ children }) {
   // (CAMS global via GEOS-CF), but blank in many regions. When
   // /api/pollen returns `available: false` the MetricsGrid hides
   // the 5th cell silently.
-  const [pollenEnabled, setPollenEnabled] = useState(false);
   // Active government weather alerts at mapGeo, sorted server-side by
   // descending severity. NWS for the US, ECCC for Canada — see
   // server/govAlertsCtrl.js. Empty array means "no upstream alert
@@ -890,12 +887,22 @@ export function AppContextProvider({ children }) {
    *
    * @param {Number} newVal Zoom level (4–12)
    */
+  // Forward handle to `saveAdvancedDisplayFlag`, which is declared much
+  // further down. Reading it through a ref keeps `saveDefaultMapZoom`'s
+  // identity stable (it has an empty dep array, and it is exported in the
+  // actions context — taking the function as a dep would re-mint the whole
+  // actions object on every render).
+  const saveAdvancedDisplayFlagRef = useRef(null);
+
   const saveDefaultMapZoom = useCallback((newVal) => {
     const n = Math.round(Number(newVal));
     if (!Number.isFinite(n)) return;
     setDefaultMapZoom(n);
     setZoomToLevel(n);
+    // localStorage is kept as a fast local fallback (it hydrates before the
+    // /settings round-trip on boot); settings.json is the source of truth.
     window.localStorage.setItem(DEFAULT_MAP_ZOOM_STORAGE_KEY, String(n));
+    saveAdvancedDisplayFlagRef.current?.("defaultMapZoom", n);
   }, []);
 
   const checkIsLocal = useCallback(() => {
@@ -1053,21 +1060,6 @@ export function AppContextProvider({ children }) {
             // baseline behaviour where the third paragraph always renders
             // when an Anthropic key is configured); the other three default
             // to OFF if absent.
-            const advancedAi = res.advanced && res.advanced.ai;
-            if (advancedAi) {
-              if (advancedAi.radarAnalysisEnabled !== undefined) {
-                setRadarAnalysisEnabled(Boolean(advancedAi.radarAnalysisEnabled));
-              }
-              setExtendedRadarRadius(Boolean(advancedAi.extendedRadius));
-              setShowSamplingPoints(Boolean(advancedAi.showSamplingPoints));
-            }
-            // Pollen badge — opt-in via advanced.pollen.enabled.
-            // Defaults to OFF so installs that don't care about
-            // pollen never burn the upstream quota or grow the grid.
-            const advancedPollen = res.advanced && res.advanced.pollen;
-            if (advancedPollen && advancedPollen.enabled !== undefined) {
-              setPollenEnabled(Boolean(advancedPollen.enabled));
-            }
             const advancedDisplay = res.advanced && res.advanced.display;
             if (advancedDisplay) {
               if (advancedDisplay.lightModeStyle) {
@@ -1078,6 +1070,12 @@ export function AppContextProvider({ children }) {
               }
               if (typeof advancedDisplay.radarOpacityLight === "number") {
                 setRadarOpacityLight(advancedDisplay.radarOpacityLight);
+              }
+              // Server-persisted map zoom — the level the user last left
+              // the map at. Wins over the localStorage copy: settings.json
+              // is the shared source of truth and survives a cache clear.
+              if (Number.isFinite(advancedDisplay.defaultMapZoom)) {
+                setDefaultMapZoom(Math.round(advancedDisplay.defaultMapZoom));
               }
               if (typeof advancedDisplay.radarOpacityDark === "number") {
                 setRadarOpacityDark(advancedDisplay.radarOpacityDark);
@@ -1482,55 +1480,46 @@ export function AppContextProvider({ children }) {
   // values (useRef ignores the initializer afterwards) so the ref is
   // never null even before the first effect commit.
   const advancedStateRef = useRef({
-    radarAnalysisEnabled,
-    extendedRadarRadius,
-    showSamplingPoints,
     lightModeStyle,
     darkModeStyle,
     radarOpacityLight,
     radarOpacityDark,
+    defaultMapZoom,
     sleepEnabled,
     sleepStage1Delay,
     sleepStage1Brightness,
     sleepStage2Enabled,
     sleepStage2Delay,
     sleepNightMode,
-    pollenEnabled,
     alertRadiusKm,
   });
   useEffect(() => {
     advancedStateRef.current = {
-      radarAnalysisEnabled,
-      extendedRadarRadius,
-      showSamplingPoints,
-        lightModeStyle,
+      lightModeStyle,
       darkModeStyle,
       radarOpacityLight,
       radarOpacityDark,
+      defaultMapZoom,
       sleepEnabled,
       sleepStage1Delay,
       sleepStage1Brightness,
       sleepStage2Enabled,
       sleepStage2Delay,
       sleepNightMode,
-      pollenEnabled,
       alertRadiusKm,
     };
   }, [
-    radarAnalysisEnabled,
-    extendedRadarRadius,
-    showSamplingPoints,
     lightModeStyle,
     darkModeStyle,
     radarOpacityLight,
     radarOpacityDark,
+    defaultMapZoom,
     sleepEnabled,
     sleepStage1Delay,
     sleepStage1Brightness,
     sleepStage2Enabled,
     sleepStage2Delay,
     sleepNightMode,
-    pollenEnabled,
     alertRadiusKm,
   ]);
 
@@ -1570,9 +1559,6 @@ export function AppContextProvider({ children }) {
     const s = advancedStateRef.current;
     return {
       ai: {
-        radarAnalysisEnabled: s.radarAnalysisEnabled,
-        extendedRadius: s.extendedRadarRadius,
-        showSamplingPoints: s.showSamplingPoints,
         calmDayFastPath: s.calmDayFastPath,
         ...(overrides.ai || {}),
       },
@@ -1581,6 +1567,7 @@ export function AppContextProvider({ children }) {
         darkModeStyle: s.darkModeStyle,
         radarOpacityLight: s.radarOpacityLight,
         radarOpacityDark: s.radarOpacityDark,
+        defaultMapZoom: s.defaultMapZoom,
         ...(overrides.display || {}),
       },
       sleep: {
@@ -1623,9 +1610,6 @@ export function AppContextProvider({ children }) {
     // key `extendedRadius` maps to React state `extendedRadarRadius`
     // — settings.json uses the shorter name for compatibility with
     // earlier installs.
-    if (key === "radarAnalysisEnabled") setRadarAnalysisEnabled(value);
-    if (key === "extendedRadius") setExtendedRadarRadius(value);
-    if (key === "showSamplingPoints") setShowSamplingPoints(value);
     return axios
       .patch("/setting", { key: "advanced", val: buildAdvancedSubtree({ ai: { [key]: value } }) })
       .catch((err) => {
@@ -1634,22 +1618,6 @@ export function AppContextProvider({ children }) {
       });
   }, [buildAdvancedSubtree]);
 
-  /**
-   * Persist advanced.pollen.enabled to settings.json. Same instant-save
-   * pattern as saveAdvancedAiFlag.
-   *
-   * @param {Boolean} value new value
-   * @returns {Promise} Resolves when saved
-   */
-  const savePollenEnabled = useCallback((value) => {
-    setPollenEnabled(value);
-    return axios
-      .patch("/setting", { key: "advanced", val: buildAdvancedSubtree({ pollen: { enabled: value } }) })
-      .catch((err) => {
-        if (err && err.response && err.response.status === 403) return;
-        console.warn("savePollenEnabled PATCH failed:", err && err.message);
-      });
-  }, [buildAdvancedSubtree]);
 
   /**
    * Persist a single advanced.display.* flag. Same instant-save pattern as
@@ -1659,6 +1627,8 @@ export function AppContextProvider({ children }) {
    * @param {String} value new value
    * @returns {Promise} Resolves when saved
    */
+  // eslint-disable-next-line no-use-before-define -- assigned to the forward
+  // ref immediately below; see saveAdvancedDisplayFlagRef.
   const saveAdvancedDisplayFlag = useCallback((key, value) => {
     return axios
       .patch("/setting", { key: "advanced", val: buildAdvancedSubtree({ display: { [key]: value } }) })
@@ -1669,6 +1639,36 @@ export function AppContextProvider({ children }) {
         if (key === "radarOpacityDark") setRadarOpacityDark(value);
       });
   }, [buildAdvancedSubtree]);
+  saveAdvancedDisplayFlagRef.current = saveAdvancedDisplayFlag;
+
+  // Remember the zoom the user actually leaves the map at, server-side.
+  //
+  // `currentMapZoom` is pushed up by WeatherMap's zoomend listener, so this
+  // fires once the gesture settles rather than during it. The 2 s debounce
+  // then collapses a burst of +/- taps into a single PATCH — without it a
+  // pinch-zoom would write settings.json a dozen times.
+  //
+  // Deliberately NOT gated on `isLocal`: /setting is localhost-only, so a
+  // remote viewer's PATCH 403s, and saveAdvancedDisplayFlag already swallows
+  // that. The result is the intended semantics — the kiosk owns the
+  // remembered zoom, a phone browsing from the couch doesn't move it.
+  //
+  // The `!== defaultMapZoom` guard is what stops a feedback loop: hydrating
+  // the stored zoom on boot sets currentMapZoom to the same value, which
+  // would otherwise immediately re-save it.
+  useEffect(() => {
+    if (!Number.isFinite(currentMapZoom)) return undefined;
+    if (currentMapZoom === defaultMapZoom) return undefined;
+    const ZOOM_PERSIST_DEBOUNCE_MS = 2000;
+    const id = setTimeout(() => {
+      setDefaultMapZoom(currentMapZoom);
+      try {
+        window.localStorage.setItem(DEFAULT_MAP_ZOOM_STORAGE_KEY, String(currentMapZoom));
+      } catch { /* localStorage may be unavailable */ }
+      saveAdvancedDisplayFlagRef.current?.("defaultMapZoom", currentMapZoom);
+    }, ZOOM_PERSIST_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [currentMapZoom, defaultMapZoom]);
 
   /**
    * Persist a single advanced.sleep.* flag. Same instant-save pattern as
@@ -1817,7 +1817,21 @@ export function AppContextProvider({ children }) {
         .get(`/api/nearby-alerts?lat=${mapGeo.latitude}&lon=${mapGeo.longitude}&radiusKm=${alertRadiusKm}${testParam}`)
         .then((res) => {
           if (cancelled) return;
-          setNearbyAlerts(Array.isArray(res.data?.alerts) ? res.data.alerts : []);
+          // WARNINGS ONLY on the map overlay. Filtered here — at the one
+          // place the list lands — so the polygons, the dock's count
+          // badge, the legend count and the tap popup can't disagree.
+          //
+          // The filter keys on the EVENT NAME via `eventProductType`, not
+          // on `tier`. Tier comes from `severityToTier`, which maps CAP
+          // severity (extreme/severe → red, moderate → orange, else
+          // yellow) and additionally caps watches at moderate. Those are
+          // different axes: a Winter Storm WARNING tagged CAP `Moderate`
+          // is orange, exactly like a watch, so a tier filter would drop
+          // genuine warnings. The name is the authoritative signal for
+          // "is this a Warning", and `eventProductType` already encodes
+          // the Warning > Watch > Advisory > Statement precedence.
+          const all = Array.isArray(res.data?.alerts) ? res.data.alerts : [];
+          setNearbyAlerts(all.filter((a) => eventProductType(a && a.eventType) === "warning"));
           setNearbyResidualCount(Number(res.data?.residualCount) || 0);
         })
         .catch(() => undefined);
@@ -1928,7 +1942,6 @@ export function AppContextProvider({ children }) {
     toggleDirectionArrows,
     toggleWeatherAlerts,
     setAlertRadiusKmLive,
-    savePollenEnabled,
     selectGovAlert,
     setGovAlertExpanded,
     setHighlightedAlertId,
@@ -2003,7 +2016,6 @@ export function AppContextProvider({ children }) {
     toggleDirectionArrows,
     toggleWeatherAlerts,
     setAlertRadiusKmLive,
-    savePollenEnabled,
     selectGovAlert,
     setGovAlertExpanded,
     setHighlightedAlertId,
@@ -2181,10 +2193,6 @@ export function AppContextProvider({ children }) {
     hideRadarLegend,
     markerIsVisible,
     showDirectionArrows,
-    showSamplingPoints,
-    radarAnalysisEnabled,
-    extendedRadarRadius,
-    pollenEnabled,
     defaultMapZoom,
     animateWeatherMap,
     radarSpeed,
@@ -2210,10 +2218,6 @@ export function AppContextProvider({ children }) {
     hideRadarLegend,
     markerIsVisible,
     showDirectionArrows,
-    showSamplingPoints,
-    radarAnalysisEnabled,
-    extendedRadarRadius,
-    pollenEnabled,
     defaultMapZoom,
     animateWeatherMap,
     radarSpeed,

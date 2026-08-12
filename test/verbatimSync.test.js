@@ -15,6 +15,7 @@
 //   test/alertLogic.test.js   ↔ client/src/ui/alertLogic.js
 //   test/uiHybrid.test.js     ↔ client/src/ui/hybrid.js
 //   test/iemRadarLayers.test.js ↔ client/src/components/WeatherMap/iemRadar.js
+//   test/warningsOnlyOverlay.test.js ↔ client/src/ui/alertLogic.js
 //
 // Normalization is deliberately mechanical (regex-based, no JS parser —
 // the suite must stay deps-free per CLAUDE.md). It erases formatting
@@ -60,7 +61,7 @@ const COPY_END_RE = /^\/\/ -{4,} end of verbatim copy -{4,}\s*$/m;
 // not be discovered as standalone declarations.
 const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|const\s+(\w+)\s*=)/gm;
 
-// Inventory size after the radar rework (9 + 6 + 4 + 4). Guards against the
+// Inventory size after the radar rework (9 + 6 + 4 + 4 + 1). Guards against the
 // discovery silently finding nothing (which would fake-pass the suite).
 // If a copied declaration is legitimately removed from a test file,
 // lower this consciously.
@@ -70,7 +71,7 @@ const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|
 // geometry, the temperature/speed conversions, and the astronomy helpers all
 // belonged to the forecast UI), and trimmed alertLogic to the government-alert
 // helpers.
-const EXPECTED_CHECK_COUNT = 23;
+const EXPECTED_CHECK_COUNT = 24;
 
 /**
  * The four copy-carrying test files and how to find their copies.
@@ -99,6 +100,11 @@ const PAIRS = [
     // Marker-delimited copy of WeatherMap/iemRadar.js — the two-layer
     // NEXRAD zoom band and frame-age classifier.
     testFile: "test/iemRadarLayers.test.js",
+  },
+  {
+    // Marker-delimited copy of the eventProductType classifier, used by the
+    // warnings-only overlay filter.
+    testFile: "test/warningsOnlyOverlay.test.js",
   },
   {
     testFile: "test/alertParser.test.js",
