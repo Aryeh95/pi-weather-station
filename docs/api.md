@@ -262,6 +262,42 @@ display. Frames are oldest-first, so the last entry is the newest.
   HTTP 503 when IEM is unreachable — the client keeps its last good frame
   list on screen and flags it stale rather than blanking the radar.
 
+### `GET /api/storm-tracks`
+NEXRAD Level III storm tracks (STI / product 58). NWS runs the SCIT cell
+detection; this returns the published result for one radar — each cell's
+current position, motion, and forecast positions 15/30/45/60 min out.
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:** `site` (required) — 3-letter NEXRAD id, e.g. `DIX`
+- **Source:** the public `unidata-nexrad-level3` S3 bucket, listed over
+  plain HTTPS (no AWS SDK). One product per volume scan (4–6 min).
+- **Cached:** 60 s per site
+
+```json
+{
+  "available": true,
+  "site": "DIX",
+  "scanTime": "2026-08-12T00:29:37.000Z",
+  "radar": { "lat": 39.947, "lon": -74.411 },
+  "cells": [
+    {
+      "id": "T3", "lat": 41.159, "lon": -72.603,
+      "speedKt": 22, "movementFromDeg": 308, "isNew": false,
+      "forecast": [ { "minutes": 15, "lat": 41.095, "lon": -72.504 } ],
+      "track": [ { "lat": 41.159, "lon": -72.603 } ]
+    }
+  ]
+}
+```
+
+`track` is the ready-to-draw polyline (current position + forecasts).
+**`movementFromDeg` is the direction the storm comes FROM** — the product's
+meteorological convention; never derive a heading from it (the tracks would
+point backwards). A `NEW` cell has no motion yet: `track` is a single point.
+
+- **Errors:** HTTP 400 on a bad `site`; HTTP 503 when the bucket is
+  unreachable — the client keeps its last good cells flagged stale.
+
 ---
 
 ## Geocoding

@@ -22,6 +22,7 @@ import locationOutlineIcon from "@iconify/icons-carbon/location";
 import timePlotIcon from "@iconify/icons-carbon/time-plot";
 import legendIcon from "@iconify/icons-carbon/legend";
 import warningAltIcon from "@iconify/icons-carbon/warning-alt";
+import stormTracksIcon from "@iconify/icons-carbon/hurricane";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -97,6 +98,7 @@ const ControlButtons = () => {
     toggleMarker,
     toggleRadarTimelineVisible,
     toggleWeatherAlerts,
+    toggleStormTracks,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -125,6 +127,7 @@ const ControlButtons = () => {
   } = useContext(UiPrefsContext);
   const {
     showWeatherAlerts,
+    showStormTracks,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -475,6 +478,35 @@ const ControlButtons = () => {
       ) : null}
     </div>
   );
+  // Storm tracks (NEXRAD Level III STI) — SCIT cell positions and their
+  // forecast paths. Same overlay-gating and secondary dock priority as the
+  // alerts toggle beside it. The hurricane glyph
+  // reads as "rotating storm" and stays distinct from the alert triangle
+  // at kiosk glance distance.
+  const btnStormTracks = (
+    <div
+      key="stormTracks"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleStormTracks();
+        notify(showStormTracks ? "toasts.stormTracksOff" : "toasts.stormTracksOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${showStormTracks && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showStormTracks ? "controls.hideStormTracks" : "controls.showStormTracks")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showStormTracks ? "controls.hideStormTracks" : "controls.showStormTracks")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={stormTracksIcon} />
+    </div>
+  );
   const btnContrast = (
     <div
       key="contrast"
@@ -658,6 +690,7 @@ const ControlButtons = () => {
         {btnTimeline}
         {btnLegend}
         {btnWeatherAlerts}
+        {btnStormTracks}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

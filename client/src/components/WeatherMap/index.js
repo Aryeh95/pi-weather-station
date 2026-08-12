@@ -64,6 +64,8 @@ import RadarLegend from "./RadarLegend";
 import RadarTimeline from "./RadarTimeline";
 import RadarFrameAge from "./RadarFrameAge";
 import useIemRadarFrames from "./useIemRadarFrames";
+import useStormTracks from "./useStormTracks";
+import StormTracks from "./StormTracks";
 import {
   IEM_ATTRIBUTION,
   buildMosaicFrames,
@@ -692,6 +694,7 @@ const WeatherMap = ({ zoom, dark }) => {
     // user-set radius. Display-only — gated on showWeatherAlerts, OFF by
     // default until the Phase 3 dock toggle wires it up.
     showWeatherAlerts,
+    showStormTracks,
     showAlertRing,
     nearbyAlerts,
     alertRadiusKm,
@@ -900,6 +903,13 @@ const WeatherMap = ({ zoom, dark }) => {
     ? currentSiteFrame
     : currentMosaicFrame;
   const iemAgeIsApproximate = !(showIemSite && iemOpacity.site >= iemOpacity.mosaic);
+
+  // Storm tracks reuse the NEXRAD site the frame poller already resolved,
+  // so enabling the overlay costs no extra site lookup.
+  const { cells: stormCells } = useStormTracks({
+    site: iemSite,
+    enabled: showStormTracks && Boolean(iemSite),
+  });
 
   // Timeline-shaped view of the mosaic frames. RadarTimeline was built
   // against RainViewer's frame objects (`time` in UNIX *seconds*, plus a
@@ -1254,6 +1264,13 @@ const WeatherMap = ({ zoom, dark }) => {
             on the layer toggle (OFF by default until the Phase 3 dock
             button). Never moves the map. */}
         {showWeatherAlerts ? <NearbyAlertsOverlay alerts={nearbyAlerts} nightRed={nightRed} dark={dark} /> : null}
+        {/* Storm tracks (NEXRAD Level III STI) — inserted AFTER the alert
+            polygons on purpose. Leaflet paints later-inserted vector layers
+            on top, and a filled warning polygon would otherwise bury the
+            thin dashed track running through it. */}
+        {showStormTracks ? (
+          <StormTracks cells={stormCells} dark={dark} nightRed={nightRed} />
+        ) : null}
         {/* Survey tap popup (Phase 3b): opens at the tapped point when it
             landed inside one or more alert polygons. Lightweight subject +
             a single "Re-center here" that re-activates the point-based path. */}

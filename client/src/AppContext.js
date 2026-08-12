@@ -499,6 +499,23 @@ export function AppContextProvider({ children }) {
       return next;
     });
   }, []);
+
+  // Storm tracks (NEXRAD Level III STI): SCIT cell positions + their
+  // forecast paths an hour out. Per-device like the alert overlay — it's a
+  // display choice, not an install setting. OFF by default: the overlay is
+  // only meaningful in convective weather, and a clear-air radar would
+  // otherwise carry a permanently empty layer.
+  const [showStormTracks, setShowStormTracks] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("showStormTracks") === "true";
+  });
+  const toggleStormTracks = useCallback(() => {
+    setShowStormTracks((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("showStormTracks", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
   // Whether the dashed radius ring is drawn alongside the nearby-alerts
   // layer. Per-device display preference (localStorage), DEFAULT ON so the
   // existing "polygons + ring" look is preserved; a user who wants the bare
@@ -1941,6 +1958,7 @@ export function AppContextProvider({ children }) {
     setRadarFrameTs,
     toggleDirectionArrows,
     toggleWeatherAlerts,
+    toggleStormTracks,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2015,6 +2033,7 @@ export function AppContextProvider({ children }) {
     setRadarFrameTs,
     toggleDirectionArrows,
     toggleWeatherAlerts,
+    toggleStormTracks,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2253,6 +2272,7 @@ export function AppContextProvider({ children }) {
     nearbyAlerts,
     nearbyResidualCount,
     showWeatherAlerts,
+    showStormTracks,
     showAlertRing,
     alertRadiusKm,
   }), [
@@ -2263,6 +2283,7 @@ export function AppContextProvider({ children }) {
     nearbyAlerts,
     nearbyResidualCount,
     showWeatherAlerts,
+    showStormTracks,
     showAlertRing,
     alertRadiusKm,
   ]);

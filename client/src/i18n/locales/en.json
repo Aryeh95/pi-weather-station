@@ -425,7 +425,9 @@
     "groupDisplay": "Display",
     "groupSystem": "System",
     "openPlaces": "Open places",
-    "closePlaces": "Close places"
+    "closePlaces": "Close places",
+    "showStormTracks": "Show storm tracks",
+    "hideStormTracks": "Hide storm tracks"
   },
   "mobile": {
     "settingsHint": "Open the app on the Pi locally for advanced settings."
@@ -460,7 +462,9 @@
     "aiSummaryHidden": "AI summary hidden",
     "refreshing": "Refreshing…",
     "updateRemoteNotice": "Update available — ask the kiosk admin",
-    "favoriteDefaultSet": "Default location updated"
+    "favoriteDefaultSet": "Default location updated",
+    "stormTracksOn": "Storm tracks on",
+    "stormTracksOff": "Storm tracks off"
   },
   "health": {
     "title": "Service health",

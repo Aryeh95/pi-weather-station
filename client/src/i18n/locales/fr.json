@@ -425,7 +425,9 @@
     "groupDisplay": "Affichage",
     "groupSystem": "Système",
     "openPlaces": "Ouvrir les lieux",
-    "closePlaces": "Fermer les lieux"
+    "closePlaces": "Fermer les lieux",
+    "showStormTracks": "Afficher les trajectoires d'orage",
+    "hideStormTracks": "Masquer les trajectoires d'orage"
   },
   "mobile": {
     "settingsHint": "Pour les réglages avancés, ouvre l'app depuis le Pi en local."
@@ -460,7 +462,9 @@
     "aiSummaryHidden": "Section IA masquée",
     "refreshing": "Rafraîchissement…",
     "updateRemoteNotice": "Mise à jour disponible — avisez l'admin du kiosque",
-    "favoriteDefaultSet": "Emplacement par défaut mis à jour"
+    "favoriteDefaultSet": "Emplacement par défaut mis à jour",
+    "stormTracksOn": "Trajectoires d'orage activées",
+    "stormTracksOff": "Trajectoires d'orage désactivées"
   },
   "health": {
     "title": "État des services",

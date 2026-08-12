@@ -720,6 +720,12 @@ const { getRadarSite, getRadarFrames } = require("./iemRadarCtrl");
 app.get("/api/radar/site",          apiLimiter, getRadarSite);
 app.get("/api/radar/frames",        apiLimiter, getRadarFrames);
 
+// NEXRAD Level III storm tracks (STI / product 58). NWS runs the cell
+// detection; this reads the published result — cell positions plus forecast
+// positions an hour out — from the public unidata-nexrad-level3 bucket.
+const { getStormTracks } = require("./stormTracksCtrl");
+app.get("/api/storm-tracks",        apiLimiter, getStormTracks);
+
 // The radar risk-level sampler (/api/radar-risk) was removed in the radar
 // rework. It sampled RainViewer tiles pixel-by-pixel to colour the dashed
 // analysis rings and feed the AI summary; both of those are gone, and the

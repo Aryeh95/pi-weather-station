@@ -166,37 +166,85 @@ product exists, so fresh data must not be flagged:
 
 ## Deferred / stretch
 
-### Storm tracks (do this second — small effort, decent payoff)
+### Storm tracks — DONE (2026-08-12), findings recorded below
 
-NEXRAD Level III **STI, product 58 ("Storm Track")**. NWS already runs the cell
-detection; you get position, direction, speed, and forecast positions ~1 hr out.
+NEXRAD Level III **STI, product 58 ("Storm Track")**. Built as
+`server/stormTracksCtrl.js` → `GET /api/storm-tracks?site=DIX`, rendered by
+`WeatherMap/StormTracks.js`, toggled from the dock (hurricane glyph, per-device
+pref `showStormTracks`, off by default).
 
-- Bucket: `s3://unidata-nexrad-level3/`, naming `SSS_PPP_YYYY_MM_DD_HH_MM_SS`
-- Node parser: `netbymatt/nexrad-level-3-data` — **check its supported-products
-  list first**, author only implemented parsers he personally needed.
-- If STI isn't supported: the format is vector + text symbology blocks (not a
-  raster grid), so it yields lat/lon points + bearing/speed per cell. Rendering
-  = Leaflet polyline + arrowhead.
-- Caveat: SCIT is noisy — drops cells, swaps IDs between adjacent cells,
-  struggles with squall lines. RadarScope shows the same product, so expect
-  parity, not improvement.
+What the build established — keep these if the feature is ever touched:
 
-### Level II (only if latency still annoys after shipping the above)
+- The parser DOES support STI (code 58 / `NST`); verified against a live DIX
+  file, not just the README.
+- **The MOVEMENT column is the direction the storm comes FROM**, not its
+  heading (meteorological convention). Verified live: every cell's forecast
+  positions walk along MOVEMENT − 180° (deltas 0.6–3.9° across 4 cells). A
+  naive arrow from that field points every track backwards. The track polyline
+  is therefore built ONLY from the forecast positions; MOVEMENT survives only
+  as label text (`movementFromDeg`, named for what it is).
+- Freshly detected cells report `NEW` / `NO DATA` — no motion, no forecasts.
+  Rendered as a hollow dot, no arrow: SCIT genuinely doesn't know yet.
+- The cell table arrives as the product's fixed-width TABULAR text page.
+  Parsing normalises `308/ 22` → `308/22` and `NO DATA` → `NODATA`, then
+  splits on whitespace — column offsets are never trusted.
+- The bucket is listed over plain HTTPS (`?list-type=2&prefix=`), no AWS SDK.
+  Keys sort lexicographically = chronologically for this naming.
+- Known SCIT noise (drops cells, swaps IDs between adjacent cells, struggles
+  with squall lines) is upstream behaviour. RadarScope shows the same product.
 
-Real RadarScope-equivalent path. Viable on this hardware (x86 + iGPU), unlike a Pi.
+### Raw radial rendering — FILED 2026-08-12 (the real RadarScope-parity fix)
 
-- `unidata-nexrad-level2-chunks` — real-time, fed by Unidata LDM with minimal
-  latency; render partial sweeps as the radar turns. Chunk filenames carry
-  S/I/E suffix (Start/Intermediate/End of volume). Partial chunks leave some
-  object fields unpopulated — renderer must tolerate that.
-- `unidata-nexrad-level2` — assembled volumes. **Renamed from
-  `noaa-nexrad-level2`**, old bucket deprecated Sept 1 2025; pre-2025 tutorials
-  have the wrong bucket name.
-- Node decoder: `netbymatt/nexrad-level-2-data` (+ `nexrad-level-2-plot`).
-- Cost: polar→screen canvas renderer, color ramp, chunk-assembly state. That's
-  a whole project, not an afternoon. Gain over N0B is modest (same resolution;
-  N0B is already native radial) — mainly lower latency, all tilts, dual-pol.
+**Motivating observation (user, 2026-08-12): high-zoom radar looks softer than
+RadarScope even though we request N0B.** Investigated the same night;
+measurements below are from live tiles over an active storm.
+
+The gap is NOT the product — `ridge::DIX-N0B` is genuinely super-res, and N0B
+is the sharpest thing IEM serves (per-site products for DIX: N0B, N0S only).
+The gap is that **IEM pre-renders tiles server-side**, re-projecting radial
+data onto a smoothed web-mercator raster. Measured over an echo: a z12 tile
+carried only 10 distinct colours, z13 just 5 — interpolated, not blocky, so
+`maxNativeZoom` tuning cannot recover it. RadarScope renders the raw radial
+data client-side (each gate its own polar quad), which is why it looks sharp.
+
+**The fix does not need Level II.** The `unidata-nexrad-level3` bucket — the
+same one storm tracks already poll — carries the raw radial product as
+`SSS_N0B_*` files (~160 KB each, one per volume scan, same cadence as IEM's
+tiles). The already-installed `nexrad-level-3-data` decodes them with a small
+shim, verified against a live file on 2026-08-12:
+
+- The library has no product-153 definition and its whitelist rejects `N0B`,
+  BUT product 153 (Super Res Digital Base Reflectivity) shares product 94's
+  descriptor layout. Cloning the 94 definition and re-badging it
+  (`code: 153, abbreviation: ['N0B','N1B','N2B','N3B']`) decodes cleanly:
+  **720 radials × 0.5°, 1840 bins × ~250 m (`rangeScale: 0.999`), real dBZ
+  scaling (`min −32, increment 0.5, 254 levels`), elevation 0.5°, max 54 dBZ**
+  — matching the live storm. Upstreaming the shim to `netbymatt/
+  nexrad-level-3-data` would be a small PR.
+- Remaining work is the renderer: polar→screen on a `<canvas>` in a Leaflet
+  overlay pane, a dBZ colour ramp, redraw on move/zoom. No chunk-assembly
+  state, no S/I/E suffixes, no partial-sweep tolerance — all of that is
+  Level II baggage this path avoids. Noticeably smaller than the "whole
+  project" the Level II section below estimates.
+- Physics caveat for expectations: super-res is 250 m in RANGE but 0.5° in
+  AZIMUTH, so at 113 km a gate is ~250 m × ~990 m. RadarScope obeys the same
+  physics; parity is the target, not magic.
+- Frame discovery is already solved — the controller's hour-prefix listing
+  works unchanged for `N0B` keys.
+- Keep the IEM tile layers as the low-zoom mosaic and as fallback; the raw
+  renderer replaces the single-site layer at high zoom only.
 - If pursued, confirm Chromium GPU accel is actually on (`chrome://gpu`).
+
+### Level II (superseded for resolution; only for latency/tilts/dual-pol)
+
+The raw Level III path above delivers the resolution fix. Level II adds only:
+lower latency via `unidata-nexrad-level2-chunks` (partial sweeps as the radar
+turns; S/I/E chunk suffixes, unpopulated fields in partial chunks), all tilts,
+and dual-pol moments. Assembled volumes: `unidata-nexrad-level2` (**renamed
+from `noaa-nexrad-level2`**, old bucket deprecated Sept 1 2025 — pre-2025
+tutorials have the wrong name). Node decoder: `netbymatt/nexrad-level-2-data`
+(+ `nexrad-level-2-plot`). Only worth it if latency still annoys after the raw
+Level III renderer ships.
 
 ### Lightning (do last — forces an architectural change)
 
@@ -249,9 +297,18 @@ No good free option.
    force-opens Settings was keyed on `weatherApiKey`, which nothing sets any
    more — so a fresh install would have nagged forever. It now keys on
    `mapApiKey`, the only genuinely required key.
-2. STI storm tracks
-3. Lightning
-4. Level II, only if warranted
+2. **STI storm tracks — DONE** (2026-08-12). `/api/storm-tracks` +
+   `StormTracks` overlay + dock toggle. See the storm-tracks section for the
+   MOVEMENT-is-a-FROM-direction trap and the other findings.
+3. **Raw Level III radial renderer** — filed 2026-08-12, see the
+   "Raw radial rendering" section. Replaces Level II as the next radar-quality
+   step: same bucket and parser as storm tracks, a ~12-line product-153 shim
+   (verified decoding live), plus a canvas polar renderer. This is the actual
+   fix for the "softer than RadarScope at high zoom" observation — IEM's
+   pre-rendered tiles smooth the data server-side, so no tile tuning can
+   close that gap.
+4. Lightning
+5. Level II, only if latency/tilts/dual-pol still warrant it after (3)
 
 ## Environment notes
 
