@@ -300,13 +300,18 @@ No good free option.
 2. **STI storm tracks — DONE** (2026-08-12). `/api/storm-tracks` +
    `StormTracks` overlay + dock toggle. See the storm-tracks section for the
    MOVEMENT-is-a-FROM-direction trap and the other findings.
-3. **Raw Level III radial renderer** — filed 2026-08-12, see the
-   "Raw radial rendering" section. Replaces Level II as the next radar-quality
-   step: same bucket and parser as storm tracks, a ~12-line product-153 shim
-   (verified decoding live), plus a canvas polar renderer. This is the actual
-   fix for the "softer than RadarScope at high zoom" observation — IEM's
-   pre-rendered tiles smooth the data server-side, so no tile tuning can
-   close that gap.
+3. **Raw Level III radial renderer — DONE** (2026-08-12).
+   `server/radarRadialCtrl.js` (product-153 shim + `/api/radar/radial`) +
+   `radialRender.js` (inverse-mapped mercator canvas, 2560 px over a 300 km
+   disc ≈ 234 m/px vs the 250 m gate) + `useRadarRadial.js` (renders only
+   when the volume-scan key changes; object URLs revoked on replace).
+   Replaces the IEM site tiles whenever a fresh radial frame exists AND the
+   playhead is on "latest"; scrubbing history falls back to timestamped
+   tiles. Own pane at z-index 250 (above tiles, below alert/track vectors).
+   Measured in the running app: 116 distinct colours vs 10 in the IEM tile
+   over comparable echo. A committed fixture (test/fixtures/DIX_N0B_*) keeps
+   the decode path testable offline; the scaling contract (dBZ = min +
+   level × inc) is asserted against the parser's own table.
 4. Lightning
 5. Level II, only if latency/tilts/dual-pol still warrant it after (3)
 

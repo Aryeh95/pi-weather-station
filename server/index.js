@@ -726,6 +726,12 @@ app.get("/api/radar/frames",        apiLimiter, getRadarFrames);
 const { getStormTracks } = require("./stormTracksCtrl");
 app.get("/api/storm-tracks",        apiLimiter, getStormTracks);
 
+// Raw N0B radial data for the client-side canvas renderer — the actual
+// super-res picture, not IEM's pre-smoothed raster of it. ~1.7 MB per
+// volume scan, cached 60 s; the client polls once a minute.
+const { getRadarRadial } = require("./radarRadialCtrl");
+app.get("/api/radar/radial",        apiLimiter, getRadarRadial);
+
 // The radar risk-level sampler (/api/radar-risk) was removed in the radar
 // rework. It sampled RainViewer tiles pixel-by-pixel to colour the dashed
 // analysis rings and feed the AI summary; both of those are gone, and the

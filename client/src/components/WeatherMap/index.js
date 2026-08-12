@@ -9,6 +9,8 @@ import React, {
 import {
   MapContainer,
   TileLayer,
+  ImageOverlay,
+  Pane,
   AttributionControl,
   ZoomControl,
   Marker,
@@ -65,6 +67,7 @@ import RadarTimeline from "./RadarTimeline";
 import RadarFrameAge from "./RadarFrameAge";
 import useIemRadarFrames from "./useIemRadarFrames";
 import useStormTracks from "./useStormTracks";
+import useRadarRadial from "./useRadarRadial";
 import StormTracks from "./StormTracks";
 import {
   IEM_ATTRIBUTION,
@@ -887,22 +890,36 @@ const WeatherMap = ({ zoom, dark }) => {
   // band). The single-site layer additionally needs a resolved site and
   // at least one discovered frame before it has anything to show.
   const iemVisible = layerVisibility(currentMapZoom);
+
+  // Raw-radial layer (RadarScope-parity path). Enabled whenever the
+  // single-site band is in view; the expensive render only happens when
+  // a new volume scan actually arrives. Keyed on the same resolved site
+  // as the tiles and storm tracks.
+  const radial = useRadarRadial({
+    site: iemSite,
+    enabled: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
+  });
+  // The radial image replaces the site TILES only when it exists AND the
+  // playhead is on the newest frame — the radial feed is latest-only, so
+  // scrubbing back through history falls back to the timestamped tiles,
+  // which is the honest picture for a historical frame.
+  const radialShown = Boolean(radial.url) && iemFromEnd === 0 && iemVisible.site;
+
   const showIemSite = iemVisible.site
     && iemSiteAvailable
     && Boolean(iemSite)
-    && Boolean(currentSiteFrame);
+    && Boolean(currentSiteFrame)
+    && !radialShown;
   const showIemMosaic = iemVisible.mosaic
     && Boolean(currentMosaicFrame);
 
   // Which frame the age chip describes: whichever layer is currently
-  // dominant. At high zoom the single-site layer is what the user is
-  // reading, so its (real, scan-derived) timestamp is the honest one;
-  // at low zoom the mosaic's schedule-derived time applies and is
-  // marked approximate.
-  const iemAgeFrame = showIemSite && iemOpacity.site >= iemOpacity.mosaic
-    ? currentSiteFrame
-    : currentMosaicFrame;
-  const iemAgeIsApproximate = !(showIemSite && iemOpacity.site >= iemOpacity.mosaic);
+  // dominant. The single-site product (tiles OR the raw-radial image —
+  // same volume scans, same timestamps) carries real scan-derived times;
+  // the mosaic's schedule-derived time is marked approximate.
+  const siteLayerDominant = (radialShown || showIemSite) && iemOpacity.site >= iemOpacity.mosaic;
+  const iemAgeFrame = siteLayerDominant ? currentSiteFrame : currentMosaicFrame;
+  const iemAgeIsApproximate = !siteLayerDominant;
 
   // Storm tracks reuse the NEXRAD site the frame poller already resolved,
   // so enabling the overlay costs no extra site lookup.
@@ -1208,6 +1225,25 @@ const WeatherMap = ({ zoom, dark }) => {
             keepBuffer={2}
           />
         ) : null}
+        {/* Raw-radial layer — the actual super-res picture, rendered
+            client-side from N0B radial data instead of IEM's pre-smoothed
+            tiles (see radialRender.js). Lives in its own pane between the
+            tile pane (z200) and the vector overlay pane (z400): above the
+            basemap and any radar tiles, below alert polygons and storm
+            tracks. The `key` on the overlay forces a remount when the
+            image URL changes — ImageOverlay's url prop update path can
+            leave the old bitmap up briefly, and a scan boundary should
+            swap atomically. */}
+        <Pane name="radialPane" style={{ zIndex: 250 }}>
+          {radialShown ? (
+            <ImageOverlay
+              key={radial.url}
+              url={radial.url}
+              bounds={radial.bounds}
+              opacity={iemOpacity.site}
+            />
+          ) : null}
+        </Pane>
       {markerIsVisible && markerPosition ? (
           /* v2.14.65: custom target icon only in nightRed mode. In every
            * other palette the default Leaflet blue teardrop pin stays —

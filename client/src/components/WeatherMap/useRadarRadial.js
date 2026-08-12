@@ -1,0 +1,97 @@
+// Poller + renderer driver for the raw-radial layer.
+//
+// Polls /api/radar/radial once a minute (the server caches 60 s; a new
+// volume scan lands every 4-6 min), and re-renders the canvas ONLY when
+// the product key changes — the render is the expensive step (~6.5 M
+// pixels), so an unchanged scan must never re-run it.
+//
+// The rendered canvas is published as an object URL for Leaflet's
+// ImageOverlay. Old URLs are revoked on replacement and unmount — each
+// one pins a ~26 MB decoded image, so leaking them would matter fast on
+// an always-on kiosk.
+
+import { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import { renderRadialImage, decodeBins } from "./radialRender";
+
+const POLL_INTERVAL_MS = 60 * 1000;
+
+/**
+ * Keep a rendered raw-radial image current for a site.
+ *
+ * @param {Object} params
+ * @param {String|null} params.site 3-letter NEXRAD id
+ * @param {Boolean} params.enabled false pauses polling and clears the image
+ * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean}}
+ */
+export default function useRadarRadial({ site, enabled }) {
+  const [state, setState] = useState({ url: null, bounds: null, scanTime: null, stale: false });
+  const lastKeyRef = useRef(null);
+  const urlRef = useRef(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+
+    const publish = (url, bounds, scanTime) => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = url;
+      setState({ url, bounds, scanTime, stale: false });
+    };
+
+    if (!enabled || !site) {
+      lastKeyRef.current = null;
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
+      setState({ url: null, bounds: null, scanTime: null, stale: false });
+      return () => { cancelledRef.current = true; };
+    }
+
+    const fetchAndRender = () => {
+      axios.get("/api/radar/radial", { params: { site } })
+        .then((res) => {
+          if (cancelledRef.current) return;
+          const d = res.data || {};
+          if (!d.available) {
+            // No recent product — clear so the tile fallback shows.
+            lastKeyRef.current = null;
+            publish(null, null, null);
+            return;
+          }
+          if (d.key === lastKeyRef.current) {
+            // Same volume scan — refresh only the staleness flag.
+            setState((prev) => (prev.stale ? { ...prev, stale: false } : prev));
+            return;
+          }
+          const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins));
+          canvas.toBlob((blob) => {
+            if (cancelledRef.current || !blob) return;
+            lastKeyRef.current = d.key;
+            publish(URL.createObjectURL(blob), bounds, d.scanTime);
+          }, "image/png");
+        })
+        .catch(() => {
+          if (cancelledRef.current) return;
+          // Keep the last rendered frame, flagged stale — consistent with
+          // the frame-list and storm-track pollers.
+          setState((prev) => ({ ...prev, stale: true }));
+        });
+    };
+
+    fetchAndRender();
+    const id = setInterval(fetchAndRender, POLL_INTERVAL_MS);
+    return () => {
+      cancelledRef.current = true;
+      clearInterval(id);
+    };
+  }, [site, enabled]);
+
+  // Revoke the final URL when the consumer unmounts.
+  useEffect(() => () => {
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+  }, []);
+
+  return state;
+}

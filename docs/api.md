@@ -298,6 +298,27 @@ point backwards). A `NEW` cell has no motion yet: `track` is a single point.
 - **Errors:** HTTP 400 on a bad `site`; HTTP 503 when the bucket is
   unreachable — the client keeps its last good cells flagged stale.
 
+### `GET /api/radar/radial`
+Raw N0B super-res radial data behind the client-side canvas renderer —
+the actual gate-level picture, not IEM's pre-smoothed raster of it.
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:** `site` (required) — 3-letter NEXRAD id
+- **Source:** `SSS_N0B_*` keys in the `unidata-nexrad-level3` bucket,
+  decoded via a product-153 shim over `nexrad-level-3-data` (the library
+  has no native 153 definition; 153 shares product 94's layout).
+- **Cached:** 60 s per site. Payload ~1.7 MB (base64 of 720 × 1840 raw
+  byte levels, re-bucketed into fixed 0.5° azimuth slots).
+
+Decode contract: levels 0–1 are below-threshold/missing (transparent);
+level L ≥ 2 is `scaling.min + L × scaling.increment` dBZ. `binKm` is
+0.25 by product spec — the packet's own `rangeScale` field is a display
+factor, not the bin size.
+
+- **Errors:** HTTP 400 on a bad `site`; HTTP 503 on upstream failure;
+  `{"available": false}` (200) when no recent product exists — the
+  client falls back to the IEM tiles in both soft cases.
+
 ---
 
 ## Geocoding

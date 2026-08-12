@@ -180,21 +180,23 @@ function toGeoCell(row, radarLat, radarLon) {
 }
 
 /**
- * List the bucket and return the newest STI key for a site.
+ * List the bucket and return the newest Level III key for a site+product.
  *
- * Scoped to an hour prefix so the listing stays ~12 keys instead of a
- * full day's ~300. Falls back to the previous hour, which also covers the
- * first minutes after a UTC day/hour rollover when the current prefix is
- * still empty.
+ * Shared by storm tracks (NST) and the raw-radial renderer (N0B) — same
+ * bucket, same key shape, different product token. Scoped to an hour
+ * prefix so the listing stays ~12 keys instead of a full day's ~300.
+ * Falls back to the previous hours, which also covers the first minutes
+ * after a UTC day/hour rollover when the current prefix is still empty.
  *
  * @param {String} site 3-letter radar id (e.g. "DIX")
+ * @param {String} product Level III product token in the key (e.g. "NST", "N0B")
  * @returns {Promise<String|null>} newest key, or null when none recently
  */
-async function newestKey(site) {
+async function newestKey(site, product) {
   const now = new Date();
   for (let back = 0; back < 3; back += 1) {
     const t = new Date(now.getTime() - back * 60 * 60 * 1000);
-    const p = `${site}_NST_${t.getUTCFullYear()}_`
+    const p = `${site}_${product}_${t.getUTCFullYear()}_`
       + `${String(t.getUTCMonth() + 1).padStart(2, "0")}_`
       + `${String(t.getUTCDate()).padStart(2, "0")}_`
       + `${String(t.getUTCHours()).padStart(2, "0")}`;
@@ -222,7 +224,7 @@ async function fetchTracks(site) {
   const hit = tracksCache.get(site);
   if (hit && hit.expires > Date.now()) return hit.value;
 
-  const key = await newestKey(site);
+  const key = await newestKey(site, "NST");
   increment("nexrad-l3", "list");
   if (!key) {
     // No recent product. Normal for a radar in clear-air mode with no
@@ -304,4 +306,8 @@ module.exports = {
   toGeoCell,
   offsetLatLon,
   parsePair,
+  // Shared with radarRadialCtrl — same bucket, same key shape.
+  newestKey,
+  BUCKET_BASE,
+  API_TIMEOUT_MS,
 };
