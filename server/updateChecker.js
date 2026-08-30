@@ -1,10 +1,20 @@
-const axios = require("axios");
 const fs = require("fs");
 const crypto = require("crypto");
-const { execSync } = require("child_process");
+const { execSync, exec } = require("child_process");
+const { promisify } = require("util");
 const path = require("path");
 
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const execAsync = promisify(exec);
+
+// The check is entirely git-based (fetch + local ref comparison) as of
+// 2026-08-30 — it used to hit api.github.com / raw.githubusercontent.com
+// unauthenticated, which returns 404 for a PRIVATE fork, so the update
+// button could never appear. Local git uses the same credentials the
+// one-click updater's `git pull` already relies on, so if updating can
+// work at all, so can the check. No API also means no 60 req/h
+// unauthenticated rate limit, so the cache only exists to keep repeated
+// client polls from stacking fetches.
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Deploy artefacts that install.sh copies into the user's home tree on top
 // of the in-repo files. The in-app updater pulls new code into the working
@@ -116,14 +126,15 @@ function checkNeedsManualUpgrade(localSha) {
 }
 
 /**
- * Hash one deploy artefact against its upstream copy on master.
+ * Hash one deploy artefact against its upstream copy on origin/master.
+ * Reads the upstream side from the already-fetched `origin/master` ref
+ * via `git show` — works for private forks, unlike raw.githubusercontent.
  *
- * @param {string} repo "owner/repo" form
  * @param {{name: string, deployRel: string, installedPath: string}} artefact
  * @returns {Promise<{name: string, changed: boolean}|null>} null when comparison can't be made
- *   (installed file missing, network error, etc.) — caller treats null as "skip silently".
+ *   (installed file missing, git error, etc.) — caller treats null as "skip silently".
  */
-async function checkOneArtefact(repo, artefact) {
+async function checkOneArtefact(artefact) {
   let installed;
   try {
     installed = fs.readFileSync(artefact.installedPath);
@@ -133,13 +144,14 @@ async function checkOneArtefact(repo, artefact) {
 
   let upstream;
   try {
-    const r = await axios.get(
-      `https://raw.githubusercontent.com/${repo}/master/${artefact.deployRel}`,
-      { timeout: 10_000, responseType: "text", transformResponse: [(d) => d] }
-    );
-    upstream = r.data;
+    const { stdout } = await execAsync(`git show origin/master:${artefact.deployRel}`, {
+      cwd: path.join(__dirname, ".."),
+      timeout: 5_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    upstream = stdout;
   } catch {
-    return null; // Network error — don't pretend to know
+    return null; // File absent upstream or git error — don't pretend to know
   }
 
   const installedHash = crypto.createHash("sha256").update(installed).digest("hex");
@@ -154,16 +166,15 @@ async function checkOneArtefact(repo, artefact) {
  * an empty array when everything matches, or null when no comparison was
  * possible (no deploy/ artefacts installed, or all comparisons failed).
  *
- * @param {string} repo "owner/repo" form
  * @returns {Promise<string[]|null>}
  */
-async function checkDeployArtefactsChanged(repo) {
+async function checkDeployArtefactsChanged() {
   const applicable = DEPLOY_ARTEFACTS.filter(
     (a) => !a.platform || a.platform === process.platform
   );
   if (applicable.length === 0) return null;
 
-  const results = await Promise.all(applicable.map((a) => checkOneArtefact(repo, a)));
+  const results = await Promise.all(applicable.map((a) => checkOneArtefact(a)));
   const checked = results.filter((r) => r !== null);
   if (checked.length === 0) return null; // Nothing was installed locally — no signal to surface
 
@@ -225,8 +236,12 @@ function parseCommitLine(firstLine) {
 }
 
 /**
- * Checks GitHub for the latest commit on master.
- * Result is cached for 1 hour to stay within GitHub's unauthenticated rate limit (60 req/h).
+ * Checks origin/master for new commits, entirely through local git.
+ *
+ * `git fetch` uses whatever credentials the checkout already has — the
+ * same ones `/api/update`'s `git pull` needs — so this works for private
+ * forks where the old unauthenticated GitHub API calls returned 404 and
+ * silently disabled the whole update flow.
  *
  * @returns {Promise<object>} { updateAvailable, latestVersion, latestSha, localSha, checkedAt, error? }
  */
@@ -235,47 +250,45 @@ async function checkForUpdate() {
   if (_cache && now - _cacheTime < CACHE_TTL) return _cache;
 
   const localSha = getLocalSha();
-  const REPO = getRepo();
+  const projectRoot = path.join(__dirname, "..");
+  const git = (cmd, timeout = 5_000) =>
+    execAsync(cmd, { cwd: projectRoot, timeout, maxBuffer: 4 * 1024 * 1024 })
+      .then((r) => r.stdout.trim());
 
   try {
-    const [commitRes, pkgRes] = await Promise.all([
-      axios.get(`https://api.github.com/repos/${REPO}/commits/master`, {
-        timeout: 10_000,
-        headers: { "User-Agent": "pi-weather-station" },
-      }),
-      axios.get(
-        `https://raw.githubusercontent.com/${REPO}/master/package.json`,
-        { timeout: 10_000 }
-      ),
-    ]);
+    // Generous timeout for the network step: slow links (VPN'd Pi, mobile
+    // hotspot) routinely need tens of seconds — same reasoning as the
+    // 90 s pull timeout in /api/update.
+    await git("git fetch origin master", 60_000);
 
-    const latestSha = commitRes.data.sha;
-    const latestVersion = pkgRes.data.version;
+    const latestSha = await git("git rev-parse origin/master");
+    const pkgJson = await git("git show origin/master:package.json");
+    const latestVersion = JSON.parse(pkgJson).version;
     const shasDiffer = Boolean(localSha && latestSha !== localSha);
 
-    // Fetch the commits between current and latest, then keep only the
-    // user-visible ones — see parseCommitLine / USER_FACING_COMMIT_RE above
-    // for the accepted vocabulary and the fleet history behind each type.
+    // Everything between local and origin/master, newest first.
+    // Conventional-commit subjects get their typed badge via
+    // parseCommitLine; anything else falls back to a generic "update"
+    // badge with the subject verbatim. The fallback matters: this fork's
+    // commits are plain sentences, and the old behaviour of DROPPING
+    // non-conventional subjects meant `commits.length` stayed 0 and the
+    // update button never appeared at all.
     let commits = [];
     if (shasDiffer && localSha) {
       try {
-        const compareRes = await axios.get(
-          `https://api.github.com/repos/${REPO}/compare/${localSha}...${latestSha}`,
-          { timeout: 10_000, headers: { "User-Agent": "pi-weather-station" } }
-        );
-        commits = compareRes.data.commits
-          .map((c) => parseCommitLine(c.commit.message.split("\n")[0]))
-          .filter(Boolean)
-          .reverse(); // most recent first
+        const log = await git(`git log --no-merges --pretty=%s ${localSha}..${latestSha}`);
+        commits = log
+          .split("\n")
+          .filter((line) => line.trim())
+          .map((line) => parseCommitLine(line) || { type: "update", message: line });
       } catch {
         // non-critical — commits stays empty
       }
     }
 
-    // Only flag an update as available when there's at least one feat/fix to
-    // show. This keeps the modal silent for docs-only pushes (where the
-    // "What's new" section would otherwise render empty), and prevents the
-    // "skip" button from suppressing future genuine updates.
+    // Available whenever there is anything to pull AND something to show
+    // in "What's new" — with the fallback above, commits is only empty
+    // when the range genuinely contains nothing but merge commits.
     const updateAvailable = shasDiffer && commits.length > 0;
 
     // Detect deploy/ artefacts the in-app updater can't refresh on its own:
@@ -286,7 +299,7 @@ async function checkForUpdate() {
     // is detected, the modal lists the affected files and points the user
     // at `bash deploy/install.sh` for the targeted refresh.
     const changedDeployFiles = updateAvailable
-      ? await checkDeployArtefactsChanged(REPO)
+      ? await checkDeployArtefactsChanged()
       : [];
 
     // Detect installations whose /api/update doesn't run npm install yet
