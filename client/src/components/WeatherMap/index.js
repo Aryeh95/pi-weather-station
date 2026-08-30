@@ -874,7 +874,13 @@ const WeatherMap = ({ zoom, dark }) => {
   const iemFromEnd = iemFrameIdx < 0 ? 0 : Math.max(0, iemFrameIdx);
   const pickFromEnd = (list, back) => {
     if (!list || !list.length) return null;
-    return list[Math.max(0, list.length - 1 - back)];
+    // Beyond the oldest frame → null, so the layer HIDES rather than
+    // freezing on its oldest frame. The site scan list reaches ~3× as
+    // far back as the mosaic's fixed offsets (30 scans vs 50 min); when
+    // the playhead is out past the mosaic's span, showing its 50-min-old
+    // frame under a "-2 h" playhead would be a lie.
+    if (back > list.length - 1) return null;
+    return list[list.length - 1 - back];
   };
   const currentMosaicFrame = pickFromEnd(iemMosaicFrames, iemFromEnd);
   const currentSiteFrame = pickFromEnd(iemSiteFrames, iemFromEnd);
@@ -911,8 +917,6 @@ const WeatherMap = ({ zoom, dark }) => {
     && Boolean(iemSite)
     && Boolean(currentSiteFrame)
     && !radialShown;
-  const showIemMosaic = iemVisible.mosaic
-    && Boolean(currentMosaicFrame);
 
   // Which frames actually get a mounted TileLayer. With the timeline
   // open (scrubbing or playing), EVERY frame stays mounted and playback
@@ -931,11 +935,14 @@ const WeatherMap = ({ zoom, dark }) => {
   // (the current tile frame drops to opacity 0 below), but the stack
   // must stay mounted or every pass through latest would unmount and
   // refetch all ~12 site layers — a guaranteed once-per-loop flicker.
-  const mountedMosaicFrames = showIemMosaic
-    ? (radarTimelineVisible ? iemMosaicFrames : [currentMosaicFrame])
+  // A null current frame (playhead out past a layer's span) keeps the
+  // stack mounted with every layer at opacity 0 — unmounting would
+  // refetch the whole stack when the playhead comes back into range.
+  const mountedMosaicFrames = (iemVisible.mosaic && iemMosaicFrames.length)
+    ? (radarTimelineVisible ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
     : [];
-  const mountedSiteFrames = (iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame))
-    ? (radarTimelineVisible ? iemSiteFrames : (radialShown ? [] : [currentSiteFrame]))
+  const mountedSiteFrames = (iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
+    ? (radarTimelineVisible ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
   // Which frame the age chip describes: whichever layer is currently
@@ -960,32 +967,49 @@ const WeatherMap = ({ zoom, dark }) => {
     enabled: showLightning && Boolean(mapGeo),
   });
 
-  // Timeline-shaped view of the mosaic frames. RadarTimeline was built
+  // Timeline-shaped view of the frames. RadarTimeline was built
   // against RainViewer's frame objects (`time` in UNIX *seconds*, plus a
   // past/nowcast `kind`), so adapting here reuses the whole scrubber —
   // labels, playhead, speed control — instead of duplicating it.
   //
-  // The MOSAIC list is what the scrubber always drives, even at high
-  // zoom where the single-site layer is the visible one: it's a stable
-  // 11-frame fixed 5-minute grid that exists regardless of location,
-  // whereas the scan list changes length as volume scans complete. A
-  // scrubber whose track silently re-scaled under the user would be
-  // worse than one that stays put; the single-site layer follows along
-  // through the shared "frames from the end" offset.
+  // WHICH list drives the scrubber depends on the zoom band. At high
+  // zoom the single-site scan list is the visible layer AND the longer
+  // history — 30 volume scans ≈ 2-2.5 h, matching RadarScope's loop —
+  // so it drives. At low zoom only the mosaic is drawn, and its fixed
+  // grid stops at -50 min (IEM publishes nothing older than -m50m), so
+  // offering a 2-hour track there would be scrubbing into blank frames;
+  // the mosaic's own 11-frame grid drives instead. Crossing the band
+  // mid-scrub re-scales the track — honest, since the reachable history
+  // genuinely changes — and the clamp effect below keeps the playhead
+  // in range when the track shortens.
   //
   // Every IEM frame is `kind: "past"` — NEXRAD products are observations,
   // and unlike RainViewer there is no nowcast to scrub forward into.
+  const iemTimelineSourceFrames =
+    (iemVisible.site && iemSiteAvailable && iemSiteFrames.length > iemMosaicFrames.length)
+      ? iemSiteFrames
+      : iemMosaicFrames;
   const iemTimelineFrames = useMemo(
-    () => iemMosaicFrames.map((f) => ({ time: Math.round(f.epoch / 1000), kind: "past" })),
-    [iemMosaicFrames]
+    () => iemTimelineSourceFrames.map((f) => ({ time: Math.round(f.epoch / 1000), kind: "past" })),
+    [iemTimelineSourceFrames]
   );
 
   // The timeline hands back an absolute index into the list it was
   // given; the layers consume a from-the-end offset so the two
   // differently-sized frame lists stay aligned. One conversion point.
   const handleIemScrub = useCallback((idx) => {
-    setIemFrameIdx(Math.max(0, iemMosaicFrames.length - 1 - idx));
-  }, [iemMosaicFrames.length]);
+    setIemFrameIdx(Math.max(0, iemTimelineSourceFrames.length - 1 - idx));
+  }, [iemTimelineSourceFrames.length]);  // eslint-disable-line react-hooks/exhaustive-deps -- only the length is read
+
+  // When the track shortens under a parked playhead (zooming out of the
+  // site band swaps a 30-frame track for the 11-frame mosaic grid),
+  // clamp to the oldest reachable frame instead of pointing past the
+  // end of every list.
+  useEffect(() => {
+    const len = iemTimelineSourceFrames.length;
+    if (!len) return;
+    setIemFrameIdx((prev) => (prev >= len ? len - 1 : prev));
+  }, [iemTimelineSourceFrames.length]);  // eslint-disable-line react-hooks/exhaustive-deps -- only the length is read
 
   // Animation for the IEM layers, mirroring the RainViewer loop above:
   // walk the playhead from oldest to newest, then wrap. Frozen in the
@@ -993,18 +1017,18 @@ const WeatherMap = ({ zoom, dark }) => {
   // decorative thumbnail and cycling tiles just burns the GPU.
   useEffect(() => {
     if (!animateWeatherMap || isPiMaxView(piLayoutState)) return undefined;
-    if (!iemMosaicFrames.length) return undefined;
+    if (!iemTimelineSourceFrames.length) return undefined;
     const id = setInterval(() => {
       // Counts DOWN because the index is an offset from the newest
       // frame: the oldest frame is the largest offset, so stepping
       // toward 0 plays forward in time. Wraps back to the oldest.
       setIemFrameIdx((prev) => {
         const cur = prev < 0 ? 0 : prev;
-        return cur <= 0 ? iemMosaicFrames.length - 1 : cur - 1;
+        return cur <= 0 ? iemTimelineSourceFrames.length - 1 : cur - 1;
       });
     }, MAP_CYCLE_RATE / radarSpeed);
     return () => clearInterval(id);
-  }, [animateWeatherMap, radarSpeed, iemMosaicFrames.length, piLayoutState]);
+  }, [animateWeatherMap, radarSpeed, iemTimelineSourceFrames.length, piLayoutState]);  // eslint-disable-line react-hooks/exhaustive-deps -- only the length is read
 
   // Snap back to the newest frame whenever the scrubber is dismissed or
   // the source changes, so the user is never left parked on an old
@@ -1227,7 +1251,7 @@ const WeatherMap = ({ zoom, dark }) => {
             key={`iem-mosaic-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
             url={f.url}
-            opacity={f.stamp === currentMosaicFrame.stamp ? iemOpacity.mosaic : 0}
+            opacity={currentMosaicFrame && f.stamp === currentMosaicFrame.stamp ? iemOpacity.mosaic : 0}
             maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
             maxZoom={MOSAIC_MAX_ZOOM}
             updateWhenIdle={true}
@@ -1250,7 +1274,7 @@ const WeatherMap = ({ zoom, dark }) => {
             key={`iem-site-${iemSite}-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
             url={siteTileUrl(iemSite, f.stamp)}
-            opacity={f.stamp === currentSiteFrame.stamp && !radialShown ? iemOpacity.site : 0}
+            opacity={currentSiteFrame && f.stamp === currentSiteFrame.stamp && !radialShown ? iemOpacity.site : 0}
             maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
             minZoom={SITE_MIN_ZOOM}
             updateWhenIdle={true}
