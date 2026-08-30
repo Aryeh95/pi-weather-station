@@ -52,15 +52,17 @@ const NWS_USER_AGENT = "pi-weather-station (radar site lookup)";
 // shows by default, and confirmed present in `operation=products`.
 const DEFAULT_PRODUCT = "N0B";
 
-// How far back to ask for scans. 70 min covers a comfortable animation
-// loop even when the radar is in a slow clear-air VCP (~10 min/volume),
-// while staying small enough that IEM's response is a short list.
-const FRAME_LOOKBACK_MS = 70 * 60 * 1000;
+// How far back to ask for scans. Sized to fill a 30-frame loop even in
+// the slowest clear-air VCP (~10 min/volume → 300 min); in storm mode
+// the same window returns more scans and the count cap below takes the
+// most recent 30. Still a short JSON list either way (~30-75 entries).
+const FRAME_LOOKBACK_MS = 300 * 60 * 1000;
 
-// Most recent N scans returned to the client. ~12 frames at a 4-6 min
-// storm-mode cadence is roughly an hour of loop, which matches what the
-// mosaic layer shows with its 10 fixed offsets.
-const DEFAULT_FRAME_COUNT = 12;
+// Most recent N scans returned to the client. 30 frames matches
+// RadarScope's default loop length — ~2 to 2.5 h of history at a 4-6 min
+// storm-mode cadence. (The mosaic layer still tops out at its 10 fixed
+// 5-minute offsets; IEM publishes nothing older than -m50m.)
+const DEFAULT_FRAME_COUNT = 30;
 const MAX_FRAME_COUNT = 30;
 
 // Frame lists are cached briefly. A new volume scan lands every 4-6 min,

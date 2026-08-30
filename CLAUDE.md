@@ -152,6 +152,17 @@ against actual measurements:
   mosaic 8 (N0Q is a ~1 km grid ≈ 469 m/px at z8, already ~2× oversampled),
   single-site 12 (N0B 0.25 km gates ≈ 29 m/px at z12).
 
+## Loop length (changed 2026-08-30)
+
+`/api/radar/frames` now defaults to 30 scans (RadarScope's loop length,
+~2-2.5 h) with a 300-min lookback sized for the slowest clear-air VCP.
+The timeline is driven by the site scan list at high zoom and by the
+mosaic's fixed 11-frame grid at low zoom — IEM publishes no mosaic
+offset older than `-m50m`, so a 2-hour track at low zoom would scrub
+into nothing. `pickFromEnd` returns null past a layer's span (the layer
+hides rather than freezing on its oldest frame), and the playhead clamps
+when the track shortens on a zoom-band change.
+
 ## Clear-air noise filter (added 2026-08-30)
 
 Motivating complaint: on a dry day the raw-radial layer painted the whole

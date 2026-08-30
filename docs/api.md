@@ -237,7 +237,7 @@ from IEM rather than a blank tile, so guessing is not an option.
 | `site` | — | 3- or 4-letter NEXRAD id. Omit to use `lat`/`lon` instead |
 | `lat`, `lon` | — | Resolve the site first (one request instead of two on startup) |
 | `product` | `N0B` | IEM product id. `N0B` = super-res base reflectivity |
-| `count` | `12` | Most recent N frames (max 30) |
+| `count` | `30` | Most recent N frames (max 30) |
 
 - **Source:** `mesonet.agron.iastate.edu/json/radar.py?operation=list`
 - **Cached:** 45 s per site+product — a new scan lands every 3–6 min, so
