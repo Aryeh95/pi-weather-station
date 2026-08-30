@@ -42,7 +42,7 @@ const product94 = require("nexrad-level-3-data/src/products/94");
 const { recordServiceCall } = require("./serviceStatus");
 const { increment } = require("./requestCounter");
 const { BoundedMap } = require("./boundedCache");
-const { newestKey, BUCKET_BASE, API_TIMEOUT_MS } = require("./stormTracksCtrl");
+const { newestKey, l3KeyEpoch, BUCKET_BASE, API_TIMEOUT_MS } = require("./stormTracksCtrl");
 
 const SERVICE_NAME = "NEXRAD L3 (radial)";
 
@@ -62,6 +62,15 @@ if (!level3Products.products["153"]) {
 // One product per volume scan (4-6 min); 60 s matches the other radar caches.
 const RADIAL_TTL_MS = 60 * 1000;
 const radialCache = new BoundedMap(8);
+
+// Historical scans, keyed `site:stamp`. A completed volume scan is
+// immutable, so the long TTL only bounds memory turnover, not staleness;
+// 40 entries covers a full 30-frame loop plus turnover as new scans land.
+// Misses (no matching file) get a short TTL — the file may simply not
+// have arrived in the bucket yet.
+const HISTORY_TTL_MS = 30 * 60 * 1000;
+const HISTORY_MISS_TTL_MS = 2 * 60 * 1000;
+const historyCache = new BoundedMap(40);
 
 // N0B geometry per the product spec. The packet's `rangeScale` field is a
 // display scale factor (reads ~0.999), NOT the physical bin size — that
@@ -137,26 +146,77 @@ function packRadials(radialsRaw, numBins) {
 }
 
 /**
- * Fetch + decode the newest N0B radial product for a site.
+ * List every N0B key for one UTC hour. Same hour-scoped prefix trick the
+ * storm-tracks poller uses — keeps the listing at a dozen keys instead
+ * of a full day's ~300.
  *
  * @param {String} site 3-letter radar id
- * @returns {Promise<Object>} payload for /api/radar/radial
+ * @param {Date} t any time inside the wanted UTC hour
+ * @returns {Promise<Array<String>>} bucket keys, lexicographic (= chronological)
  */
-async function fetchRadial(site) {
-  const hit = radialCache.get(site);
-  if (hit && hit.expires > Date.now()) return hit.value;
+async function listHourKeys(site, t) {
+  const p = `${site}_N0B_${t.getUTCFullYear()}_`
+    + `${String(t.getUTCMonth() + 1).padStart(2, "0")}_`
+    + `${String(t.getUTCDate()).padStart(2, "0")}_`
+    + `${String(t.getUTCHours()).padStart(2, "0")}`;
+  const res = await axios.get(BUCKET_BASE, {
+    params: { "list-type": 2, prefix: p, "max-keys": 1000 },
+    timeout: API_TIMEOUT_MS,
+    responseType: "text",
+  });
+  return (String(res.data).match(/<Key>([^<]+)<\/Key>/g) || [])
+    .map((k) => k.replace(/<\/?Key>/g, ""));
+}
 
-  const key = await newestKey(site, "N0B");
-  increment("nexrad-l3", "radial-list");
-  if (!key) {
-    // No recent N0B in the bucket for this site — the client falls back
-    // to the IEM tiles, so this is a soft state, not an error.
-    const empty = { available: false, site, reason: "no-recent-product" };
-    radialCache.set(site, { value: empty, expires: Date.now() + RADIAL_TTL_MS });
-    recordServiceCall(SERVICE_NAME, 200, `no recent N0B for ${site}`);
-    return empty;
+// IEM frame stamps carry minutes; bucket keys carry seconds, and the two
+// clocks can disagree by a little (product header time vs file time).
+// ±150 s is comfortably under half the fastest scan interval (~3 min
+// measured live), so the nearest key inside the window is unambiguous.
+const STAMP_MATCH_MS = 150 * 1000;
+
+/**
+ * Find the bucket key for the volume scan an IEM frame stamp names.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {String} stamp "YYYYMMDDHHMM" UTC, as used in IEM tile URLs
+ * @returns {Promise<String|null>} nearest key within the window, or null
+ */
+async function keyForStamp(site, stamp) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(stamp);
+  if (!m) return null;
+  const [, y, mo, d, hh, mm] = m.map(Number);
+  const target = Date.UTC(y, mo - 1, d, hh, mm);
+
+  // The stamp's own hour, plus a neighbour when the minute sits close
+  // enough to the boundary that the matching key could live next door.
+  const hours = [new Date(target)];
+  if (mm <= 2) hours.push(new Date(target - 60 * 60 * 1000));
+  if (mm >= 57) hours.push(new Date(target + 60 * 60 * 1000));
+
+  let best = null;
+  let bestDelta = Infinity;
+  for (const t of hours) {
+    for (const key of await listHourKeys(site, t)) {
+      const epoch = l3KeyEpoch(key);
+      if (epoch === null) continue;
+      const delta = Math.abs(epoch - target);
+      if (delta <= STAMP_MATCH_MS && delta < bestDelta) {
+        best = key;
+        bestDelta = delta;
+      }
+    }
   }
+  return best;
+}
 
+/**
+ * Fetch + decode one N0B file into the /api/radar/radial payload shape.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {String} key bucket object key
+ * @returns {Promise<Object>} available:true payload
+ */
+async function decodeKey(site, key) {
   const res = await axios.get(`${BUCKET_BASE}/${key}`, {
     responseType: "arraybuffer",
     timeout: API_TIMEOUT_MS,
@@ -197,15 +257,74 @@ async function fetchRadial(site) {
     binKm: BIN_KM,
     bins: packRadials(packet.radialsRaw, numBins).toString("base64"),
   };
-  radialCache.set(site, { value, expires: Date.now() + RADIAL_TTL_MS });
   recordServiceCall(SERVICE_NAME, 200, `${packet.radialsRaw.length} radials for ${site}`);
   return value;
 }
 
 /**
- * GET /api/radar/radial?site=DIX
+ * Fetch + decode the newest N0B radial product for a site.
  *
- * The raw-radial feed behind the client-side canvas renderer.
+ * @param {String} site 3-letter radar id
+ * @returns {Promise<Object>} payload for /api/radar/radial
+ */
+async function fetchRadial(site) {
+  const hit = radialCache.get(site);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  const key = await newestKey(site, "N0B");
+  increment("nexrad-l3", "radial-list");
+  if (!key) {
+    // No recent N0B in the bucket for this site — the client falls back
+    // to the IEM tiles, so this is a soft state, not an error.
+    const empty = { available: false, site, reason: "no-recent-product" };
+    radialCache.set(site, { value: empty, expires: Date.now() + RADIAL_TTL_MS });
+    recordServiceCall(SERVICE_NAME, 200, `no recent N0B for ${site}`);
+    return empty;
+  }
+
+  const value = await decodeKey(site, key);
+  radialCache.set(site, { value, expires: Date.now() + RADIAL_TTL_MS });
+  return value;
+}
+
+/**
+ * Fetch + decode the N0B scan matching an IEM frame stamp — the feed
+ * behind sharp playback: the client renders each loop frame from raw
+ * radials instead of IEM's smoothed historical tiles.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {String} stamp "YYYYMMDDHHMM" UTC
+ * @returns {Promise<Object>} payload for /api/radar/radial
+ */
+async function fetchRadialAtStamp(site, stamp) {
+  const cacheKey = `${site}:${stamp}`;
+  const hit = historyCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  const key = await keyForStamp(site, stamp);
+  increment("nexrad-l3", "radial-list");
+  if (!key) {
+    // Not in the bucket (yet, or ever — very old stamps age out of the
+    // client's frame list anyway). Soft state: the client keeps showing
+    // the IEM tile for that frame.
+    const empty = { available: false, site, stamp, reason: "no-matching-product" };
+    historyCache.set(cacheKey, { value: empty, expires: Date.now() + HISTORY_MISS_TTL_MS });
+    recordServiceCall(SERVICE_NAME, 200, `no N0B match for ${site}@${stamp}`);
+    return empty;
+  }
+
+  const value = await decodeKey(site, key);
+  value.stamp = stamp;
+  historyCache.set(cacheKey, { value, expires: Date.now() + HISTORY_TTL_MS });
+  return value;
+}
+
+/**
+ * GET /api/radar/radial?site=DIX[&stamp=YYYYMMDDHHMM]
+ *
+ * The raw-radial feed behind the client-side canvas renderer. Without
+ * `stamp`, the newest scan; with it, the historical scan matching that
+ * IEM frame stamp (used to render loop playback sharp).
  *
  * @param {Object} req
  * @param {Object} res
@@ -215,8 +334,12 @@ async function getRadarRadial(req, res) {
   if (!/^[A-Z]{3}$/.test(site)) {
     return res.status(400).json("Invalid or missing site").end();
   }
+  const stamp = req.query.stamp !== undefined ? String(req.query.stamp).trim() : null;
+  if (stamp !== null && !/^\d{12}$/.test(stamp)) {
+    return res.status(400).json("Invalid stamp").end();
+  }
   try {
-    const payload = await fetchRadial(site);
+    const payload = stamp ? await fetchRadialAtStamp(site, stamp) : await fetchRadial(site);
     return res.status(200).json(payload).end();
   } catch (err) {
     const status = err?.response?.status || 500;
@@ -232,6 +355,8 @@ module.exports = {
   // Exported for tests.
   packRadials,
   fetchRadial,
+  fetchRadialAtStamp,
+  keyForStamp,
   BIN_KM,
   NUM_BUCKETS,
   BUCKET_DEG,

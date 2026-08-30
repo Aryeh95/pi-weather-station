@@ -70,6 +70,7 @@ import useStormTracks from "./useStormTracks";
 import useLightning from "./useLightning";
 import LightningOverlay from "./LightningOverlay";
 import useRadarRadial from "./useRadarRadial";
+import useRadarRadialLoop from "./useRadarRadialLoop";
 import StormTracks from "./StormTracks";
 import {
   IEM_ATTRIBUTION,
@@ -906,11 +907,54 @@ const WeatherMap = ({ zoom, dark }) => {
     enabled: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
     noiseFilter: radarNoiseFilter,
   });
-  // The radial image replaces the site TILES only when it exists AND the
-  // playhead is on the newest frame — the radial feed is latest-only, so
-  // scrubbing back through history falls back to the timestamped tiles,
-  // which is the honest picture for a historical frame.
+  // The latest radial image replaces the site TILES only when it exists
+  // AND the playhead is on the newest frame; historical frames come from
+  // the loop cache below when rendered, or the timestamped tiles until
+  // then.
   const radialShown = Boolean(radial.url) && iemFromEnd === 0 && iemVisible.site;
+
+  // Historical raw radials for playback — every loop frame rendered
+  // through the same pipeline as "latest", so scrubbing and playing stay
+  // as sharp as the live picture instead of dropping to IEM's smoothed
+  // tiles. Fetched newest-first (the frames a user scrubs to first);
+  // the newest stamp is excluded because the latest-radial feed above
+  // already covers frame 0.
+  const loopStamps = useMemo(
+    () => (radarTimelineVisible ? iemSiteFrames.slice(0, -1).map((f) => f.stamp).reverse() : []),
+    [iemSiteFrames, radarTimelineVisible]
+  );
+  const radialLoop = useRadarRadialLoop({
+    site: iemSite,
+    stamps: loopStamps,
+    enabled: radarTimelineVisible && iemVisible.site && iemSiteAvailable && Boolean(iemSite),
+    noiseFilter: radarNoiseFilter,
+  });
+
+  // Which loop radials get a MOUNTED overlay: a sliding window around
+  // the playhead, not all ~30 — every mounted overlay holds a decoded
+  // ~26 MB bitmap, so the full set would cost ~800 MB while the window
+  // costs ≤ ~100 MB. The window spans one frame either side (playback
+  // counts fromEnd DOWN, scrubbing goes both ways), plus the oldest
+  // frame when the playhead is about to wrap, so the next frame is
+  // always mounted — and therefore decoded — one dwell ahead of being
+  // shown. Frame 0 is excluded: that's the latest-radial overlay's job.
+  const mountedLoopRadials = [];
+  if (radarTimelineVisible && iemVisible.site) {
+    const windowFromEnds = [iemFromEnd - 1, iemFromEnd, iemFromEnd + 1];
+    if (iemFromEnd <= 1) windowFromEnds.push(iemSiteFrames.length - 1);
+    const seen = new Set();
+    for (const fe of windowFromEnds) {
+      if (fe <= 0) continue;
+      const f = pickFromEnd(iemSiteFrames, fe);
+      if (!f || seen.has(f.stamp)) continue;
+      seen.add(f.stamp);
+      const r = radialLoop.byStamp[f.stamp];
+      if (r) mountedLoopRadials.push({ stamp: f.stamp, url: r.url, bounds: r.bounds });
+    }
+  }
+  const currentLoopRadial = Boolean(currentSiteFrame)
+    && !radialShown
+    && Boolean(radialLoop.byStamp[currentSiteFrame.stamp]);
 
   const showIemSite = iemVisible.site
     && iemSiteAvailable
@@ -1274,7 +1318,7 @@ const WeatherMap = ({ zoom, dark }) => {
             key={`iem-site-${iemSite}-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
             url={siteTileUrl(iemSite, f.stamp)}
-            opacity={currentSiteFrame && f.stamp === currentSiteFrame.stamp && !radialShown ? iemOpacity.site : 0}
+            opacity={currentSiteFrame && f.stamp === currentSiteFrame.stamp && !radialShown && !currentLoopRadial ? iemOpacity.site : 0}
             maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
             minZoom={SITE_MIN_ZOOM}
             updateWhenIdle={true}
@@ -1304,6 +1348,19 @@ const WeatherMap = ({ zoom, dark }) => {
               opacity={radialShown ? iemOpacity.site : 0}
             />
           ) : null}
+          {/* Historical loop radials — the sliding window around the
+              playhead (see mountedLoopRadials above). Same opacity-flip
+              playback as the tile stacks: the window keeps the next
+              frame mounted (decoded) before it shows, so stepping onto
+              it is instant. */}
+          {mountedLoopRadials.map((r) => (
+            <ImageOverlay
+              key={r.url}
+              url={r.url}
+              bounds={r.bounds}
+              opacity={currentSiteFrame && r.stamp === currentSiteFrame.stamp && !radialShown ? iemOpacity.site : 0}
+            />
+          ))}
         </Pane>
       {markerIsVisible && markerPosition ? (
           /* v2.14.65: custom target icon only in nightRed mode. In every
