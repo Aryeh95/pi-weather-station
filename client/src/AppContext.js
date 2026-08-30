@@ -531,6 +531,25 @@ export function AppContextProvider({ children }) {
       return next;
     });
   }, []);
+
+  // Clear-air noise filter for the raw-radial layer. In clear-air VCPs
+  // the radar still returns bugs, birds, dust and refraction gradients at
+  // low dBZ — real signal, but meteorologically meaningless speckle that
+  // fills the whole disc on a dry day. The filter raises the layer's
+  // minimum displayed reflectivity (NOISE_FILTER_MIN_DBZ in
+  // radialRender.js). Per-device, DEFAULT ON — only an explicit stored
+  // "false" shows the unfiltered picture.
+  const [radarNoiseFilter, setRadarNoiseFilter] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("radarNoiseFilter") !== "false";
+  });
+  const toggleRadarNoiseFilter = useCallback(() => {
+    setRadarNoiseFilter((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("radarNoiseFilter", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
   // Whether the dashed radius ring is drawn alongside the nearby-alerts
   // layer. Per-device display preference (localStorage), DEFAULT ON so the
   // existing "polygons + ring" look is preserved; a user who wants the bare
@@ -1975,6 +1994,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
+    toggleRadarNoiseFilter,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2051,6 +2071,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
+    toggleRadarNoiseFilter,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2291,6 +2312,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
+    radarNoiseFilter,
     showAlertRing,
     alertRadiusKm,
   }), [
@@ -2303,6 +2325,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
+    radarNoiseFilter,
     showAlertRing,
     alertRadiusKm,
   ]);

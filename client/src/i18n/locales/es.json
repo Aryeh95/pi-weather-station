@@ -435,7 +435,9 @@
     "showStormTracks": "Mostrar trayectorias de tormenta",
     "hideStormTracks": "Ocultar trayectorias de tormenta",
     "showLightning": "Mostrar rayos",
-    "hideLightning": "Ocultar rayos"
+    "hideLightning": "Ocultar rayos",
+    "noiseFilterEnable": "Filtrar ruido de aire claro",
+    "noiseFilterDisable": "Mostrar ecos de aire claro"
   },
   "mobile": {
     "settingsHint": "Para los ajustes avanzados, abre la app desde el Pi en local."
@@ -474,7 +476,9 @@
     "stormTracksOn": "Trayectorias de tormenta activadas",
     "stormTracksOff": "Trayectorias de tormenta desactivadas",
     "lightningOn": "Rayos activados",
-    "lightningOff": "Rayos desactivados"
+    "lightningOff": "Rayos desactivados",
+    "noiseFilterOn": "Filtro de ruido activado",
+    "noiseFilterOff": "Filtro de ruido desactivado"
   },
   "health": {
     "title": "Estado de los servicios",

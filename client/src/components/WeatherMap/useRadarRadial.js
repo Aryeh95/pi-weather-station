@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { renderRadialImage, decodeBins } from "./radialRender";
+import { renderRadialImage, decodeBins, NOISE_FILTER_MIN_DBZ } from "./radialRender";
 
 const POLL_INTERVAL_MS = 60 * 1000;
 
@@ -22,9 +22,10 @@ const POLL_INTERVAL_MS = 60 * 1000;
  * @param {Object} params
  * @param {String|null} params.site 3-letter NEXRAD id
  * @param {Boolean} params.enabled false pauses polling and clears the image
+ * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ
  * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean}}
  */
-export default function useRadarRadial({ site, enabled }) {
+export default function useRadarRadial({ site, enabled, noiseFilter }) {
   const [state, setState] = useState({ url: null, bounds: null, scanTime: null, stale: false });
   const lastKeyRef = useRef(null);
   const urlRef = useRef(null);
@@ -60,15 +61,20 @@ export default function useRadarRadial({ site, enabled }) {
             publish(null, null, null);
             return;
           }
-          if (d.key === lastKeyRef.current) {
+          // The render key carries the filter state too, so toggling the
+          // noise filter re-renders the current scan instead of waiting
+          // for the next one.
+          const renderKey = `${d.key}|nf:${Boolean(noiseFilter)}`;
+          if (renderKey === lastKeyRef.current) {
             // Same volume scan — refresh only the staleness flag.
             setState((prev) => (prev.stale ? { ...prev, stale: false } : prev));
             return;
           }
-          const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins));
+          const minDbz = noiseFilter ? NOISE_FILTER_MIN_DBZ : undefined;
+          const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), minDbz);
           canvas.toBlob((blob) => {
             if (cancelledRef.current || !blob) return;
-            lastKeyRef.current = d.key;
+            lastKeyRef.current = renderKey;
             publish(URL.createObjectURL(blob), bounds, d.scanTime);
           }, "image/png");
         })
@@ -86,7 +92,7 @@ export default function useRadarRadial({ site, enabled }) {
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [site, enabled]);
+  }, [site, enabled, noiseFilter]);
 
   // Revoke the final URL when the consumer unmounts.
   useEffect(() => () => {

@@ -152,6 +152,26 @@ against actual measurements:
   mosaic 8 (N0Q is a ~1 km grid ≈ 469 m/px at z8, already ~2× oversampled),
   single-site 12 (N0B 0.25 km gates ≈ 29 m/px at z12).
 
+## Clear-air noise filter (added 2026-08-30)
+
+Motivating complaint: on a dry day the raw-radial layer painted the whole
+230 km disc with blue/green speckle. That is clear-air mode return —
+bugs, birds, dust, refraction — real echoes at low dBZ, not a decode bug.
+
+Fix: `NOISE_FILTER_MIN_DBZ = 15` in `radialRender.js`, applied in
+`buildLevelLut` (once per LUT, not per pixel). Light rain starts around
+15–20 dBZ; biological return is overwhelmingly below 15. Per-device pref
+`radarNoiseFilter`, **default ON** (only a stored `"false"` disables),
+dock toggle (carbon `filter` funnel glyph, pressed = filtering). Toggling
+re-renders the current scan immediately — the render key in
+`useRadarRadial` carries the filter state alongside the volume-scan key.
+
+Known limitation: the filter applies to the client-rendered radial layer
+only. The IEM mosaic (N0Q) and timestamped site tiles are pre-rendered
+PNGs, so low-zoom / history-scrub views still show clear-air return.
+Filtering those would mean palette-matching tile pixels in a canvas tile
+layer — deliberately not built.
+
 ## Frame age display
 
 Built as a chip on the map (`RadarFrameAge`). Thresholds encode NEXRAD's

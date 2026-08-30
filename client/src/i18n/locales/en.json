@@ -435,7 +435,9 @@
     "showStormTracks": "Show storm tracks",
     "hideStormTracks": "Hide storm tracks",
     "showLightning": "Show lightning",
-    "hideLightning": "Hide lightning"
+    "hideLightning": "Hide lightning",
+    "noiseFilterEnable": "Filter clear-air noise",
+    "noiseFilterDisable": "Show clear-air returns"
   },
   "mobile": {
     "settingsHint": "Open the app on the Pi locally for advanced settings."
@@ -474,7 +476,9 @@
     "stormTracksOn": "Storm tracks on",
     "stormTracksOff": "Storm tracks off",
     "lightningOn": "Lightning on",
-    "lightningOff": "Lightning off"
+    "lightningOff": "Lightning off",
+    "noiseFilterOn": "Noise filter on",
+    "noiseFilterOff": "Noise filter off"
   },
   "health": {
     "title": "Service health",

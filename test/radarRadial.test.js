@@ -72,10 +72,14 @@ function colorForDbz(dbz) {
   return [0, 0, 0, 0];
 }
 
-function buildLevelLut(scaling) {
+const NOISE_FILTER_MIN_DBZ = 15;
+
+function buildLevelLut(scaling, minDbz = -Infinity) {
   const lut = new Uint8ClampedArray(256 * 4);
   for (let level = 2; level < 256; level += 1) {
-    const [r, g, b, a] = colorForDbz(scaling.min + level * scaling.increment);
+    const dbz = scaling.min + level * scaling.increment;
+    if (dbz < minDbz) continue;
+    const [r, g, b, a] = colorForDbz(dbz);
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -224,6 +228,25 @@ test("buildLevelLut: reserved levels stay transparent, data levels match the ram
   // Level 175 = -32 + 175 x 0.5 = 55.5 dBZ — the max seen in the live file.
   const expect = colorForDbz(55.5);
   assert.deepEqual([lut[175 * 4], lut[175 * 4 + 1], lut[175 * 4 + 2], lut[175 * 4 + 3]], expect);
+});
+
+test("buildLevelLut: noise filter blanks sub-threshold levels, keeps the rest", () => {
+  const scaling = { min: -32, increment: 0.5 };
+  const lut = buildLevelLut(scaling, NOISE_FILTER_MIN_DBZ);
+  // Level 93 = -32 + 93 x 0.5 = 14.5 dBZ — just under the floor: hidden.
+  assert.equal(lut[93 * 4 + 3], 0);
+  // Level 94 = 15 dBZ exactly — at the floor: shown, identical to unfiltered.
+  assert.deepEqual(
+    [lut[94 * 4], lut[94 * 4 + 1], lut[94 * 4 + 2], lut[94 * 4 + 3]],
+    colorForDbz(15),
+  );
+  // A filtered LUT never differs from the unfiltered one above the floor.
+  const plain = buildLevelLut(scaling);
+  for (let level = 94; level < 256; level += 1) {
+    for (let c = 0; c < 4; c += 1) {
+      assert.equal(lut[level * 4 + c], plain[level * 4 + c]);
+    }
+  }
 });
 
 test("radialBounds: square contains the display disc, centred on the site", () => {

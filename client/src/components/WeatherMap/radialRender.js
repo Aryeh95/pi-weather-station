@@ -34,6 +34,15 @@ const EARTH_R_KM = 6371;
 // sub-0 dBZ is clear-air return that would smear the kiosk with noise.
 // The alpha ramp keeps light precipitation translucent so the basemap
 // reads through, matching how the IEM tiles behaved.
+// Minimum reflectivity shown when the clear-air noise filter is on.
+// Clear-air VCPs return bugs, birds, dust and refraction gradients at low
+// dBZ — real echoes, but on a dry day they fill the entire disc with
+// speckle (the "why does it show rain when it isn't raining" complaint).
+// 15 dBZ keeps drizzle-and-up: light rain starts around 15–20 dBZ, while
+// biological/clutter return is overwhelmingly below it. The unfiltered
+// picture stays one dock toggle away.
+export const NOISE_FILTER_MIN_DBZ = 15;
+
 export const DBZ_STOPS = [
   [0, 90, 95, 115, 70],
   [5, 4, 233, 231, 190],
@@ -84,13 +93,19 @@ export function colorForDbz(dbz) {
  * Levels 0 and 1 are below-threshold/missing by the ICD and stay
  * transparent; level L ≥ 2 decodes as `min + L × increment` dBZ.
  *
+ * Levels decoding below `minDbz` also stay transparent — that is the
+ * whole clear-air noise filter, applied once here rather than per pixel.
+ *
  * @param {{min: Number, increment: Number}} scaling from /api/radar/radial
+ * @param {Number} [minDbz] hide everything below this reflectivity
  * @returns {Uint8ClampedArray} 256 × 4 RGBA entries
  */
-export function buildLevelLut(scaling) {
+export function buildLevelLut(scaling, minDbz = -Infinity) {
   const lut = new Uint8ClampedArray(256 * 4);
   for (let level = 2; level < 256; level += 1) {
-    const [r, g, b, a] = colorForDbz(scaling.min + level * scaling.increment);
+    const dbz = scaling.min + level * scaling.increment;
+    if (dbz < minDbz) continue;
+    const [r, g, b, a] = colorForDbz(dbz);
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -132,12 +147,13 @@ export function radialBounds(lat, lon) {
  *
  * @param {Object} data /api/radar/radial payload (bins already decoded)
  * @param {Uint8Array} bins raw levels, numBuckets × numBins
+ * @param {Number} [minDbz] noise-filter floor passed through to the LUT
  * @returns {{canvas: HTMLCanvasElement, bounds: Array}} drawable + corners
  */
-export function renderRadialImage(data, bins) {
+export function renderRadialImage(data, bins, minDbz) {
   const size = RADIAL_CANVAS_PX;
   const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling } = data;
-  const lut = buildLevelLut(scaling);
+  const lut = buildLevelLut(scaling, minDbz);
   // (xm0 is only needed for the bounds themselves — the column loop is
   // symmetric around the site, so it works in offsets.)
   const { bounds, halfMerc, ym0 } = radialBounds(radar.lat, radar.lon);
