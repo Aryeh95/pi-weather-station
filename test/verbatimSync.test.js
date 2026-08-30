@@ -71,7 +71,7 @@ const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|
 // geometry, the temperature/speed conversions, and the astronomy helpers all
 // belonged to the forecast UI), and trimmed alertLogic to the government-alert
 // helpers.
-const EXPECTED_CHECK_COUNT = 30;
+const EXPECTED_CHECK_COUNT = 31;
 
 /**
  * The four copy-carrying test files and how to find their copies.

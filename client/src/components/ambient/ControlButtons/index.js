@@ -25,6 +25,7 @@ import legendIcon from "@iconify/icons-carbon/legend";
 import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
 import lightningIcon from "@iconify/icons-carbon/lightning";
+import noiseFilterIcon from "@iconify/icons-carbon/filter";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -108,6 +109,7 @@ const ControlButtons = () => {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
+    toggleRadarNoiseFilter,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -138,6 +140,7 @@ const ControlButtons = () => {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
+    radarNoiseFilter,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -550,6 +553,34 @@ const ControlButtons = () => {
       <InlineIcon icon={lightningIcon} />
     </div>
   );
+  // Clear-air noise filter for the raw-radial layer — hides sub-15 dBZ
+  // returns (bugs/birds/dust in clear-air mode) that otherwise paint the
+  // whole disc on a dry day. Unlike its neighbours the pressed state means
+  // "filter active", and it defaults ON.
+  const btnNoiseFilter = (
+    <div
+      key="noiseFilter"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleRadarNoiseFilter();
+        notify(radarNoiseFilter ? "toasts.noiseFilterOff" : "toasts.noiseFilterOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${radarNoiseFilter && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarNoiseFilter ? "controls.noiseFilterDisable" : "controls.noiseFilterEnable")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarNoiseFilter ? "controls.noiseFilterDisable" : "controls.noiseFilterEnable")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={noiseFilterIcon} />
+    </div>
+  );
   const btnContrast = (
     <div
       key="contrast"
@@ -735,6 +766,7 @@ const ControlButtons = () => {
         {btnWeatherAlerts}
         {btnStormTracks}
         {btnLightning}
+        {btnNoiseFilter}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

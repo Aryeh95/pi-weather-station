@@ -697,6 +697,7 @@ const WeatherMap = ({ zoom, dark }) => {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
+    radarNoiseFilter,
     showAlertRing,
     nearbyAlerts,
     alertRadiusKm,
@@ -897,6 +898,7 @@ const WeatherMap = ({ zoom, dark }) => {
   const radial = useRadarRadial({
     site: iemSite,
     enabled: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
+    noiseFilter: radarNoiseFilter,
   });
   // The radial image replaces the site TILES only when it exists AND the
   // playhead is on the newest frame — the radial feed is latest-only, so

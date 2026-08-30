@@ -435,7 +435,9 @@
     "showStormTracks": "Afficher les trajectoires d'orage",
     "hideStormTracks": "Masquer les trajectoires d'orage",
     "showLightning": "Afficher la foudre",
-    "hideLightning": "Masquer la foudre"
+    "hideLightning": "Masquer la foudre",
+    "noiseFilterEnable": "Filtrer le bruit en air clair",
+    "noiseFilterDisable": "Afficher les échos en air clair"
   },
   "mobile": {
     "settingsHint": "Pour les réglages avancés, ouvre l'app depuis le Pi en local."
@@ -474,7 +476,9 @@
     "stormTracksOn": "Trajectoires d'orage activées",
     "stormTracksOff": "Trajectoires d'orage désactivées",
     "lightningOn": "Foudre activée",
-    "lightningOff": "Foudre désactivée"
+    "lightningOff": "Foudre désactivée",
+    "noiseFilterOn": "Filtre de bruit activé",
+    "noiseFilterOff": "Filtre de bruit désactivé"
   },
   "health": {
     "title": "État des services",
