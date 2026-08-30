@@ -163,6 +163,18 @@ into nothing. `pickFromEnd` returns null past a layer's span (the layer
 hides rather than freezing on its oldest frame), and the playhead clamps
 when the track shortens on a zoom-band change.
 
+**Sharp playback (added 2026-08-30):** historical loop frames render
+through the raw-radial pipeline too. `/api/radar/radial?stamp=` matches
+an IEM frame stamp to its bucket key (±150 s, hour-prefix listing;
+verified live: IEM `0338` → `LWX_N0B_..._03_38_09`) with an immutable
+30-min positive / 2-min negative cache. `useRadarRadialLoop` warms one
+frame at a time (~300 ms render + 150 ms pace, full loop ≈ 15 s) and
+keeps blob URLs for all frames, but the map mounts only a sliding
+window of overlays around the playhead (next frame pre-mounted so it's
+decoded before it shows) — all ~30 mounted would pin ~800 MB of decoded
+bitmaps. Until a frame's radial is rendered, its IEM tile shows, so the
+loop sharpens progressively.
+
 ## Clear-air noise filter (added 2026-08-30)
 
 Motivating complaint: on a dry day the raw-radial layer painted the whole

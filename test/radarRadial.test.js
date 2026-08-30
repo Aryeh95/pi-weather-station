@@ -209,6 +209,15 @@ test("packRadials: fixture has no spokes and loses nothing", () => {
   assert.equal(outCount, inCount, "coverage packing must not lose or invent data bins");
 });
 
+test("keyForStamp: rejects malformed stamps without touching the network", async () => {
+  const { keyForStamp } = require("../server/radarRadialCtrl");
+  // Anything that fails the YYYYMMDDHHMM shape must return null from the
+  // regex gate alone — these calls would otherwise hit the AWS bucket.
+  assert.equal(await keyForStamp("DIX", "notastamp"), null);
+  assert.equal(await keyForStamp("DIX", "2026083004"), null);
+  assert.equal(await keyForStamp("DIX", "20260830041500"), null);
+});
+
 test("colorForDbz: transparent below the ramp, capped above it", () => {
   assert.deepEqual(colorForDbz(-10), [0, 0, 0, 0]);
   assert.deepEqual(colorForDbz(-0.01), [0, 0, 0, 0]);

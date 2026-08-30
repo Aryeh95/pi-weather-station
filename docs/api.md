@@ -309,7 +309,10 @@ Raw N0B super-res radial data behind the client-side canvas renderer —
 the actual gate-level picture, not IEM's pre-smoothed raster of it.
 
 - **Access:** 🌐 Public — rate limited
-- **Query params:** `site` (required) — 3-letter NEXRAD id
+- **Query params:** `site` (required) — 3-letter NEXRAD id;
+  `stamp` (optional) — `YYYYMMDDHHMM` UTC frame stamp: returns the
+  historical scan matching that IEM frame instead of the newest one
+  (used to render loop playback at full radial sharpness)
 - **Source:** `SSS_N0B_*` keys in the `unidata-nexrad-level3` bucket,
   decoded via a product-153 shim over `nexrad-level-3-data` (the library
   has no native 153 definition; 153 shares product 94's layout).
