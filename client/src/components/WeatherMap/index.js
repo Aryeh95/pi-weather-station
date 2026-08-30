@@ -914,6 +914,30 @@ const WeatherMap = ({ zoom, dark }) => {
   const showIemMosaic = iemVisible.mosaic
     && Boolean(currentMosaicFrame);
 
+  // Which frames actually get a mounted TileLayer. With the timeline
+  // open (scrubbing or playing), EVERY frame stays mounted and playback
+  // just flips opacity between them — swapping one layer's URL (or
+  // remounting it per frame, as this used to do) forces Leaflet to
+  // refetch tiles on every step, which blanked the map between frames
+  // and made storms pop in and out instead of moving. With all frames
+  // mounted, each frame's tiles load once (first loop pass), then every
+  // subsequent pass is an instant opacity flip. Hidden frames sit at
+  // opacity 0 but still fetch on pan — that cost is confined to while
+  // the timeline is open; closed, only the current frame is mounted,
+  // exactly as before.
+  //
+  // The site stack deliberately ignores `radialShown`: when the playhead
+  // crosses "latest" mid-loop the radial overlay takes over the PAINT
+  // (the current tile frame drops to opacity 0 below), but the stack
+  // must stay mounted or every pass through latest would unmount and
+  // refetch all ~12 site layers — a guaranteed once-per-loop flicker.
+  const mountedMosaicFrames = showIemMosaic
+    ? (radarTimelineVisible ? iemMosaicFrames : [currentMosaicFrame])
+    : [];
+  const mountedSiteFrames = (iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame))
+    ? (radarTimelineVisible ? iemSiteFrames : (radialShown ? [] : [currentSiteFrame]))
+    : [];
+
   // Which frame the age chip describes: whichever layer is currently
   // dominant. The single-site product (tiles OR the raw-radial image —
   // same volume scans, same timestamps) carries real scan-derived times;
@@ -1198,18 +1222,18 @@ const WeatherMap = ({ zoom, dark }) => {
           *
           * `maxNativeZoom` is a data-resolution choice rather than a
           * server limit — see the note in iemRadar.js. */}
-        {showIemMosaic ? (
+        {mountedMosaicFrames.map((f) => (
           <TileLayer
-            key="iem-mosaic"
+            key={`iem-mosaic-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
-            url={currentMosaicFrame.url}
-            opacity={iemOpacity.mosaic}
+            url={f.url}
+            opacity={f.stamp === currentMosaicFrame.stamp ? iemOpacity.mosaic : 0}
             maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
             maxZoom={MOSAIC_MAX_ZOOM}
             updateWhenIdle={true}
             keepBuffer={2}
           />
-        ) : null}
+        ))}
         {/* ── Layer 2: single-site super-res (high zoom) ────────
           * N0B base reflectivity from the covering NEXRAD: 0.5°
           * tilt at 0.25 km gates, native radial data rather than a
@@ -1221,18 +1245,18 @@ const WeatherMap = ({ zoom, dark }) => {
           * never the `-0` "latest" sentinel: `-0` would render but
           * gives no way to know how old the picture is, and making
           * frame age visible is the point of this work. */}
-        {showIemSite ? (
+        {mountedSiteFrames.map((f) => (
           <TileLayer
-            key={`iem-site-${iemSite}-${currentSiteFrame.stamp}`}
+            key={`iem-site-${iemSite}-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
-            url={siteTileUrl(iemSite, currentSiteFrame.stamp)}
-            opacity={iemOpacity.site}
+            url={siteTileUrl(iemSite, f.stamp)}
+            opacity={f.stamp === currentSiteFrame.stamp && !radialShown ? iemOpacity.site : 0}
             maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
             minZoom={SITE_MIN_ZOOM}
             updateWhenIdle={true}
             keepBuffer={2}
           />
-        ) : null}
+        ))}
         {/* Raw-radial layer — the actual super-res picture, rendered
             client-side from N0B radial data instead of IEM's pre-smoothed
             tiles (see radialRender.js). Lives in its own pane between the
@@ -1243,12 +1267,17 @@ const WeatherMap = ({ zoom, dark }) => {
             leave the old bitmap up briefly, and a scan boundary should
             swap atomically. */}
         <Pane name="radialPane" style={{ zIndex: 250 }}>
-          {radialShown ? (
+          {/* Mounted whenever an image exists and the band is in view —
+              NOT only when `radialShown` — so a playing loop passing
+              through the historical frames merely hides it (opacity 0)
+              instead of unmounting it and re-decoding the bitmap every
+              time the playhead returns to "latest". */}
+          {Boolean(radial.url) && iemVisible.site ? (
             <ImageOverlay
               key={radial.url}
               url={radial.url}
               bounds={radial.bounds}
-              opacity={iemOpacity.site}
+              opacity={radialShown ? iemOpacity.site : 0}
             />
           ) : null}
         </Pane>
