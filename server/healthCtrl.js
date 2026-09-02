@@ -19,79 +19,32 @@ const { fetchProviderStatus } = require("./debugCtrl");
  * Pi as red until the first poll completes.
  */
 const CRITICAL_SERVICES = new Set([
-  "Tomorrow.io (current)",
-  "Tomorrow.io (hourly)",
-  "Tomorrow.io (daily)",
   "Mapbox",
+  "IEM (radar)",
+  "NEXRAD L3 (radial)",
   "LocationIQ",
 ]);
 
 // A failure is suppressed (treated as "not live") if there has been a
 // successful call within this window. This protects against transient
-// flakes and duplicate call paths (e.g. the AI-summary path re-fetching
-// Tomorrow.io and failing while the main weather poll just succeeded), and
-// against alternative-chain siblings: an EPA AirNow 401 for a Canadian
-// kiosk shouldn't surface every cycle while the regional source (MELCC
-// RSQA / ECCC AQHI) is working fine, so the window must be wider than the
-// slowest *fast* poller's cadence.
-//
-// 35 min comfortably covers the AQ refresh (30 min, see AppContext.js
-// `AQI_REFRESH_MS`), the current-weather poll (10 min), alerts (10 min),
-// and geocode (on location change). It does NOT cover the hourly weather
-// poll (60 min) or daily (24 h) — and that's fine, because the window is
-// no longer the only line of defence (see MIN_CONSECUTIVE_FAILURES below).
+// flakes and duplicate call paths, and against alternative-chain siblings.
+// 35 min comfortably covers alerts (10 min) and geocode (on location change).
 const RECENT_SUCCESS_WINDOW_MS = 35 * 60 * 1000;
 
 // How many consecutive failed calls a service must accumulate before the
-// classifier flags it. This is the fix for the hourly/daily blip problem:
-// those endpoints poll at 60 min / 24 h, so their last success is ALWAYS
-// older than RECENT_SUCCESS_WINDOW_MS — meaning a single transient
-// Tomorrow.io 5xx/429 used to paint the chip red and keep it red until the
-// next successful poll (up to 24 h away for daily). Requiring two
-// consecutive failures means one blip bumps the counter to 1 and stays
-// invisible; only a sustained failure across consecutive polls reaches the
-// threshold and surfaces. The `consecutiveFailures` counter is maintained
-// in serviceStatus.recordServiceCall and reset to 0 on any success.
-//
-// Combined with the server-side single-retry in proxyCtrl (which already
-// absorbs most transient blips before they're ever recorded as a failure),
-// this makes a red chip mean "Tomorrow.io is actually down", not "it
-// hiccuped once".
-//
-// Trade-off: a service that genuinely starts failing now needs two failed
-// polls to surface — at worst ~48 h for the daily endpoint. Acceptable:
-// the 10-min current poll still surfaces a real Tomorrow.io outage within
-// ~20 min, and the daily forecast going stale for a day is not a
-// "degraded display" the user needs a red dot to learn about.
+// classifier flags it. Requiring two consecutive failures means one blip
+// bumps the counter to 1 and stays invisible; only a sustained failure
+// across consecutive polls reaches the threshold and surfaces.
 const MIN_CONSECUTIVE_FAILURES = 2;
 
 // Services orchestrated as alternative chains — the first one that
 // returns usable data wins, and the others are expected to fail or
-// return "no data" depending on the user's region. Surfacing those
-// expected failures as health issues paints the dot as degraded
-// when the feature is actually working perfectly.
-//
-//   - Alerts: NWS covers US territory, ECCC covers Canada. For a
-//     Montreal user NWS will 5xx or 400; for a Texan user ECCC
-//     returns nothing.
-//   - Air quality: MELCC (Montreal first, then rest of Quebec),
-//     ECCC AQHI Canada-wide, EPA AirNow for the US, OpenAQ as
-//     global fallback. Only the source matching the user's region
-//     returns data — others 404 or 503.
-//
-// A failure on a member of one of these groups is suppressed as
-// long as ANY sibling has a recent success.
+// return "no data" depending on the user's region.
+// Alerts: NWS covers US territory, ECCC covers Canada.
 const ALTERNATIVE_GROUPS = [
   [
     "NWS (severe weather alerts)",
     "Environment Canada (severe weather alerts)",
-  ],
-  [
-    "MELCC RSQA (Montreal)",
-    "MELCC RSQAQ (Quebec)",
-    "Environment Canada (AQHI)",
-    "EPA AirNow",
-    "OpenAQ",
   ],
 ];
 

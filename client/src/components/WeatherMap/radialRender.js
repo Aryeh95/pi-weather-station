@@ -154,6 +154,7 @@ export function renderRadialImage(data, bins, minDbz) {
   const size = RADIAL_CANVAS_PX;
   const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling } = data;
   const lut = buildLevelLut(scaling, minDbz);
+  const lut32 = new Uint32Array(lut.buffer);
   // (xm0 is only needed for the bounds themselves — the column loop is
   // symmetric around the site, so it works in offsets.)
   const { bounds, halfMerc, ym0 } = radialBounds(radar.lat, radar.lon);
@@ -164,7 +165,9 @@ export function renderRadialImage(data, bins, minDbz) {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
   const img = ctx.createImageData(size, size);
-  const px = img.data;
+  // Single 32-bit write view over the RGBA buffer — eliminates 3 of 4
+  // memory writes and index arithmetic per non-empty pixel.
+  const px32 = new Uint32Array(img.data.buffer);
 
   // Column mercator offsets are row-independent; hoist them.
   const colMerc = new Float64Array(size);
@@ -173,29 +176,34 @@ export function renderRadialImage(data, bins, minDbz) {
   }
 
   const degPerRad = 180 / Math.PI;
+  const maxR2 = RADIAL_RADIUS_KM * RADIAL_RADIUS_KM;
+
   for (let y = 0; y < size; y += 1) {
     // Rows top → bottom = north → south in mercator.
     const ym = ym0 + (1 - ((y + 0.5) / size) * 2) * halfMerc;
     const latr = Math.atan(Math.sinh(ym));
     const dyKm = (latr - lat0) * EARTH_R_KM;
+    const dy2 = dyKm * dyKm;
+    // Skip rows entirely outside the radar disc radius.
+    if (dy2 > maxR2) continue;
+
     const cosLat = Math.cos(latr);
-    const rowOff = y * size * 4;
+    const rowBase = y * size;
+    const maxDx = Math.sqrt(maxR2 - dy2);
+
     for (let x = 0; x < size; x += 1) {
       const dxKm = colMerc[x] * cosLat;
-      const range = Math.sqrt(dxKm * dxKm + dyKm * dyKm);
+      // Skip columns beyond the radar disc boundary.
+      if (Math.abs(dxKm) > maxDx) continue;
+      const range = Math.sqrt(dxKm * dxKm + dy2);
       const bin = Math.floor((range - firstBinKm) / binKm);
-      if (bin < 0 || bin >= numBins || range > RADIAL_RADIUS_KM) continue;
+      if (bin < 0 || bin >= numBins) continue;
       let az = Math.atan2(dxKm, dyKm) * degPerRad;
       if (az < 0) az += 360;
       const bucket = Math.min(numBuckets - 1, Math.floor(az / bucketDeg));
       const level = bins[bucket * numBins + bin];
       if (level < 2) continue;
-      const l4 = level * 4;
-      const o = rowOff + x * 4;
-      px[o] = lut[l4];
-      px[o + 1] = lut[l4 + 1];
-      px[o + 2] = lut[l4 + 2];
-      px[o + 3] = lut[l4 + 3];
+      px32[rowBase + x] = lut32[level];
     }
   }
 
@@ -210,6 +218,9 @@ export function renderRadialImage(data, bins, minDbz) {
  * @returns {Uint8Array} raw levels
  */
 export function decodeBins(b64) {
+  if (typeof Uint8Array.fromBase64 === "function") {
+    return Uint8Array.fromBase64(b64);
+  }
   const raw = atob(b64);
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);

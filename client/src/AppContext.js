@@ -428,59 +428,11 @@ export function AppContextProvider({ children }) {
   const [defaultMapZoom, setDefaultMapZoom] = useState(DEFAULT_MAP_ZOOM_FALLBACK);
   const [currentMapZoom, setCurrentMapZoom] = useState(DEFAULT_MAP_ZOOM_FALLBACK);
   const [zoomToLevel, setZoomToLevel] = useState(null);
-  // Radar-risk levels for the inner / outer dashed circles, populated by
-  // WeatherMap's /api/radar-risk poll. Lifted to AppContext so the
-  // InfoPanel's AlertBanner can consume the same state without duplicating
-  // the polling logic. null = not yet loaded (or fetch failed); strings are
-  // "calm" | "yellow" | "orange" | "red".
-  const [innerRisk, setInnerRisk] = useState(null);
-  const [outerRisk, setOuterRisk] = useState(null);
-  // Per-ring trend ("approaching" | "leaving" | "stable") and a `bumped`
-  // flag the server emits when the displayed tier ended up higher than
-  // the base RISK_LEVELS mapping (i.e. when v2 trend logic pushed it up
-  // one notch). The AlertBanner reads `bumped` to pick the softer
-  // "alert.approaching" copy in that case — used to be derived client-
-  // side from `level vs naturalTier(maxIntensity)`, but that derivation
-  // broke once hysteresis decoupled tier from raw max intensity, so the
-  // server exposes the boolean directly.
-  const [innerTrend, setInnerTrend] = useState("stable");
-  const [outerTrend, setOuterTrend] = useState("stable");
-  const [innerBumped, setInnerBumped] = useState(false);
-  const [outerBumped, setOuterBumped] = useState(false);
-  // Confidence score (0-100) for each ring's trend label. Surfaced from
-  // the server's intensity-weighted summarizeRingTrend so consumers (debug
-  // panel, future banner-hedging logic, AI-summary prompt) can hedge
-  // wording when the data only weakly supports the chosen trend.
-  const [innerTrendConfidence, setInnerTrendConfidence] = useState(0);
-  const [outerTrendConfidence, setOuterTrendConfidence] = useState(0);
   // Freshness signal for the radar-anchored NowcastLine calm copy: the UNIX
-  // timestamp (ms) of the newest *actual* (past) RainViewer frame, pushed up
-  // by WeatherMap when the frame list refreshes. NowcastLine compares it
-  // against a staleness threshold so "No rain within X" is never asserted on
-  // stale radar (it falls back to "Radar unavailable" instead). null = the
-  // frame list hasn't loaded yet (or carried no past frame).
+  // timestamp (ms) of the newest frame, pushed up by WeatherMap when the
+  // frame list refreshes. NowcastLine compares it against a staleness threshold
+  // so "No rain within X" is never asserted on stale radar. null = not yet loaded.
   const [radarFrameTs, setRadarFrameTs] = useState(null);
-  // Per-direction vectors surfaced from /api/radar-risk for the optional
-  // arrow overlay on the map. Each entry: { direction, peakDistance,
-  // peakIntensity, magnitude, trend, confidence }. Stable directions are
-  // already filtered server-side so the array is "actionable directions
-  // only". Empty by default; populated by the WeatherMap fetcher.
-  const [innerDirectionVectors, setInnerDirectionVectors] = useState([]);
-  const [outerDirectionVectors, setOuterDirectionVectors] = useState([]);
-  // Toggle for the arrow overlay. Persisted in localStorage so power users
-  // who keep arrows on while debugging don't have to re-enable on every
-  // reload. Default OFF — kiosk view should stay clean.
-  const [showDirectionArrows, setShowDirectionArrows] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("showDirectionArrows") === "true";
-  });
-  const toggleDirectionArrows = useCallback(() => {
-    setShowDirectionArrows((prev) => {
-      const next = !prev;
-      try { window.localStorage.setItem("showDirectionArrows", String(next)); } catch { /* localStorage may be unavailable */ }
-      return next;
-    });
-  }, []);
   // Nearby-alerts overlay — a display-only radius survey of active
   // government alerts (the map layer added in Phase 2). On/off is a
   // per-device view preference like showDirectionArrows (localStorage,
@@ -1979,18 +1931,7 @@ export function AppContextProvider({ children }) {
     saveDefaultMapZoom,
     setCurrentMapZoom,
     setZoomToLevel,
-    setInnerRisk,
-    setOuterRisk,
-    setInnerTrend,
-    setOuterTrend,
-    setInnerBumped,
-    setOuterBumped,
-    setInnerTrendConfidence,
-    setOuterTrendConfidence,
-    setInnerDirectionVectors,
-    setOuterDirectionVectors,
     setRadarFrameTs,
-    toggleDirectionArrows,
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
@@ -2056,18 +1997,7 @@ export function AppContextProvider({ children }) {
     saveDefaultMapZoom,
     setCurrentMapZoom,
     setZoomToLevel,
-    setInnerRisk,
-    setOuterRisk,
-    setInnerTrend,
-    setOuterTrend,
-    setInnerBumped,
-    setOuterBumped,
-    setInnerTrendConfidence,
-    setOuterTrendConfidence,
-    setInnerDirectionVectors,
-    setOuterDirectionVectors,
     setRadarFrameTs,
-    toggleDirectionArrows,
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
@@ -2249,7 +2179,6 @@ export function AppContextProvider({ children }) {
     mouseHide,
     hideRadarLegend,
     markerIsVisible,
-    showDirectionArrows,
     defaultMapZoom,
     animateWeatherMap,
     radarSpeed,
@@ -2274,7 +2203,6 @@ export function AppContextProvider({ children }) {
     mouseHide,
     hideRadarLegend,
     markerIsVisible,
-    showDirectionArrows,
     defaultMapZoom,
     animateWeatherMap,
     radarSpeed,
@@ -2330,32 +2258,12 @@ export function AppContextProvider({ children }) {
     alertRadiusKm,
   ]);
 
-  // Radar state: ring risk/trend data + live zoom — the hottest slice.
+  // Radar state: live zoom + freshness timestamp.
   const radarStateSlice = useMemo(() => ({
-    innerRisk,
-    outerRisk,
-    innerTrend,
-    outerTrend,
-    innerBumped,
-    outerBumped,
-    innerTrendConfidence,
-    outerTrendConfidence,
-    innerDirectionVectors,
-    outerDirectionVectors,
     radarFrameTs,
     currentMapZoom,
     zoomToLevel,
   }), [
-    innerRisk,
-    outerRisk,
-    innerTrend,
-    outerTrend,
-    innerBumped,
-    outerBumped,
-    innerTrendConfidence,
-    outerTrendConfidence,
-    innerDirectionVectors,
-    outerDirectionVectors,
     radarFrameTs,
     currentMapZoom,
     zoomToLevel,

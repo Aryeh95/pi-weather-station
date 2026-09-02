@@ -90,19 +90,22 @@ function hourPrefix(t) {
 }
 
 /**
- * List every GLM key inside the window (current + previous hour —
- * two listings cover any 15-minute window).
+ * List every GLM key inside the window. Only queries the previous hour
+ * prefix if the window actually crosses an hour boundary (during the first
+ * minutes of an hour), halving S3 listing queries during normal operation.
  *
  * @param {Number} nowMs epoch ms
  * @returns {Promise<Array<String>>} keys newer than the window start
  */
 async function listWindowKeys(nowMs) {
   const cutoff = nowMs - WINDOW_MINUTES * 60 * 1000;
-  const hours = [new Date(nowMs - 3600 * 1000), new Date(nowMs)];
+  const curPrefix = hourPrefix(new Date(nowMs));
+  const cutPrefix = hourPrefix(new Date(cutoff));
+  const prefixes = curPrefix === cutPrefix ? [curPrefix] : [cutPrefix, curPrefix];
   const keys = [];
-  for (const h of hours) {
+  for (const prefix of prefixes) {
     const res = await axios.get(BUCKET_BASE, {
-      params: { "list-type": 2, prefix: hourPrefix(h), "max-keys": 1000 },
+      params: { "list-type": 2, prefix, "max-keys": 1000 },
       timeout: API_TIMEOUT_MS,
       responseType: "text",
     });
@@ -135,9 +138,14 @@ async function decodeGlmBuffer(data) {
   try {
     const f = new h5.File(scratch, "r");
     try {
-      const lat = f.get("flash_lat").value;
-      const lon = f.get("flash_lon").value;
-      const q = f.get("flash_quality_flag").value;
+      const latDs = f.get("flash_lat");
+      const lonDs = f.get("flash_lon");
+      const qDs = f.get("flash_quality_flag");
+      if (!latDs || !lonDs || !qDs) return flashes;
+      const lat = latDs.value;
+      const lon = lonDs.value;
+      const q = qDs.value;
+      if (!lat || !lon || !q) return flashes;
       for (let i = 0; i < lat.length; i += 1) {
         if (q[i] !== 0) continue;
         // 3 decimals is ~110 m — far below GLM's ~10 km pixel, and it

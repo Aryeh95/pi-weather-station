@@ -189,13 +189,6 @@
   flex: 1;
 }
 
-.precip-scale .t1 { background: var(--rc-tile-1); }
-.precip-scale .t2 { background: var(--rc-tile-2); }
-.precip-scale .t3 { background: var(--rc-tile-3); }
-.precip-scale .t4 { background: var(--rc-tile-4); }
-.precip-scale .t5 { background: var(--rc-tile-5); }
-.precip-scale .t6 { background: var(--rc-tile-6); }
-
 .scale-labels {
   display: flex;
   justify-content: space-between;

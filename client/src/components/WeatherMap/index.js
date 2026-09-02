@@ -1096,14 +1096,6 @@ const WeatherMap = ({ zoom, dark }) => {
     setRadarFrameTs(newest ? newest.epoch : null);
   }, [iemSiteFrames, iemMosaicFrames, setRadarFrameTs]);
 
-  // Risk levels for the dashed circles live in AppContext (see InfoPanel's
-  // AlertBanner, which reads the same state to surface the alert text). We
-  // only keep the polling logic here because it's gated by the same
-  // conditions as the circles themselves.
-  // Per-point intensities for colouring sampling-point dots stay local —
-  // only the renderer below cares about them. Map keyed by `${dir}:${dist}`
-  // so the dot lookup is O(1) regardless of how many points are visible.
-
 
   const getMapApiKeyCallback = useCallback(() => getMapApiKey(), [
     getMapApiKey,
