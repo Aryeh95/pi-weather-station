@@ -6,10 +6,7 @@ import { AlertsContext, UiPrefsContext } from "~/AppContext";
 import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
-// Tile-scale segment classes t1…t6 — backed by the --rc-tile-* tokens
-// (the EXACT RainViewer colour-scheme-6 palette the tiles ship with,
-// fixed across all four palettes — see styles.css).
-const TILE_SEGMENTS = ["t1", "t2", "t3", "t4", "t5", "t6"];
+import { DBZ_STOPS } from "./radialRender";
 
 // Warning-family rows, RadarScope convention (the map overlay is
 // warnings-only and coloured by event type): tornado red, severe
@@ -22,14 +19,17 @@ const WARNING_KEY = [
 ];
 
 /**
- * Six-segment precipitation colour bar — the real tile palette.
+ * 16-segment reflectivity colour bar matching DBZ_STOPS in radialRender.js.
  *
  * @returns {JSX.Element} Scale bar
  */
 const PrecipScale = () => (
   <span className={styles.precipScale} aria-hidden="true">
-    {TILE_SEGMENTS.map((seg) => (
-      <span key={seg} className={styles[seg]} />
+    {DBZ_STOPS.map(({ dbz, rgb }) => (
+      <span
+        key={dbz}
+        style={{ backgroundColor: `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` }}
+      />
     ))}
   </span>
 );
@@ -99,8 +99,11 @@ const RadarLegend = ({ dark, chipMode, lightningCount = null }) => {
         <div className={styles.legendTitle}>{t("radar.legendPrecip")}</div>
         <PrecipScale />
         <div className={styles.scaleLabels}>
-          <span>{t("radar.light")}</span>
-          <span>{t("radar.extreme")}</span>
+          <span>0</span>
+          <span>20</span>
+          <span>40</span>
+          <span>60</span>
+          <span>75 dBZ</span>
         </div>
       </div>
       {lightningCount != null ? (

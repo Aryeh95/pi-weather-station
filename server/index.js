@@ -66,6 +66,8 @@ function registerKnownServices() {
     "ipapi.co",
     "sunrise-sunset.org",
     "IEM (radar)",
+    "NEXRAD L3 (radial)",
+    "NEXRAD L3 (storm tracks)",
     "GOES GLM (lightning)",
     "NWS (severe weather alerts)",
     "Environment Canada (severe weather alerts)",

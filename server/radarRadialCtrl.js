@@ -145,6 +145,13 @@ function packRadials(radialsRaw, numBins) {
   return out;
 }
 
+// Hour-listing cache to avoid redundant S3 list queries during historical
+// loop warmups. Current UTC hour uses 60s TTL; past closed hours are
+// immutable and cached for 1 hour.
+const HOUR_KEYS_TTL_MS = 60 * 1000;
+const PAST_HOUR_KEYS_TTL_MS = 60 * 60 * 1000;
+const hourKeysCache = new BoundedMap(32);
+
 /**
  * List every N0B key for one UTC hour. Same hour-scoped prefix trick the
  * storm-tracks poller uses — keeps the listing at a dozen keys instead
@@ -159,13 +166,22 @@ async function listHourKeys(site, t) {
     + `${String(t.getUTCMonth() + 1).padStart(2, "0")}_`
     + `${String(t.getUTCDate()).padStart(2, "0")}_`
     + `${String(t.getUTCHours()).padStart(2, "0")}`;
+  const hit = hourKeysCache.get(p);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
   const res = await axios.get(BUCKET_BASE, {
     params: { "list-type": 2, prefix: p, "max-keys": 1000 },
     timeout: API_TIMEOUT_MS,
     responseType: "text",
   });
-  return (String(res.data).match(/<Key>([^<]+)<\/Key>/g) || [])
+  const keys = (String(res.data).match(/<Key>([^<]+)<\/Key>/g) || [])
     .map((k) => k.replace(/<\/?Key>/g, ""));
+
+  const isCurrentHour = Math.abs(Date.now() - t.getTime()) < 60 * 60 * 1000
+    && new Date().getUTCHours() === t.getUTCHours();
+  const ttl = isCurrentHour ? HOUR_KEYS_TTL_MS : PAST_HOUR_KEYS_TTL_MS;
+  hourKeysCache.set(p, { value: keys, expires: Date.now() + ttl });
+  return keys;
 }
 
 // IEM frame stamps carry minutes; bucket keys carry seconds, and the two
@@ -195,8 +211,9 @@ async function keyForStamp(site, stamp) {
 
   let best = null;
   let bestDelta = Infinity;
-  for (const t of hours) {
-    for (const key of await listHourKeys(site, t)) {
+  const keyLists = await Promise.all(hours.map((t) => listHourKeys(site, t)));
+  for (const keyList of keyLists) {
+    for (const key of keyList) {
       const epoch = l3KeyEpoch(key);
       if (epoch === null) continue;
       const delta = Math.abs(epoch - target);

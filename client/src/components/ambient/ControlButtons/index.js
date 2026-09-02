@@ -414,22 +414,7 @@ const ControlButtons = () => {
       <InlineIcon icon={timePlotIcon} />
     </div>
   );
-  // Direction-arrows toggle. The wind-gusts glyph reads as
-  // "directional weather phenomenon" — more specific than a
-  // generic arrow and lit the feature better than the previous
-  // near-me arrow which read as a generic "external link".
-  //
-  // v2.14.74: when `radarAnalysisEnabled` is false the button stays
-  // in the DOM but renders with `.buttonDisabled` (reduced opacity
-  // + `pointer-events: none`) instead of being removed. This
-  // preserves its slot in the flex row so toggling the debug
-  // "radar rings" button doesn't make the remaining buttons slide
-  // left/right to fill the gap, and the dimmed glyph still tells
-  // the user "this control exists but needs the analysis rings to
-  // be on". The title is rewritten to a hint ("Enable radar rings
-  // first…") so a tooltip / aria-label still communicates why the
-  // control is inactive.
-   // Legend visibility toggle. v2.14.72: dropped the `mapTimestamps`
+  // Legend visibility toggle. v2.14.72: dropped the `mapTimestamps`
   // part of the gate — that state lives in WeatherMap, not in
   // AppContext, so the check was always falsy and the button
   // never rendered (latent bug since the original v2 wiring).
