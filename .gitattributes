@@ -1,0 +1,11 @@
+# Ensure consistent LF line endings across all platforms so webpack contenthashes match
+* text=auto eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.png binary
+*.jpg binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
