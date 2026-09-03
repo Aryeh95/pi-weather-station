@@ -262,32 +262,19 @@ export function AppContextProvider({ children }) {
   // clear), the server skips the Claude call entirely and returns a
   // templated summary. Default on; opt-out via Advanced settings → AI
   // weather summary → "Calm-day fast path".
-  // Mobile-only radar maximize state. LayoutMobile's `.mapCard` is
-  // 220 px tall by default; tapping the maximize chevron in the
-  // card's top-right corner promotes it to fill the scroll container
-  // so the radar timeline scrubber and the precipitation legend
-  // become readable. The flag lives in context (not local to
-  // LayoutMobile) so two consumers outside the layout can react:
-  //   (1) `WeatherMap` re-invalidates Leaflet's tile grid and
-  //       recenters on the user's lat/lon when the flag flips, so
-  //       the rings + marker stay centred after the container
-  //       resizes (Leaflet keeps the same geographic centre across
-  //       a size change, which made the marker drift to the top
-  //       edge after maximize — user-reported on iOS).
-  //   (2) `ControlButtons` greys out the radar-timeline + legend
-  //       dock toggles while the card is mini and the LayoutMobile
-  //       is active — the overlays they control are CSS-hidden in
-  //       mini mode (no readable real estate), so the buttons
-  //       would otherwise tap silently.
-  // Tri-state to let ControlButtons distinguish mobile-mini from
-  // non-mobile layouts (where the dock buttons should stay active):
-  //   `null`  — not on LayoutMobile (Pi / Desktop). Buttons enabled.
-  //   `false` — on LayoutMobile in mini mode. Timeline + legend
-  //             buttons disabled with a hint toast.
-  //   `true`  — on LayoutMobile, radar maximized. Buttons enabled.
-  // LayoutMobile owns the lifecycle: sets `false` on mount, toggles
-  // to `true` on user tap, resets to `null` on unmount. Session-only
-  // state; never persisted.
+  // Mobile layout flag. Historically tri-state: `false` while the phone
+  // layout showed the radar as a 220 px thumbnail (dock toggles for the
+  // hidden overlays greyed out), `true` once the user maximized it.
+  // Since 2026-09-03 the phone layout IS the full-bleed radar, so
+  // LayoutMobile sets `true` on mount and `null` on unmount; `false`
+  // no longer occurs. Consumers:
+  //   (1) `MapResizer` re-invalidates Leaflet and recentres on the pin
+  //       when the flag changes (layout mount).
+  //   (2) `ControlButtons` keeps its `=== false` gating for the
+  //       greyed-out state; inert now, harmless.
+  //   `null`  — not on LayoutMobile (Pi / Desktop).
+  //   `true`  — on LayoutMobile.
+  // Session-only state; never persisted.
   const [mobileRadarMaximized, setMobileRadarMaximized] = useState(null);
   // Same sentinel pattern as mobileRadarMaximized — `null` means
   // LayoutDesktop is not the active layout (so the focus control

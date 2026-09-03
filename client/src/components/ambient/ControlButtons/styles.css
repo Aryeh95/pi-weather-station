@@ -436,6 +436,23 @@
  * buttons (see BottomDock/styles.css `data-dock-priority="secondary"`).
  * Keep the group spacing extra-tight in that range so the remaining
  * essentials fit. */
+/* Phones in portrait: wrap the groups onto two rows rather than hide
+ * any of them (2026-09-03; BottomDock used to drop the "secondary"
+ * toggles here). Map group on the first row, Display + System on the
+ * second; the dock's min-height gives way to the wrapped height. */
+@media (max-width: 600px) and (orientation: portrait) {
+  .container.grouped {
+    flex-wrap: wrap;
+    height: auto;
+    row-gap: 2px;
+  }
+  /* The hairline between groups would open the second row with a
+   * stray bar at its left edge; the row break already separates them. */
+  .container.grouped .group + .group::before {
+    display: none;
+  }
+}
+
 @media (max-width: 479px) and (orientation: portrait) {
   .container.grouped .group {
     padding: 0 2px;

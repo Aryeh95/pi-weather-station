@@ -433,8 +433,6 @@
     "closeDebug": "Fermer le panneau de débogage",
     "enableRadarRings": "Afficher les cercles d'analyse radar",
     "disableRadarRings": "Masquer les cercles d'analyse radar",
-    "maximizeRadar": "Agrandir le radar",
-    "minimizeRadar": "Restaurer la taille du radar",
     "radarOverlaysNeedMaximize": "Agrandissez d'abord le radar pour utiliser ce contrôle",
     "showNearbyAlerts": "Afficher les alertes à proximité",
     "hideNearbyAlerts": "Masquer les alertes à proximité",
@@ -460,9 +458,6 @@
     "noiseFilterDisable": "Afficher les échos en air clair",
     "velocityOn": "Afficher la vitesse radiale",
     "velocityOff": "Afficher la réflectivité"
-  },
-  "mobile": {
-    "settingsHint": "Pour les réglages avancés, ouvre l'app depuis le Pi en local."
   },
   "toasts": {
     "mapRecentered": "Carte recentrée",

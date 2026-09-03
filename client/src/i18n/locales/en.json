@@ -433,8 +433,6 @@
     "closeDebug": "Close debug panel",
     "enableRadarRings": "Show radar analysis rings",
     "disableRadarRings": "Hide radar analysis rings",
-    "maximizeRadar": "Expand radar",
-    "minimizeRadar": "Restore radar size",
     "radarOverlaysNeedMaximize": "Expand the radar first to use this control",
     "showNearbyAlerts": "Show nearby alerts",
     "hideNearbyAlerts": "Hide nearby alerts",
@@ -460,9 +458,6 @@
     "noiseFilterDisable": "Show clear-air returns",
     "velocityOn": "Show base velocity",
     "velocityOff": "Show reflectivity"
-  },
-  "mobile": {
-    "settingsHint": "Open the app on the Pi locally for advanced settings."
   },
   "toasts": {
     "mapRecentered": "Map recentered",

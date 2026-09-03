@@ -30,10 +30,12 @@ const I18N_LOCALE = { en: "en-US", fr: "fr-FR", es: "es-ES" };
  * after timer throttling, sleep/wake, or an NTP step.
  *
  * @param {object} props
- * @param {boolean} [props.compact] narrow variant for the Pi / mobile rail
+ * @param {boolean} [props.compact] narrow variant for the Pi rail
+ * @param {boolean} [props.strip] one-row variant for the phone layout: place
+ *   name and clock side by side, no date line, 40 px tall
  * @returns {JSX.Element} header slab
  */
-const RadarHeader = ({ compact = false }) => {
+const RadarHeader = ({ compact = false, strip = false }) => {
   const { clockTime } = useContext(UiPrefsContext);
   const { mapTimezone } = useContext(LocationContext);
   const { t, i18n } = useTranslation();
@@ -106,7 +108,7 @@ const RadarHeader = ({ compact = false }) => {
   const locationRef = useRef(null);
 
   return (
-    <div className={`${styles.header} ${compact ? styles.compact : ""}`}>
+    <div className={`${styles.header} ${compact ? styles.compact : ""} ${strip ? styles.strip : ""}`}>
       <div className={styles.placeRow}>
         <button
           ref={locationRef}
@@ -136,6 +138,7 @@ const RadarHeader = ({ compact = false }) => {
 
 RadarHeader.propTypes = {
   compact: PropTypes.bool,
+  strip: PropTypes.bool,
 };
 
 export default RadarHeader;

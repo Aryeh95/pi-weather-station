@@ -1,27 +1,11 @@
-/* LayoutMobile — single-column scrollable layout for portrait phones
- * (< 800 px wide). Variant A · Compagnon nomade from the design
- * package (see component JSDoc + DESIGN-NOTES §14).
+/* LayoutMobile — full-bleed radar for phones (< 800 px wide).
  *
- * The layout is split into:
- *   - `.scroll` — the main scrollable content area, padded for safe
- *     areas (iOS notch on top, home indicator + dock height at the
- *     bottom) and for the dock's chrome below.
- *   - `.mapCard` — a constrained radar card (fixed height) so the
- *     Leaflet map shows up at a sensible size inside the column
- *     instead of trying to fill the viewport.
- *   - `.footer` — a small attribution / settings hint near the
- *     bottom of the scroll.
- *
- * The BottomDock sits below the scroll (always-visible action bar).
- * The toast layer floats above the dock via `position: fixed` in
- * `ControlButtons/styles.css` (z-index 1500), unchanged.
- */
+ * Column: `.stage` (the map with its overlays) takes every pixel the
+ * dock does not. The dock sits in normal flow below the stage, so the
+ * map's bottom-anchored overlays (timeline, legend strip, Leaflet
+ * attribution) always clear it whatever height the dock wraps to. */
 
 .layout {
-  /* Full-viewport column. The root `.ambientRoot .container` already
-   * sets `height: 100dvh` so the layout fills the visible area on
-   * mobile browsers (where dvh accounts for the address bar's
-   * dynamic showing/hiding). */
   position: relative;
   width: 100%;
   height: 100%;
@@ -30,346 +14,77 @@
   background-color: var(--c-bg);
   color: var(--c-text);
   overflow: hidden;
+  /* Edge gap shared with the map overlays (frame-age chip, timeline,
+   * legend strip read `--c-edge-gap`) so everything lines up on one
+   * 12 px margin instead of the desktop's 16 px. */
+  --c-edge-gap: 12px;
+  /* Top inset honouring the notch / status bar in a standalone PWA.
+   * The frame-age chip and alert slot are positioned off the same
+   * value in WeatherMap/styles.css and below. */
+  --c-mobile-top: max(12px, env(safe-area-inset-top, 0px));
 }
 
-/* Pull-to-refresh indicator. Pinned above the .scroll content at the
- * top of the layout; its inline `transform: translateY(px)` follows
- * the user's pull. The .scroll container also gets a matching
- * translateY (set inline) so the page contents shift down with the
- * indicator. Both spring back to zero when the user releases below
- * the threshold (state reset clears the inline transforms). Hidden
- * by default (parent renders it conditionally). */
-.ptrIndicator {
-  position: absolute;
-  top: -56px;
-  left: 0;
-  right: 0;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--c-text-dim);
-  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.ptrSpinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--c-border);
-  border-top-color: var(--c-accent);
-  border-radius: 50%;
-  transition: border-top-color 120ms linear;
-}
-
-.ptrArmed {
-  border-top-color: var(--c-accent);
-  border-right-color: var(--c-accent);
-}
-
-.ptrSpinning {
-  animation: ptr-spin 800ms linear infinite;
-}
-
-@keyframes ptr-spin {
-  to { transform: rotate(360deg); }
-}
-
-.ptrLabel {
-  /* Slight pop on armed/refreshing so user feels the threshold. */
-  font-weight: 500;
-}
-
-/* Scrollable content area. Padding on the sides matches the
- * `padding: 12px` used on `.dock` so vertical alignment of slabs
- * with the dock buttons reads consistently.
- *
- * v2.15.1 — switched from `display: flex; flex-direction: column`
- * to plain block layout. With flex column, every child gets
- * `flex-shrink: 1` by default and the overflowing total content
- * caused flex to squash items with explicit pixel heights (the
- * radar `.mapCard` collapsed from 220 px to ~30 px because it
- * lost a shrink battle). Block flow respects explicit heights
- * unconditionally; sibling spacing is recovered via
- * `> * + * { margin-top: 10px }` further down.
- *
- * `position: relative` is load-bearing for `AiSummaryInline`'s and
- * `ChartTabs`'s maximize modes: those slabs use `position: absolute`
- * to detach from the flow, and `absolute` only works against the
- * nearest *positioned* ancestor. Without `relative` here, the
- * maximize state pinned against `.ambientRoot` (the next
- * positioned ancestor up) instead of the scroll container —
- * meaning the slab covered the wrong region of the screen. Mirrors
- * `LayoutPi/.rail`, which carries the same comment for the same
- * reason. */
-.scroll {
+.stage {
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* Smooth spring-back when the pull-to-refresh gesture is released
-   * below the threshold. During the active pull, React updates the
-   * inline `transform: translateY(...)` on every touchmove — that's
-   * fast enough that the transition's 180ms duration is masked by
-   * the rapid state churn (each new value resets the animation),
-   * so the pull tracks the finger. On release, the parent removes
-   * the inline transform → empty back to 0 → the transition fires. */
-  transition: transform 180ms ease-out;
-  padding: 12px 14px 16px;
-  /* iOS PWA safe areas — clear the notch on top. */
-  padding-top: max(12px, env(safe-area-inset-top));
-  padding-left: max(14px, env(safe-area-inset-left));
-  padding-right: max(14px, env(safe-area-inset-right));
-  /* Smooth-scroll on touch. -webkit-overflow-scrolling kept for older
-   * iOS Safari (≤ 12), modern Safari handles momentum natively. */
-  -webkit-overflow-scrolling: touch;
 }
 
-/* Adjacent-sibling spacing — replaces the previous flex `gap: 10px`
- * since `.scroll` is now block layout. Same 10 px rhythm LayoutPi
- * uses between rail items. */
-.scroll > * + * {
-  margin-top: 10px;
-}
-
-/* v2.15.5-12 experimented with a merged hero row (TimeBlock +
- * HeroCompact side by side). Reverted in v2.15.13 because the
- * 12h time format forced too many overflow workarounds — see the
- * matching note in LayoutPi/styles.css. The smaller typography
- * from that pass (56 px clock / 56 px temp on mobile) is retained
- * since the stacked cards still come out shorter than the
- * v2.14 baseline. */
-
-/* Radar card. Fixed height so the map doesn't try to be tall in a
- * scrolling column. 220 px gives the rings + a meaningful slice of
- * the radar without dominating the screen. The map-container class
- * is inherited by `<WeatherMap>` for the dark-mode / cursor hide
- * tokens (same as LayoutPi). */
-.mapCard {
-  position: relative;
-  width: 100%;
-  height: 220px;
-  border-radius: 10px;
+/* The map is the background of the stage. `z-index: 0` puts Leaflet's
+ * panes (which climb to z-index 1000 internally) into their own
+ * stacking context so the overlays below, at z-index 10, paint above
+ * them — the same load-bearing trick LayoutDesktop's `.mapArea` uses. */
+.mapArea {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   overflow: hidden;
-  border: 1px solid var(--c-border);
-  background-color: var(--c-surface);
+  background-color: var(--c-bg);
 }
 
-/* Leaflet container fills the card. WeatherMap's own wrapper has
- * `width: 100%; height: 100%` already, so this is mostly defensive
- * against any future inline-style changes. */
-.mapCard :global(.leaflet-container) {
+.mapArea :global(.leaflet-container) {
   width: 100% !important;
   height: 100% !important;
 }
 
-/* Mini mode (default 220 px card): hide the radar legend and the
- * timeline scrubber that `WeatherMap` paints over the Leaflet
- * container. Both were designed for a full-bleed map; on a 220 px
- * card the legend gets clipped at the bottom (its 6 rows exceed the
- * available height) and the scrubber's `clamp(280px, 45vw, 480px)`
- * width crowds the small tile area. The user can promote the card
- * via the maximize button below; the maximized state un-hides both.
- *
- * Selector subtlety: we match on the variant modifiers
- * `radar-legend-dark` / `radar-legend-light` and
- * `radar-timeline-dark` / `radar-timeline-light`, which only appear
- * on the OUTER container. The v2.15.2 attempt used
- * `[class*="radar-legend"]` which also matched descendants like
- * `.radar-legend-swatch` (16×8 px coloured boxes) and the subsequent
- * `display: revert` for maximized mode reset those spans back to
- * `display: inline` — at which point inline elements ignore explicit
- * width/height and the swatches collapsed to zero. User-reported:
- * "la carte de légende apparaît mais sans couleurs". Targeting only
- * the outer container fixes both directions.
- *
- * `:global(...)` pierces CSS Modules — the WeatherMap module-hashed
- * classnames aren't in scope here; we match on the unhashed names
- * that Leaflet keeps. */
-.mapCard :global([class*="radar-legend-dark"]),
-.mapCard :global([class*="radar-legend-light"]),
-.mapCard :global([class*="legend-mobile-strip--"]),
-.mapCard :global([class*="legend-chip--"]),
-.mapCard :global([class*="legend-overlay--"]),
-.mapCard :global([class*="radar-timeline-dark"]),
-.mapCard :global([class*="radar-timeline-light"]) {
-  display: none !important;
-}
-
-/* Maximized state — the card leaves the scroll's normal flow and
- * pins absolute over the top of the scroll container. Tall enough to
- * give the timeline scrubber readable room (it lives at the bottom of
- * the map) and the legend + rings. Z-index lifted above ChartTabs /
- * AiSummary maximize (which use 5) so the radar-maximize always
- * wins; BottomDock toast at 1500 still covers everything per its own
- * `position: fixed` rules.
- *
- * `--c-bg` rather than `--c-surface` so the card is fully opaque
- * (the radar would bleed through `--c-surface`'s 85 % alpha
- * underneath the Leaflet tiles); same recipe ChartTabs uses. */
-.mapCard.mapCardMaximized {
+/* Place + clock strip across the top. */
+.headerSlot {
   position: absolute;
-  /* v3.1 Phase 3 follow-up (maintainer feedback): FULL-BLEED, like the
-   * big-screen radar — the maximized state fills 100 % of the app area
-   * (the scroll container; the dock keeps its own row below), no card
-   * margins, no rounded corners. The top edge still honours the iOS
-   * notch inset so the in-map controls (zoom, maximize button at
-   * top:8) stay below the Control-Centre swipe zone — the v2.16.5
-   * incident fix, carried over: button lands at inset+8, same
-   * clearance as the previous max(12px, inset)+8 card recipe. */
-  top: env(safe-area-inset-top, 0px);
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border: none;
-  border-radius: 0;
-  height: auto;
+  top: var(--c-mobile-top);
+  left: var(--c-edge-gap);
+  right: var(--c-edge-gap);
   z-index: 10;
-  background-color: var(--c-bg);
 }
 
-/* Un-hide the radar surfaces once the card is maximized. CONCRETE
- * display values, never `revert` — `revert` in the author origin
- * rolls back past ALL author rules to the UA value, which (a) broke
- * the swatches in v2.15.2 (span → inline) and (b) would resurrect
- * the desktop legend card here: since Phase 3 the mobile legend is
- * the compact strip + overlay sheet, and the card/chip must STAY
- * hidden on mobile (their WeatherMap hide rule is normal-importance
- * and loses to any !important revert). The card and chip therefore
- * have no un-hide rule at all — the strip, the overlay root and the
- * timeline come back with the display each actually needs. */
-.mapCard.mapCardMaximized :global([class*="legend-mobile-strip--"]) {
-  display: flex !important;
-}
-
-.mapCard.mapCardMaximized :global([class*="legend-overlay--"]) {
-  display: block !important;
-}
-
-.mapCard.mapCardMaximized :global([class*="radar-timeline-dark"]),
-.mapCard.mapCardMaximized :global([class*="radar-timeline-light"]) {
-  display: block !important;
-}
-
-/* Maximize / minimize toggle button. Top-right corner of the card.
- *
- * v2.15.5: bumped to 36×36 with `--c-text` colour (was `--c-text-dim`)
- * and a stronger border + 18 px icon — the v2.15.2 styling used
- * `--c-text-dim` on `--c-surface`, which on the day palette is
- * cream-on-cream and read as nearly invisible against the radar
- * tiles. User-reported: "le symbole pour minimiser la carte radar
- * est difficile à voir". The accent-soft active-state stays so the
- * pressed-in look matches the other dock toggles, but the resting
- * state now has enough contrast against any palette + over any
- * radar pixel. Z-index above the Leaflet controls (which top out at
- * 1000) so the button is tappable even over the +/- zoom stack in
- * the top-left corner. */
-/* Selector doubled (.x.x): the global reset `.ambientRoot button`
- * (ui/reset.css, specificity 0,1,1) strips background/border/colour
- * from single-class button rules — this button was nearly invisible
- * on the map until the bump (maintainer-reported; same trap and same
- * fix as the WeatherMap Phase 3 buttons). */
-.mapMaximizeButton.mapMaximizeButton {
+/* Alert stack: below the header strip (40 px) and the frame-age row
+ * (≈ 28 px) with 8 px gaps. Scrolls internally when a long warning
+ * text is expanded, and stops well above the timeline / legend so the
+ * radar controls stay reachable. The slot itself is click-through;
+ * only the slabs inside take touches. */
+.alertSlot {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  /* v2.16.4: 36 → 44 px (Apple HIG minimum touch target). The 36 px
-   * variant was tappable on macOS / Pi kiosk but user-reported as
-   * unresponsive in iOS PWA standalone portrait mode. */
-  width: 44px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background-color: var(--c-surface);
-  border: 1px solid var(--c-border-hybrid, var(--c-border));
-  border-radius: 6px;
-  color: var(--c-text);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 18px;
-  /* Above Leaflet's own controls (zoom, attribution): Leaflet uses
-   * z-index up to 1000 on its panes/controls. */
-  z-index: 1100;
-  -webkit-tap-highlight-color: transparent;
-  /* Subtle drop-shadow lifts the button off the radar tiles in all
-   * palettes — without it the button can blend into a dark radar
-   * region in day mode (cream button over dark tile = invisible
-   * border). */
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  top: calc(var(--c-mobile-top) + 84px);
+  left: var(--c-edge-gap);
+  right: var(--c-edge-gap);
+  bottom: 120px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  pointer-events: none;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* The inline-SVG bracket icons size to their container — without this
- * they'd expand to the SVG default viewport. 18 px matches the
- * desktop/7" radar-focus button so the pair reads identically. */
-.mapMaximizeButton.mapMaximizeButton svg {
-  width: 18px;
-  height: 18px;
+.alertSlot > * {
+  pointer-events: auto;
+  flex: none;
 }
 
-/* Pressed feedback — same :active grammar as the desktop/7" focus
- * button (Q6 harmonization). :active releases cleanly on touch,
- * unlike :hover (which stays banned on kiosk surfaces). */
-.mapMaximizeButton.mapMaximizeButton:active {
-  background-color: var(--c-accent-soft);
-  color: var(--c-accent);
-  transform: scale(0.96);
-}
-
-.mapMaximizeButton.mapMaximizeButton:focus-visible {
-  outline: 2px dashed var(--c-text);
-  outline-offset: 1px;
-}
-
-/* Active (maximized) state — solid accent with bg-coloured glyph,
- * matching the desktop/7" radar-focus toggle's aria-pressed paint
- * exactly (Q6 harmonization, maintainer feedback: the previous
- * accent-soft fill read as a different control across layouts). */
-.mapMaximizeButton.mapMaximizeButton[aria-pressed="true"] {
-  color: var(--c-bg);
-  background-color: var(--c-accent);
-  border-color: var(--c-accent);
-}
-
-/* Footer hint — subtle, dim, monospace caps. Tells the user the
- * advanced settings live on the Pi. Matches the visual language of
- * the section labels in the rail. */
-.footer {
-  margin-top: 6px;
-  padding: 10px 4px 4px;
-  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 10px;
-  letter-spacing: 0.6px;
-  color: var(--c-text-dim);
-  text-transform: uppercase;
-  text-align: center;
-  line-height: 1.45;
-}
-
-/* On very short mobile viewports (e.g. landscape phones < 480 px
- * tall), the radar card consumes too much vertical real estate.
- * Shrink it so the user can still see the hero and at least the
- * first metrics row without scrolling. */
-@media (max-height: 520px) and (orientation: landscape) {
-  .mapCard {
-    height: 160px;
-  }
-}
-
-/* BottomDock cell — last child of the flex column. Lifted into the
- * root stacking context above Leaflet's panes / radar scrubber so
- * the dock's toast layer (z-index 1500 in its own internal stacking
- * context, confined there by the dock's `backdrop-filter: blur`)
- * remains visible above the map. Same fix as LayoutPi — see the
- * comment on `.layout > :last-child` in LayoutPi/styles.css for
- * the full stacking-context reasoning. */
+/* BottomDock — last child of the column. Lifted above Leaflet's panes
+ * so the dock's fixed-position toast layer stays visible over the map.
+ * Same reasoning as the matching rule in LayoutPi/styles.css. */
 .layout > :last-child {
   position: relative;
   z-index: 1100;

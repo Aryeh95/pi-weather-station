@@ -1,340 +1,80 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { ExpandIcon, RestoreIcon } from "~/components/WeatherMap/icons";
-import { UiPrefsContext, SystemContext, AppActionsContext } from "~/AppContext";
+import React, { useContext, useEffect } from "react";
+import { UiPrefsContext, AppActionsContext } from "~/AppContext";
 import WeatherMap from "~/components/WeatherMap";
 import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
 import AlertDetailInline from "~/components/ambient/AlertDetailInline";
 import AlertMiniCards from "~/components/ambient/AlertMiniCards";
-import FloatingMiniBanner from "~/components/ambient/FloatingMiniBanner";
 import BottomDock from "~/components/ambient/BottomDock";
 import styles from "./styles.css";
 
 /**
- * Direction C — Mobile layout (Variant A · Compagnon nomade).
+ * Mobile layout (< 800 px wide): the radar, full-bleed, with the same
+ * chrome the kiosk has — nothing else.
  *
- * Third layout alongside `LayoutPi` (800-1279px) and `LayoutDesktop`
- * (≥1280px). Triggered for viewports < 800 px wide — in practice
- * 375-430 px portrait phones. Reuses every Direction C primitive
- * (`cTokens`, `MapBg`, `HeroCompact`, `MetricsGrid`, `AlertBanner`,
- * `ChartTabs`, `AiSummaryInline`) — no new tokens introduced.
+ * Until 2026-09-03 this was the forecast-era "companion" column: a tall
+ * clock card, a 220 px radar thumbnail with a maximize button, a footer
+ * telling the user to open the app on the Pi, and a pull-to-refresh
+ * gesture — with the map's own controls hidden until the thumbnail was
+ * expanded and half the dock's toggles hidden in portrait. Once the
+ * forecast panels went, that column was three quarters empty and the
+ * radar was the one thing on the page you could not use.
  *
- * Structure (single scrollable column):
+ * Structure now (everything overlays the map; nothing scrolls):
+ *
  *   ┌──────────────────────────────┐
- *   │ TimeBlock                    │  ◀ clock + sunrise/sunset
- *   │ AlertBanner                  │  ◀ government alert (when active)
- *   │ HeroCompact                  │  ◀ location, big temp, condition
- *   │ AlertDetailInline            │  ◀ expanded alert (tap to open)
- *   │ AirCard                      │  ◀ AQI + pollen rows
- *   │ MetricsGrid                  │  ◀ wind / humid / UV / pressure tiles
- *   │ IndoorBlock                  │  ◀ Homebridge temps (when configured)
- *   │ Radar mini (~220 px) [⛶]    │  ◀ small inset map; maximize toggle
- *   │ ChartTabs                    │  ◀ 24h hourly chart
- *   │ AiSummaryInline              │  ◀ Claude-generated summary
- *   │ Footer hint                  │  ◀ "settings live on the Pi"
+ *   │ [place · clock]        strip │  ◀ RadarHeader `strip` variant
+ *   │ [LWX ● 3 min  Tracks ● …]    │  ◀ RadarFrameAge, laid out as a row
+ *   │ AlertBanner / detail / cards │  ◀ overlay column, scrolls if long
+ *   │                              │
+ *   │            map               │
+ *   │                              │
+ *   │ [timeline]        [legend]   │  ◀ WeatherMap's own overlays
  *   ├──────────────────────────────┤
- *   │ BottomDock                   │  ◀ palette + marker + recenter
+ *   │ BottomDock (wraps to 2 rows) │
  *   └──────────────────────────────┘
  *
- * **Design intent — "Compagnon nomade" (Variant A from the design
- * package, DESIGN-NOTES §14):** the mobile is for the user who is
- * AWAY from the Pi and wants a quick read of conditions / alerts.
- * The dock is kept on this implementation (vs. the stricter Variant A
- * which omits it) because the existing dock buttons are pure view
- * toggles (palette, marker, etc.) — useful from any browser. API
- * keys, debug, and the full settings panel remain Pi-only (gated by
- * `isLocal` in their respective handlers).
- *
- * **Radar maximize** (v2.15.2): the mini radar card carries a
- * maximize toggle in its top-right corner. Tapping it promotes the
- * card to `position: absolute; inset: 12px` so the radar fills the
- * scroll container — at which point the radar timeline scrubber and
- * the precipitation legend (both inside `WeatherMap`) become readable.
- * In mini mode (220 px tall) those overlays would crowd the small
- * tile area; CSS in this module hides them while the card is mini.
- * Same affordance language ChartTabs and AiSummaryInline use.
- *
- * Safe areas are handled via `env(safe-area-inset-*)` in styles.css
- * so the scroll area clears the iOS notch + home indicator. PWA-ready:
- * the palette tokens applied at the `.ambientRoot` level inherit to
- * the standalone-mode chrome without extra work.
+ * - `mobileRadarMaximized` is held at `true` for the lifetime of the
+ *   layout (and reset to `null` on unmount). ControlButtons and
+ *   MapResizer key on that flag; `true` means "the radar overlays are
+ *   visible, every dock toggle is live" — which is now always the case.
+ * - Leaflet's +/− zoom stack is hidden here (pinch-zoom on a phone);
+ *   see the mobile rules in WeatherMap/styles.css.
+ * - The dock no longer hides its "secondary" toggles in portrait; it
+ *   wraps onto a second row instead (BottomDock / ControlButtons CSS).
+ * - Pull-to-refresh is gone: the map owns every touch gesture, and the
+ *   dock's refresh button does the same job.
  *
  * @returns {JSX.Element} Mobile layout
  */
 const LayoutMobile = () => {
-  const { t } = useTranslation();
-  const {
-    darkMode,
-    defaultMapZoom,
-    mouseHide,
-    radarTimelineVisible,
-  } = useContext(UiPrefsContext);
-  const { mobileRadarMaximized } = useContext(SystemContext);
-  const {
-    setMobileRadarMaximized,
-    toggleRadarTimelineVisible,
-  } = useContext(AppActionsContext);
-
-  // Radar maximize state lives in AppContext (see the field's comment
-  // there for the full rationale). LayoutMobile owns the toggle UI;
-  // WeatherMap reads the state to re-center / invalidateSize on
-  // change; ControlButtons reads it to grey out the timeline + legend
-  // dock buttons while the radar overlays they control are hidden.
-  const mapCardRef = useRef(null);
-  const scrollRef = useRef(null);
-
-  // Pull-to-refresh. Primary use case: PWA standalone mode on iOS
-  // where the browser's reload UI isn't reachable (no address bar,
-  // no Cmd+R). The .scroll container captures touch deltas while
-  // scrollTop === 0 and surfaces a small indicator. Crossing
-  // `PTR_THRESHOLD` triggers a `location.reload()`. Below the
-  // threshold the indicator springs back. The dock button is the
-  // discoverable counterpart of the same action.
-  const PTR_THRESHOLD = 80;
-  const PTR_MAX = 120;
-  // Discrete gesture states only — each flips at most a few times per
-  // pull. The continuous pull DISTANCE deliberately does NOT live in
-  // React state: a setState on every touchmove (~60×/s) re-rendered the
-  // entire mobile subtree for the duration of the gesture — WeatherMap
-  // (with its Leaflet layer diffing) and ChartTabs (with its canvas
-  // chart) included, at ~60 Hz on a phone. The distance lives in
-  // `pullDistanceRef` and is applied imperatively to the two translated
-  // elements (see `applyPull` in the effect below).
-  const [pulling, setPulling] = useState(false); // indicator mounted while > 0
-  const [pullArmed, setPullArmed] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const ptrStateRef = useRef({ startY: 0, active: false });
-  // Mirror refs for the state values read inside the touch handlers,
-  // so the effect can subscribe once on mount and the handlers always
-  // see the latest values without re-subscription. Cf. design audit B3
-  // (2026-05-28).
-  const pullingRef = useRef(false);
-  const pullArmedRef = useRef(false);
-  const refreshingRef = useRef(false);
-  const pullDistanceRef = useRef(0); // imperative source of truth (px)
-  const ptrIndicatorRef = useRef(null);
-
-  useEffect(() => { pullingRef.current = pulling; }, [pulling]);
-  useEffect(() => { pullArmedRef.current = pullArmed; }, [pullArmed]);
-  useEffect(() => { refreshingRef.current = refreshing; }, [refreshing]);
+  const { darkMode, defaultMapZoom, mouseHide } = useContext(UiPrefsContext);
+  const { setMobileRadarMaximized } = useContext(AppActionsContext);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return undefined;
-    // Write the pull offset straight to the DOM — two style writes per
-    // touchmove instead of a React render of the whole layout. Safe
-    // against re-renders mid-gesture (the armed flip, a context poll)
-    // because the indicator's JSX style prop reads pullDistanceRef at
-    // render time: when React re-applies the prop it writes the value
-    // applyPull just wrote, never a stale one. (The scroll container has
-    // no style prop at all, so React leaves its transform alone.) Don't
-    // refactor the prop to a frozen variable or back to state — that
-    // would reintroduce a stale transform clobbering the gesture.
-    const applyPull = (px) => {
-      pullDistanceRef.current = px;
-      if (ptrIndicatorRef.current) {
-        ptrIndicatorRef.current.style.transform = `translateY(${px}px)`;
-      }
-      el.style.transform = px > 0 ? `translateY(${px}px)` : "";
-    };
-    // The mirror refs are ALSO written synchronously here (the mirror
-    // effects only run after the next render): onEnd can fire in the
-    // same frame as the touchmove that crossed the arm threshold, and
-    // reading a not-yet-mirrored value would drop the refresh.
-    const setPullingSync = (v) => { pullingRef.current = v; setPulling(v); };
-    const setPullArmedSync = (v) => { pullArmedRef.current = v; setPullArmed(v); };
-    const onStart = (e) => {
-      if (el.scrollTop > 0 || refreshingRef.current) return;
-      ptrStateRef.current = { startY: e.touches[0].clientY, active: true };
-    };
-    const onMove = (e) => {
-      const st = ptrStateRef.current;
-      if (!st.active) return;
-      const delta = e.touches[0].clientY - st.startY;
-      if (delta <= 0) {
-        if (pullDistanceRef.current !== 0) applyPull(0);
-        if (pullingRef.current) setPullingSync(false);
-        if (pullArmedRef.current) setPullArmedSync(false);
-        return;
-      }
-      // Damped travel — pulls past PTR_MAX get diminishing returns.
-      const damped = Math.min(PTR_MAX, delta * 0.5);
-      applyPull(damped);
-      if (!pullingRef.current) setPullingSync(true);
-      const armed = damped >= PTR_THRESHOLD;
-      if (armed !== pullArmedRef.current) setPullArmedSync(armed);
-    };
-    const onEnd = () => {
-      const st = ptrStateRef.current;
-      if (!st.active) return;
-      ptrStateRef.current = { startY: 0, active: false };
-      if (pullArmedRef.current && !refreshingRef.current) {
-        setRefreshing(true);
-        applyPull(PTR_THRESHOLD);
-        setTimeout(() => window.location.reload(), 200);
-      } else {
-        applyPull(0);
-        setPullingSync(false);
-        setPullArmedSync(false);
-      }
-    };
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: true });
-    el.addEventListener("touchend", onEnd, { passive: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- state values are read via mirror refs (above) so the effect can subscribe once on mount instead of re-installing listeners mid-gesture
-  }, []);
-
-  // When entering maximize mode, scroll the scroll container to the
-  // top so the absolutely-positioned card (pinned to the scroll's
-  // content origin, not its viewport) lands inside the visible area.
-  // Without this, if the user had scrolled down to reach the radar
-  // before tapping maximize, the promoted card would expand ABOVE the
-  // current scroll position — full-size and opaque but invisible until
-  // the user manually scrolled back up. Mirrors the same pattern in
-  // AiSummaryInline.
-  useEffect(() => {
-    if (!mobileRadarMaximized || !mapCardRef.current) return;
-    let el = mapCardRef.current.parentElement;
-    while (el && el !== document.body) {
-      const overflowY = window.getComputedStyle(el).overflowY;
-      if (overflowY === "auto" || overflowY === "scroll") {
-        el.scrollTop = 0;
-        break;
-      }
-      el = el.parentElement;
-    }
-  }, [mobileRadarMaximized]);
-
-  // Auto-deactivate the radar timeline scrubber when the user
-  // minimizes the radar card. The scrubber is CSS-hidden in mini mode
-  // (no readable room), and the dock's timeline button is greyed out
-  // (see `ControlButtons` `radarOverlaysDisabled`), so a `true`
-  // scrubber state stuck across a minimize would be unreachable from
-  // the user's standpoint — they'd have to re-maximize just to flip
-  // it off. Resetting on minimize keeps the dock button's visual
-  // state aligned with the (invisible) scrubber state.
-  //
-  // Gated on the maximized→mini TRANSITION (prev ref), not the value:
-  // the lifecycle effect below sets `mobileRadarMaximized` to `false`
-  // on mount, and an un-gated `=== false` check fired on that mount
-  // pass too — toggleRadarTimelineVisible() persists to localStorage,
-  // so every LayoutMobile mount silently flipped the user's saved
-  // scrubber preference off (defeating the "default true so first-time
-  // users see the timeline" intent).
-  const prevRadarMaximizedRef = useRef(mobileRadarMaximized);
-  useEffect(() => {
-    const wasMaximized = prevRadarMaximizedRef.current === true;
-    prevRadarMaximizedRef.current = mobileRadarMaximized;
-    if (wasMaximized && mobileRadarMaximized === false && radarTimelineVisible) {
-      toggleRadarTimelineVisible();
-    }
-  }, [mobileRadarMaximized, radarTimelineVisible, toggleRadarTimelineVisible]);
-
-  // Lifecycle: signal to AppContext consumers that we're on the
-  // mobile layout. The tri-state value is `false` (mini, default)
-  // while we're mounted and `null` once we unmount — that way the
-  // dock's timeline + legend disable rule (which keys on `=== false`)
-  // only kicks in while LayoutMobile is actually active.
-  useEffect(() => {
-    setMobileRadarMaximized(false);
+    setMobileRadarMaximized(true);
     return () => setMobileRadarMaximized(null);
   }, [setMobileRadarMaximized]);
 
   return (
     <div className={styles.layout}>
-      {/* Pull-to-refresh indicator. Floats above the scroll content
-       * (position: absolute, top: 0) and translates down based on the
-       * current pull distance. Inert visual once `refreshing` is true. */}
-      {(pulling || refreshing) && (
-        <div
-          ref={ptrIndicatorRef}
-          className={styles.ptrIndicator}
-          /* Reads the LIVE ref at render time — deliberate: React
-           * re-applies this prop on every re-render while mounted
-           * (armed flips, context polls), and reading the ref means it
-           * always re-writes the value applyPull just set, never a
-           * stale one. See the applyPull comment in the touch effect. */
-          style={{ transform: `translateY(${pullDistanceRef.current}px)` }}
-          role="status"
-          aria-live="polite"
-        >
-          <div className={`${styles.ptrSpinner} ${refreshing ? styles.ptrSpinning : ""} ${pullArmed ? styles.ptrArmed : ""}`} />
-          <span className={styles.ptrLabel}>
-            {refreshing
-              ? t("toasts.refreshing", { defaultValue: "Refreshing…" })
-              : pullArmed
-                ? t("toasts.refreshing", { defaultValue: "Refreshing…" })
-                : t("controls.refreshApp", { defaultValue: "Refresh app" })}
-          </span>
-        </div>
-      )}
-      {/* transform is managed imperatively by applyPull during the
-       * pull gesture — no style prop here, so React leaves it alone. */}
-      <div
-        ref={scrollRef}
-        className={styles.scroll}
-      >
-        <RadarHeader />
-        {/* Alert stack sits directly under the header, matching the
-         * LayoutPi ordering. Every component here returns null when no
-         * eligible alert is active, so the slot is invisible on calm
-         * days and the map card rises to meet the header. */}
-        <AlertBanner />
-        <AlertDetailInline />
-        <AlertMiniCards />
-        <div
-          ref={mapCardRef}
-          className={`${styles.mapCard} ${mobileRadarMaximized ? styles.mapCardMaximized : ""} map-container ${darkMode ? "map-dark-mode" : ""} ${mouseHide ? "map-mouse-hide" : ""}`}
-          data-mobile-radar-maximized={mobileRadarMaximized ? "true" : undefined}
-        >
+      <div className={styles.stage}>
+        <div className={`${styles.mapArea} map-container ${darkMode ? "map-dark-mode" : ""} ${mouseHide ? "map-mouse-hide" : ""}`}>
           <WeatherMap zoom={defaultMapZoom} dark={darkMode} />
-          <button
-            type="button"
-            className={styles.mapMaximizeButton}
-            onClick={() => setMobileRadarMaximized(!mobileRadarMaximized)}
-            aria-pressed={mobileRadarMaximized}
-            aria-label={t(mobileRadarMaximized ? "controls.minimizeRadar" : "controls.maximizeRadar", {
-              defaultValue: mobileRadarMaximized ? "Restore radar size" : "Expand radar",
-            })}
-            title={t(mobileRadarMaximized ? "controls.minimizeRadar" : "controls.maximizeRadar", {
-              defaultValue: mobileRadarMaximized ? "Restore radar size" : "Expand radar",
-            })}
-          >
-            {/* Same four-corner-bracket SVG pair as the desktop/7"
-              * radar-focus toggle (v3.1 Phase 3 harmonization — the
-              * Carbon diagonal arrows were the lone icon outlier). */}
-            {mobileRadarMaximized ? <RestoreIcon /> : <ExpandIcon />}
-          </button>
-          {/* The maximized card covers the whole scroll column —
-            * including the AlertBanner slab at its top — so an active
-            * gov alert would be invisible while the user studies the
-            * radar (P4 audit 2026-06-11). Same kiosk-grade safety
-            * property as the Desktop/Pi focus modes: never blind the
-            * user to an active Tornado Warning. Tapping the chip
-            * restores the mini card, which reveals the full banner.
-            * `belowControls` placement clears the restore button
-            * (top-right) and the Leaflet zoom stack (top-left). Not
-            * mounted in mini mode — the full AlertBanner is visible
-            * in the column there. */}
-          {mobileRadarMaximized && (
-            <FloatingMiniBanner
-              placement="belowControls"
-              onExpand={() => setMobileRadarMaximized(false)}
-            />
-          )}
         </div>
-        <div className={styles.footer}>
-          {t("mobile.settingsHint", {
-            defaultValue: "Pour les réglages avancés, ouvre l'app depuis le Pi en local.",
-          })}
+        {/* No `data-ambient-hero` here: WeatherMap's useRailOffset would
+          * shift the map centre down by the header height, which only
+          * makes sense for the desktop's tall slab. The strip is 40 px. */}
+        <div className={styles.headerSlot}>
+          <RadarHeader strip />
+        </div>
+        {/* Alert stack overlays the map below the header and frame-age
+          * strip. Every child returns null with no active alert, so on a
+          * calm day this slot is an empty, click-through box. */}
+        <div className={styles.alertSlot}>
+          <AlertBanner />
+          <AlertDetailInline />
+          <AlertMiniCards />
         </div>
       </div>
       <BottomDock />

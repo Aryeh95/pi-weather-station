@@ -538,3 +538,26 @@ call, cached 24 h). At mosaic zoom the pin decides, keeping the home
 radar's frames, tracks and arrival overlay warm. Storm tracks and the
 radial layer key on `iemSite`, so they follow too; lightning stays on the
 pin. Arrival estimates still use the pin as home.
+
+### Phone layout (2026-09-03)
+
+`LayoutMobile` (< 800 px) is now a full-bleed map with overlays, not a
+scroll column. Things that matter if it is touched again:
+
+- The frame-age chip and the alert slot are positioned off two CSS
+  variables set on `.layout`: `--c-mobile-top` (safe-area-aware top
+  inset) and `--c-edge-gap` (12 px on phones, 16 px elsewhere). The alert
+  slot's `top` assumes the header strip is 40 px and the frame-age row
+  about 28 px; change one, change the other.
+- The dock's portrait rule used to `display: none` every
+  `data-dock-priority="secondary"` button. It no longer hides anything
+  — ControlButtons wraps its groups and the health chip is absolutely
+  positioned at the end of the second row, because the Map group alone
+  (10 × 36 px) is wider than the dock minus the chip.
+- `mobileRadarMaximized` is `true` or `null` now; the `=== false`
+  branches in ControlButtons are inert and can go whenever that
+  component is next reworked.
+- Screenshot recipe used to verify: `SKIP_CERT_AUTOGEN=true node
+  server/index.js` (HTTP on 8080) with a `settings.json` carrying a
+  placeholder `mapApiKey` (tiles 500, layout renders) and Playwright at
+  412 × 915 / 1280 × 800.

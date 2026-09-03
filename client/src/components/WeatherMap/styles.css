@@ -1423,3 +1423,35 @@
   color: var(--c-text-dim, #8a8578);
   font-family: "Geist Mono", monospace;
 }
+
+/* ============================================================
+ * Phone layout (LayoutMobile, 2026-09-03) — full-bleed map.
+ * ============================================================ */
+
+/* Pinch-zoom replaces the +/− stack; the corner it occupied is where
+ * the frame-age row now sits. */
+:global(.ambientRoot[data-layout="mobile"]) :global(.leaflet-control-zoom) {
+  display: none;
+}
+
+/* Frame-age chip: laid out as ONE ROW under the 40 px header strip
+ * (top inset + 40 + 8 px gap) instead of a stacked column at the left
+ * edge, so the alert stack can start at a fixed offset below it. */
+:global(.ambientRoot[data-layout="mobile"]) .frame-age {
+  top: calc(var(--c-mobile-top, 12px) + 48px);
+  left: var(--c-edge-gap, 12px);
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 10px;
+  max-width: calc(100% - 2 * var(--c-edge-gap, 12px));
+  overflow: hidden;
+}
+
+:global(.ambientRoot[data-layout="mobile"]) .frame-age-row {
+  height: 22px;
+}
+
+:global(.ambientRoot[data-layout="mobile"]) .frame-age-site {
+  min-width: 0;
+}

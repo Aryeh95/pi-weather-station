@@ -97,6 +97,55 @@
   font-size: calc(10px * var(--c-font-scale, 1));
 }
 
+/* Strip variant for the phone layout (2026-09-03): one 40 px row over
+ * the top of the full-bleed map — place name on the left (ellipsised),
+ * clock on the right, no date. The phone shows the date in its own
+ * status bar; the radar needs the pixels more. */
+.strip {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+.strip .placeRow {
+  flex: 1;
+}
+
+.strip .placeButton {
+  display: block;
+  max-width: 100%;
+  color: var(--c-text, #3a3938);
+  font-size: calc(13px * var(--c-font-scale, 1));
+}
+
+/* LocationName renders a div inside the button; clamp it to one line. */
+.strip .placeButton :global(div) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.strip .clockRow {
+  flex: none;
+  gap: 4px;
+}
+
+.strip .time {
+  font-size: calc(17px * var(--c-font-scale, 1));
+}
+
+.strip .amPm {
+  font-size: calc(11px * var(--c-font-scale, 1));
+}
+
+.strip .date {
+  display: none;
+}
+
 /* Short screens (the 7" kiosk): trim the slab so the rail below keeps
  * room for the alert stack. */
 @media (max-height: 520px) {
