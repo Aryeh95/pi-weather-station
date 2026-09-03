@@ -506,6 +506,17 @@ logs failures, and reports `error` / `errorMessage` / `upstream`. Triage:
   steps, floor 0.5 in); MRMS MESH is a multi-radar estimate. They disagree
   by a few tenths of an inch routinely; neither is an observation.
 
+### The kiosk browser is FIREFOX (2026-09-03)
+
+Not Chromium — the `chrome://gpu` advice elsewhere in this file does not
+apply; the equivalent is `about:support` → Graphics → "Compositing:
+WebRender" (hardware) vs "WebRender (Software)". Firefox pays heavily for
+`backdrop-filter: blur()` over moving content, and the UI had twelve such
+overlays on the map; `html[data-browser="firefox"]` (stamped in
+`client/src/index.js`) disables them all in `styles/main.css`. Firefox also
+lacks `Uint8Array.fromBase64` (the radial decoder falls back to an `atob`
+loop, ~10–20 ms per 1.7 MB payload — fine).
+
 ### History loads on play, not on open (2026-09-03)
 
 Opening the timeline no longer warms the loop or mounts every frame's tile

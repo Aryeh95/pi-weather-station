@@ -27,3 +27,18 @@ body {
     scroll-behavior: auto !important;
   }
 }
+/* Firefox: no backdrop blur over the map.
+ *
+ * Twelve overlays (dock, header, legend, timeline, frame-age stack, focus
+ * button, popovers) sit on the map with `backdrop-filter: blur(8px)`.
+ * Every frame of a pan or zoom re-blurs the moving radar underneath each
+ * of them; Chromium does that on the GPU, Firefox's WebRender does it
+ * far more expensively and falls to the CPU entirely under software
+ * compositing (about:support → Graphics → Compositing). The overlays'
+ * surfaces are already ~94 % opaque, so dropping the blur costs almost
+ * nothing visually and removes a per-frame cost on the kiosk's browser.
+ * `data-browser="firefox"` is stamped on <html> at boot (client/src/index.js). */
+html[data-browser="firefox"] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
