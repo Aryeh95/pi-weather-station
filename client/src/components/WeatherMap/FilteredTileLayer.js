@@ -52,6 +52,8 @@ const DBZ_BY_COLOR = new Map(palette.map(([dbz, r, g, b]) => [rgbKey(r, g, b), d
  */
 export function filterPixels(rgba, minDbz) {
   let cleared = 0;
+  // Most of a radar tile is transparent; the alpha check first keeps the
+  // Map lookup off the hot path for those pixels.
   for (let i = 0; i < rgba.length; i += 4) {
     if (rgba[i + 3] === 0) continue;
     const dbz = DBZ_BY_COLOR.get(rgbKey(rgba[i], rgba[i + 1], rgba[i + 2]));
@@ -61,6 +63,25 @@ export function filterPixels(rgba, minDbz) {
     }
   }
   return cleared;
+}
+
+/**
+ * Filter one tile's canvas in place. Idempotent: a tile is filtered once.
+ *
+ * @param {HTMLCanvasElement} canvas tile canvas with the unfiltered image drawn
+ * @param {Number} minDbz threshold
+ */
+function filterCanvas(canvas, minDbz) {
+  if (canvas._sweepFiltered) return;
+  const ctx = canvas.getContext("2d");
+  try {
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    filterPixels(data.data, minDbz);
+    ctx.putImageData(data, 0, 0);
+  } catch {
+    // Tainted canvas (CORS) — the unfiltered image is already drawn.
+  }
+  canvas._sweepFiltered = true;
 }
 
 const FilteredGridLayer = L.TileLayer.extend({
@@ -73,20 +94,36 @@ const FilteredGridLayer = L.TileLayer.extend({
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, size.x, size.y);
-      try {
-        const data = ctx.getImageData(0, 0, size.x, size.y);
-        filterPixels(data.data, this.options.minDbz);
-        ctx.putImageData(data, 0, 0);
-      } catch {
-        // Tainted canvas (CORS) — the unfiltered image is already drawn.
-      }
+      canvas.getContext("2d").drawImage(img, 0, 0, size.x, size.y);
+      // PERFORMANCE: with the timeline open every loop frame is a mounted
+      // layer (11 mosaic + up to 30 site), but only one is visible. Filtering
+      // every tile of every hidden frame on each pan/zoom was ~40 layers ×
+      // ~20 tiles × ~2 ms of main-thread work per gesture — the sluggish
+      // panning reported on 2026-09-03. Hidden frames now keep the raw
+      // image and are filtered in place the moment they become visible
+      // (setOpacity below), so a pan costs one layer's worth of filtering.
+      if (this.options.opacity > 0) filterCanvas(canvas, this.options.minDbz);
       done(null, canvas);
     };
     img.onerror = () => done(new Error("tile load failed"), canvas);
     img.src = this.getTileUrl(coords);
     return canvas;
+  },
+
+  setOpacity(opacity) {
+    const wasHidden = !(this.options.opacity > 0);
+    L.TileLayer.prototype.setOpacity.call(this, opacity);
+    if (wasHidden && opacity > 0) this._filterLoadedTiles();
+    return this;
+  },
+
+  /** Filter every loaded, not-yet-filtered tile in place (no redraw, no flicker). */
+  _filterLoadedTiles() {
+    const minDbz = this.options.minDbz;
+    for (const key of Object.keys(this._tiles || {})) {
+      const t = this._tiles[key];
+      if (t && t.loaded && t.el && t.el.tagName === "CANVAS") filterCanvas(t.el, minDbz);
+    }
   },
 });
 
@@ -105,6 +142,9 @@ const FilteredTileLayer = createLayerComponent(
       layer.options.minDbz = props.minDbz;
       layer.redraw();
     }
+    // react-leaflet's updateGridLayer only forwards opacity/zIndex; the
+    // deferred filtering hooks setOpacity, so make sure it is what runs.
+    if (props.opacity !== prevProps.opacity) layer.setOpacity(props.opacity);
   },
 );
 

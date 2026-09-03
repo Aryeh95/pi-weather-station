@@ -360,6 +360,7 @@ MapZoomTracker.propTypes = {
 // assignments change on a ~100 km scale, and each new cell costs one
 // api.weather.gov points lookup (cached 24 h).
 const VIEW_CENTER_GRID_DEG = 0.25;
+const VIEW_SETTLE_MS = 900;
 
 /**
  * Publishes the (quantised) map-view centre on every move.
@@ -370,6 +371,7 @@ const VIEW_CENTER_GRID_DEG = 0.25;
  */
 const MapViewTracker = ({ onChange }) => {
   const lastRef = useRef(null);
+  const timerRef = useRef(null);
   const publish = useCallback((map) => {
     const c = map.getCenter();
     const q = {
@@ -381,8 +383,19 @@ const MapViewTracker = ({ onChange }) => {
     lastRef.current = q;
     onChange(q);
   }, [onChange]);
-  const map = useMapEvents({ moveend: () => publish(map) });
-  useEffect(() => { publish(map); }, [map, publish]);
+  // Settle before publishing: a site change re-fetches the scan list, the
+  // radial image and (timeline open) the whole loop. A finger dragging
+  // across two radars' territories should trigger that once, at rest.
+  const map = useMapEvents({
+    moveend: () => {
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => publish(map), VIEW_SETTLE_MS);
+    },
+  });
+  useEffect(() => {
+    publish(map);
+    return () => clearTimeout(timerRef.current);
+  }, [map, publish]);
   return null;
 };
 
