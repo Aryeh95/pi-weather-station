@@ -84,6 +84,7 @@ import {
   SITE_MAX_NATIVE_ZOOM,
   SITE_MIN_ZOOM,
   MOSAIC_MAX_ZOOM,
+  BAND_LOW_ZOOM,
 } from "./iemRadar";
 import MapResizer from "./MapResizer";
 import RadarFocusControl from "./RadarFocusControl";
@@ -350,6 +351,43 @@ const MapZoomTracker = ({ onZoomChange }) => {
 
 MapZoomTracker.propTypes = {
   onZoomChange: PropTypes.func.isRequired,
+};
+
+// The single-site radar follows the MAP VIEW, not the location pin: zooming
+// into a storm 300 km from home should show that storm's radar in super-res,
+// not nothing. The view centre is quantised to a coarse grid so panning
+// within one radar's coverage never re-resolves the site — radar
+// assignments change on a ~100 km scale, and each new cell costs one
+// api.weather.gov points lookup (cached 24 h).
+const VIEW_CENTER_GRID_DEG = 0.25;
+
+/**
+ * Publishes the (quantised) map-view centre on every move.
+ *
+ * @param {object} props
+ * @param {Function} props.onChange called with {lat, lon} when the quantised centre changes
+ * @returns {null} renders nothing
+ */
+const MapViewTracker = ({ onChange }) => {
+  const lastRef = useRef(null);
+  const publish = useCallback((map) => {
+    const c = map.getCenter();
+    const q = {
+      lat: Math.round(c.lat / VIEW_CENTER_GRID_DEG) * VIEW_CENTER_GRID_DEG,
+      lon: Math.round(c.lng / VIEW_CENTER_GRID_DEG) * VIEW_CENTER_GRID_DEG,
+    };
+    const prev = lastRef.current;
+    if (prev && prev.lat === q.lat && prev.lon === q.lon) return;
+    lastRef.current = q;
+    onChange(q);
+  }, [onChange]);
+  const map = useMapEvents({ moveend: () => publish(map) });
+  useEffect(() => { publish(map); }, [map, publish]);
+  return null;
+};
+
+MapViewTracker.propTypes = {
+  onChange: PropTypes.func.isRequired,
 };
 
 /**
@@ -831,6 +869,17 @@ const WeatherMap = ({ zoom, dark }) => {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  // Where the single-site radar is resolved FROM. Inside the site zoom band
+  // the map view decides (see MapViewTracker) so a zoomed-in look at a
+  // distant storm gets that storm's radar; at mosaic zoom the pin decides,
+  // which keeps the home radar's frames warm for the age row and the
+  // storm-track / arrival overlays when nobody is panning.
+  const [viewCenter, setViewCenter] = useState(null);
+  const inSiteBand = Number.isFinite(currentMapZoom) && currentMapZoom > BAND_LOW_ZOOM;
+  const radarQueryPoint = (inSiteBand && viewCenter)
+    ? viewCenter
+    : (mapGeo ? { lat: mapGeo.latitude, lon: mapGeo.longitude } : null);
+
   // ── IEM two-layer radar ───────────────────────────────────────────
   // Active only when the user has selected the "iem" source. Two layers
   // answering two different questions:
@@ -854,8 +903,8 @@ const WeatherMap = ({ zoom, dark }) => {
     stale: iemStale,
     available: iemSiteAvailable,
   } = useIemRadarFrames({
-    latitude: mapGeo ? mapGeo.latitude : null,
-    longitude: mapGeo ? mapGeo.longitude : null,
+    latitude: radarQueryPoint ? radarQueryPoint.lat : null,
+    longitude: radarQueryPoint ? radarQueryPoint.lon : null,
     enabled: true,
     paused: pollingPaused,
   });
@@ -1290,6 +1339,7 @@ const WeatherMap = ({ zoom, dark }) => {
         <InitialOffsetCentering railOffset={railOffset} markerPosition={markerPosition} />
         <RailOffsetTracker railOffset={railOffset} markerPosition={markerPosition} />
         <MapZoomTracker onZoomChange={setCurrentMapZoom} />
+        <MapViewTracker onChange={setViewCenter} />
         <ZoomLevelHandler zoomToLevel={zoomToLevel} setZoomToLevel={setZoomToLevel} />
         <ZoomAnchorOffset railOffset={railOffset} />
         <MapResizer

@@ -36,8 +36,10 @@ Brave, Edge, or Firefox) and persisted in `~/.config/pi-weather-station/browser.
   wide-area situational awareness. Animated over IEM's fixed 5-minute offsets
   (11 frames, ~50 min), anchored on the composite time IEM publishes.
 - **Single-site super-resolution** base reflectivity (N0B, 0.5° × 0.25 km, the
-  product RadarScope shows by default) at zoom ≥ 9. The nearest radar is
-  derived automatically from the NWS `points` API for your coordinates.
+  product RadarScope shows by default) at zoom ≥ 9. The radar follows the
+  **map view**: zoom into a storm anywhere and the nearest NEXRAD to what
+  you are looking at is resolved automatically (NWS `points` API), so the
+  high-res layer is not tied to the home pin.
 - Zoom 8 crossfades between them so there is no hard cutover.
 
 **Raw radial rendering at high zoom.** The latest scan is decoded from the

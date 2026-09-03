@@ -505,3 +505,15 @@ logs failures, and reports `error` / `errorMessage` / `upstream`. Triage:
   RadarScope shows the single-radar Hail Index (MEHS, reported in 0.25-in
   steps, floor 0.5 in); MRMS MESH is a multi-radar estimate. They disagree
   by a few tenths of an inch routinely; neither is an observation.
+
+### Site follows the view (2026-09-03)
+
+The single-site product used to be resolved from the location PIN, so
+zooming into a storm 300 km away showed nothing at high zoom. Inside the
+site band (z > BAND_LOW_ZOOM) `radarQueryPoint` is now the map-view centre,
+quantised to a 0.25° grid (`MapViewTracker`) so panning within one radar's
+coverage never re-resolves the site (each new cell is one NWS `/points`
+call, cached 24 h). At mosaic zoom the pin decides, keeping the home
+radar's frames, tracks and arrival overlay warm. Storm tracks and the
+radial layer key on `iemSite`, so they follow too; lightning stays on the
+pin. Arrival estimates still use the pin as home.
