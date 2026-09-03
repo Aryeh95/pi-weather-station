@@ -21,6 +21,12 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+    ignore:
+      # 1.x is an ESM-only rewrite (top-level await) with the same product
+      # list — no 153/154, so the super-res shim would need rewriting for
+      # nothing. Stay on 0.6 until a release adds native N0B/N0G support.
+      - dependency-name: "nexrad-level-3-data"
+        update-types: ["version-update:semver-major"]
     groups:
       server-dev-minor-patch:
         dependency-type: "development"
@@ -48,6 +54,12 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+    ignore:
+      # ESLint 10 removed context.getFilename(); eslint-plugin-react 7.x
+      # still calls it (peer range ends at ^9.7), so the build's lint step
+      # crashes. Lift once eslint-plugin-react declares ESLint 10 support.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
       client-dev-minor-patch:
         dependency-type: "development"
