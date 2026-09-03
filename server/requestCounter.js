@@ -131,7 +131,10 @@ load();
 
 // Coalesced background flush. .unref() so it never holds the process (or a
 // test runner) open.
-setInterval(flush, FLUSH_INTERVAL_MS).unref();
+// `unref` is optional-called: the app build (client/src/standalone) runs
+// this exact module in a WebView, where setInterval returns a number and
+// has no unref. Under Node the behaviour is unchanged.
+setInterval(flush, FLUSH_INTERVAL_MS).unref?.();
 
 module.exports = {
   increment,

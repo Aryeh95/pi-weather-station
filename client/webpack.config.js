@@ -7,10 +7,17 @@ module.exports = (env) => {
   const PRODUCTION = !!(env && env.BUILD_PRODUCTION);
   process.env.NODE_ENV = PRODUCTION ? "production" : "development";
 
+  // `__STANDALONE__` is the app build (webpack.app.config.js): no server to
+  // talk to, so the in-app API is installed and the basemap goes direct.
+  // Defined in BOTH builds so `if (__STANDALONE__)` is a compile-time
+  // constant either way and the kiosk bundle drops the branch entirely.
+  const STANDALONE = !!(env && env.STANDALONE);
+
   const definePlugin = new webpack.DefinePlugin({
     __PRODUCTION__: JSON.stringify(
       JSON.parse(env ? env.BUILD_PRODUCTION || "false" : "false")
     ),
+    __STANDALONE__: JSON.stringify(STANDALONE),
   });
 
   return {
@@ -116,6 +123,14 @@ module.exports = (env) => {
       extensions: [".js", ".scss"],
       alias: {
         ["~"]: path.resolve(__dirname, "src"),
+        // Keep the in-app API (and the server controllers behind it) out of
+        // the kiosk bundle. See src/standalone/install.noop.js.
+        ...(STANDALONE
+          ? {}
+          : {
+            [path.resolve(__dirname, "src/standalone/install.js")]:
+                path.resolve(__dirname, "src/standalone/install.noop.js"),
+          }),
       },
     },
     plugins: [

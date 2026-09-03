@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getSettings } from "~/settings";
 import PropTypes from "prop-types";
-import { getCoordsFromApi } from "~/services/geolocation";
+import { getCoordsFromApi, getCoordsFromBrowser } from "~/services/geolocation";
 import reverseGeocode from "~/services/reverseGeocode";
 import { useUpdateChecker } from "~/hooks/useUpdateChecker";
 import { useScreenSaver } from "~/hooks/useScreenSaver";
@@ -216,7 +216,12 @@ export function AppContextProvider({ children }) {
   const homeLabelCapturedRef = useRef(false);
 
   useEffect(() => {
-    if (!mapGeo || !reverseGeoApiKey) {
+    // The key gate is a kiosk concern: there, no LocationIQ key means the
+    // proxy would 503 on every pin move, so the lookup is skipped entirely.
+    // The app resolves names from keyless NWS point metadata instead
+    // (standalone/upstream.js), so gating it on an absent key would leave the
+    // header showing raw coordinates forever.
+    if (!mapGeo || (!__STANDALONE__ && !reverseGeoApiKey)) {
       setReverseGeoResult(null);
       return undefined;
     }
@@ -1184,7 +1189,17 @@ export function AppContextProvider({ children }) {
             setMapGeo(latLon); //Set initial map coords to custom lat/lon
             resolve(latLon);
           } else {
-            getCoordsFromApi()
+            // The kiosk has no GPS (and Raspbian Chromium never supported the
+            // API), so it has always resolved its position from the server's
+            // IP lookup. A phone does have GPS, and its own position is both
+            // more accurate and available offline — so the app asks the device
+            // first and keeps the IP lookup as the fallback for a denied
+            // permission. Without this the app depended on ipapi.co for a
+            // position it was carrying in its pocket.
+            const seed = __STANDALONE__
+              ? getCoordsFromBrowser().catch(() => getCoordsFromApi())
+              : getCoordsFromApi();
+            seed
               .then((res) => {
                 if (!res) {
                   return reject("Could not get browser geolocation data");
@@ -1217,6 +1232,15 @@ export function AppContextProvider({ children }) {
    */
   const getMapApiKey = useCallback(() => {
     return new Promise((resolve, reject) => {
+      // The app build has no Mapbox key and does not need one: its basemap is
+      // CARTO's keyless tiles, fetched direct (standalone/upstream.js). Without
+      // this branch the missing-key prompt force-opens Settings over the map on
+      // every launch and the map never initialises — there is no key to enter
+      // and no server to store it on.
+      if (__STANDALONE__) {
+        setMapApiKey(null);
+        return resolve();
+      }
       getSettings()
         .then((res) => {
           if (!res || (res && !res.mapApiKey)) {
@@ -1239,6 +1263,14 @@ export function AppContextProvider({ children }) {
    */
   const getReverseGeoApiKey = useCallback(() => {
     return new Promise((resolve, reject) => {
+      // No LocationIQ key in the app: place names come from the NWS point
+      // metadata the radar path already fetches (standalone/upstream.js).
+      // Resolving rather than rejecting keeps a "missing key" line out of
+      // every launch for a key that is deliberately absent.
+      if (__STANDALONE__) {
+        setReverseGeoApiKey(null);
+        return resolve();
+      }
       getSettings()
         .then((res) => {
           if (!res || (res && !res.reverseGeoApiKey)) {

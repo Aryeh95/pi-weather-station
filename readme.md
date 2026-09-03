@@ -28,6 +28,12 @@ changed.
 The kiosk browser is chosen interactively by `install.sh` (Chromium, Chrome,
 Brave, Edge, or Firefox) and persisted in `~/.config/pi-weather-station/browser.conf`.
 
+## On your phone
+
+`app/` builds Sweep as an Android app that needs no server and no VPN: it
+carries the same client plus the server's controllers and calls the public
+radar upstreams directly. See [`docs/android-app.md`](docs/android-app.md).
+
 ## What it shows
 
 **Two radar layers, blended by zoom level**

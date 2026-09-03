@@ -561,3 +561,46 @@ scroll column. Things that matter if it is touched again:
   server/index.js` (HTTP on 8080) with a `settings.json` carrying a
   placeholder `mapApiKey` (tiles 500, layout renders) and Playwright at
   412 × 915 / 1280 × 800.
+
+### Android app (2026-09-03)
+
+`app/` is a Capacitor shell; the interesting half is `client/src/standalone/`,
+which lets the client run without `server/index.js` at all. Full write-up in
+`docs/android-app.md`. What matters if it is touched again:
+
+- **The server controllers run verbatim in the WebView.** They were already
+  portable — `axios` works in a browser, and the only Node built-ins in the
+  whole set are two `zlib` calls plus `fs`/`path` in two best-effort caches.
+  Do NOT fork them for the app: the 153/154 shim, the MOVEMENT trap, the
+  8/16-bit MRMS split and the ±150 s key matching would drift where they are
+  hardest to observe.
+- **The seam is the axios ADAPTER, not an interceptor.** An interceptor can
+  only rewrite a request, not answer it. `install.js` wraps the platform
+  adapter, resolved once before the swap (resolving it after would build an
+  infinite loop the first time an upstream call passed through).
+- **`__STANDALONE__` must gate the IMPORT, not just the branch.** DefinePlugin
+  folds `if (__STANDALONE__)` to `if (false)`, but a static import is a
+  dependency either way — the kiosk build pulled in the whole controller tree
+  and failed on its `fs` requires until `webpack.config.js` started aliasing
+  `standalone/install.js` to `install.noop.js`. A dynamic import would instead
+  emit a chunk into the committed `dist/`, which CI checks for drift.
+- **Three client gates assumed a key that the app does not have**, and each
+  one silently disabled a feature rather than erroring: the Mapbox key
+  force-opened Settings over the map, `WeatherMap` refused to render without
+  it, and the reverse-geocode effect was gated on the LocationIQ key so the
+  header showed raw coordinates. All three now branch on `__STANDALONE__`.
+- **`setInterval(...).unref()` is Node-only** — `requestCounter.js` and
+  `govAlertSources/nws.js` called it at module scope and crashed the app on
+  load. Both now use `.unref?.()`, unchanged under Node.
+- **The Level III library scans its own folders** (`fs.readdirSync` +
+  `require` per entry) to build its product and packet tables. Replaced by
+  static equivalents via `NormalModuleReplacementPlugin` matched on the
+  RESOLVED path — a `resolve.alias` entry matches only the request string and
+  missed the package's own relative `./products` / `../packets` requires.
+  `test/standaloneShims.test.js` fails if a library upgrade adds an entry the
+  static list lacks.
+- **Testing note:** Chromium in the dev sandbox has no outbound network (curl
+  and Node do), so the end-to-end check serves every upstream from canned
+  payloads via Playwright `ctx.route()`. That still exercises adapter →
+  controller → parser → hook → UI; it does not prove live connectivity, which
+  is verified on the device.

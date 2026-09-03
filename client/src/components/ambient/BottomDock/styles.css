@@ -161,3 +161,30 @@
 .dock :global(div):focus-visible :global(svg) {
   color: var(--c-accent);
 }
+
+/* App shell: the dock becomes a left rail (see LayoutMobile/styles.css for
+ * why). Square off the edge that meets the screen so it reads as chrome
+ * rather than a floating card, and let the button column scroll on short
+ * screens instead of pushing the health chip off the bottom. */
+:global(html[data-shell="app"]) .dock {
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  border-radius: 0 14px 14px 0;
+  border-left: none;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+:global(html[data-shell="app"]) .dock > :first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The status chip sits at the foot of the rail, out of the button column's
+ * scroll so it stays visible. */
+:global(html[data-shell="app"]) .dock > :last-child {
+  flex: none;
+  position: static;
+  margin-top: 6px;
+}

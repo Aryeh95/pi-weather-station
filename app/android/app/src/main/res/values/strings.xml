@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sweep</string>
+    <string name="title_activity_main">Sweep</string>
+    <string name="package_name">com.aryeh95.sweep</string>
+    <string name="custom_url_scheme">com.aryeh95.sweep</string>
+</resources>

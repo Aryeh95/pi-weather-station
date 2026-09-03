@@ -496,3 +496,43 @@
   pointer-events: none;
 }
 
+
+/* App shell (left rail): the same grouped buttons, stacked. The wrap rule
+ * the web phone layout uses is undone here — a rail is one column, and the
+ * group separators become horizontal rules between stacked groups. */
+:global(html[data-shell="app"]) .container.grouped {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  row-gap: 4px;
+  /* Hide the scrollbar: on a touch rail it would overlay the icons, and
+   * the column is scrollable by drag. */
+  scrollbar-width: none;
+}
+
+:global(html[data-shell="app"]) .container.grouped::-webkit-scrollbar {
+  display: none;
+}
+
+:global(html[data-shell="app"]) .container.grouped .group {
+  flex-direction: column;
+  padding: 4px 0;
+  gap: 4px;
+  width: 100%;
+}
+
+/* Turn the vertical hairline that separates groups in a row into a
+ * horizontal one between stacked groups. */
+:global(html[data-shell="app"]) .container.grouped .group + .group::before {
+  display: block;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  bottom: auto;
+  width: auto;
+  height: 1px;
+}

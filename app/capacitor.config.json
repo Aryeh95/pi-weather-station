@@ -1,0 +1,11 @@
+{
+  "appId": "com.aryeh95.sweep",
+  "appName": "Sweep",
+  "webDir": "../client/dist-app",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

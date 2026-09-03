@@ -89,3 +89,38 @@
   position: relative;
   z-index: 1100;
 }
+
+/* ============================================================
+ * APP SHELL (Android, `html[data-shell="app"]` — set in index.js)
+ *
+ * The web layout stacks the dock under the map, which is right for a
+ * browser: the address bar already owns the top edge and a thumb reaches
+ * the bottom. Installed as an app there is no address bar, the screen is
+ * taller than it is wide, and a full-width dock spends ~90 px of vertical
+ * radar on two rows of icons. The app therefore puts the toggles in a
+ * left rail instead, where the same buttons cost ~60 px of the dimension
+ * there is most of.
+ *
+ * `order: -1` rather than reordering the JSX: the dock is the layout's
+ * last child in both shells, so nothing about the component tree, the
+ * stacking-context fix on `:last-child`, or the toast layer changes.
+ * ============================================================ */
+
+:global(html[data-shell="app"]) .layout {
+  flex-direction: row;
+}
+
+:global(html[data-shell="app"]) .layout > :last-child {
+  order: -1;
+  /* Clear the status bar / gesture areas on the rail's own edges; the
+   * stage keeps its own top inset for the header strip. */
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+/* The stage is now beside the rail rather than above the dock, so the
+ * alert column's bottom clearance no longer has to leave room for it —
+ * only for the timeline and legend that sit inside the map. */
+:global(html[data-shell="app"]) .alertSlot {
+  bottom: 96px;
+}

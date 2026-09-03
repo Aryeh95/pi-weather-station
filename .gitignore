@@ -45,3 +45,15 @@ gh-token.*
 traffic-history.csv
 track-traffic.log
 com.pi-weather-station.traffic.plist
+
+# Android app shell (app/) — generated build output.
+# The Capacitor project itself IS committed (app/android/), but not its
+# build products, the synced web assets, or local SDK paths.
+client/dist-app/
+app/android/build/
+app/android/app/build/
+app/android/.gradle/
+app/android/local.properties
+app/android/app/src/main/assets/public/
+app/android/app/src/main/assets/capacitor.config.json
+app/android/app/src/main/assets/capacitor.plugins.json

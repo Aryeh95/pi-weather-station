@@ -1455,3 +1455,32 @@
 :global(.ambientRoot[data-layout="mobile"]) .frame-age-site {
   min-width: 0;
 }
+
+/* Phone: keep the attribution out from under the bottom overlays.
+ *
+ * The attribution sits at the map's bottom edge while the legend strip and
+ * the timeline are placed 16 px above it, which was just enough while the
+ * kiosk's basemap credit was the seven-character "© Mapbox". The app's
+ * keyless basemap has to credit both OpenStreetMap and CARTO, so the line
+ * wraps to two and collided with the legend. Attribution is a licence term,
+ * not decoration — so the overlays move up rather than the text being
+ * truncated. 34 px clears two wrapped lines at 10 px / 1.3.
+ */
+:global(.ambientRoot[data-layout="mobile"]) .legend-mobile-strip {
+  bottom: 34px;
+}
+
+:global(.ambientRoot[data-layout="mobile"]) .radar-timeline {
+  bottom: 34px;
+}
+
+:global(.ambientRoot[data-layout="mobile"]) .with-legend .radar-timeline {
+  bottom: 96px;
+}
+
+/* The control defaults to shrink-to-fit at the right edge; on a phone that
+ * leaves a narrow column that wraps to three or four lines. Let it use the
+ * full width so it wraps at most once. */
+:global(.ambientRoot[data-layout="mobile"]) :global(.leaflet-control-attribution) {
+  max-width: 100%;
+}

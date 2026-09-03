@@ -62,6 +62,7 @@ import { isPiMaxView, priorityViewsEnabled } from "~/ui/piLayout";
 import { useTranslation } from "react-i18next";
 import debounce from "debounce";
 import styles from "./styles.css";
+import { mapTileUrl, MAP_ATTRIBUTION } from "~/standalone/upstream";
 import RadarLegend from "./RadarLegend";
 import RadarTimeline from "./RadarTimeline";
 import RadarFrameAge from "./RadarFrameAge";
@@ -1284,7 +1285,12 @@ const WeatherMap = ({ zoom, dark }) => {
     () => buildRadiusRingOptions(dark, nightRed),
     [dark, nightRed]
   );
-  if (!hasVal(latitude) || !hasVal(longitude) || !zoom || !mapApiKey) {
+  // `mapApiKey` gates the Mapbox tile proxy, which the app build does not use
+  // — its basemap is keyless (see the TileLayer below). Requiring a key there
+  // would leave the app permanently on this placeholder with nowhere to enter
+  // one. Coordinates and zoom are still required in both builds.
+  const needsMapKey = !__STANDALONE__ && !mapApiKey;
+  if (!hasVal(latitude) || !hasVal(longitude) || !zoom || needsMapKey) {
     return (
       <div className={`${styles.noMap} ${dark ? styles.dark : styles.light}`}>
         <div>Cannot retrieve map data.</div>
@@ -1399,10 +1405,20 @@ const WeatherMap = ({ zoom, dark }) => {
          * including the mobile mini-card. */}
         <AttributionControl position="bottomright" />
         <TileLayer
-          attribution={MAPBOX_ATTRIBUTION}
-          url={`/api/tiles/${dark ? darkModeStyle : lightModeStyle}/{z}/{x}/{y}`}
-          tileSize={512}
-          zoomOffset={-1}
+          attribution={__STANDALONE__ ? MAP_ATTRIBUTION : MAPBOX_ATTRIBUTION}
+          /* The kiosk fetches the basemap through the server, which holds
+           * the Mapbox key. The app has no server and cannot ship a key
+           * inside an APK, so it goes direct to CARTO's keyless tiles
+           * (see standalone/upstream.js). Those are a 256 px grid, so the
+           * 512/-1 pair Mapbox needs must NOT be applied to them — it
+           * would render every tile at the wrong scale and offset, the
+           * same trap the IEM layers documented. */
+          url={__STANDALONE__
+            ? mapTileUrl(dark)
+            : `/api/tiles/${dark ? darkModeStyle : lightModeStyle}/{z}/{x}/{y}`}
+          tileSize={__STANDALONE__ ? 256 : 512}
+          zoomOffset={__STANDALONE__ ? 0 : -1}
+          detectRetina={__STANDALONE__}
           maxZoom={18}
           /* `keepBuffer: 2` (Leaflet default, was 4 in v2.15.4) —
            * the wider buffer made zoom-out seamless on desktop but

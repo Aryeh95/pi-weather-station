@@ -157,3 +157,11 @@
     font-size: calc(22px * var(--c-font-scale, 1));
   }
 }
+
+/* App shell: no clock. The phone's own status bar already shows the time
+ * a few pixels above this strip, so the strip carries only the place name
+ * — which is the part that answers "where is this radar centred?".
+ * `.strip .date` is already hidden, so this leaves the place name alone. */
+:global(html[data-shell="app"]) .strip .clockRow {
+  display: none;
+}

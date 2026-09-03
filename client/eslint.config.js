@@ -33,6 +33,10 @@ module.exports = [
       },
       globals: {
         ...globals.browser,
+        // webpack DefinePlugin constants (see webpack.config.js): compile-time
+        // booleans, so they are read but never declared in source.
+        __PRODUCTION__: "readonly",
+        __STANDALONE__: "readonly",
         ...globals.es2015,
         ...globals.jest,
         ...globals.node,

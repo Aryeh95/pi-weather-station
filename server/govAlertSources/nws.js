@@ -275,7 +275,7 @@ setInterval(() => {
   sweepExpired(cache, now);
   sweepExpired(stateCache, now);
   sweepExpired(areaCache, now);
-}, CACHE_TTL_MS).unref();
+}, CACHE_TTL_MS).unref?.();  // optional: no unref in the app's WebView
 
 /**
  * Resolve the 2-letter US state for a point via NWS /points. Cached 24 h.
