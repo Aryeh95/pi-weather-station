@@ -45,7 +45,15 @@ export default function installStandaloneApi() {
     // site does not silently lose its arguments.
     const query = { ...paramsFromUrl(config.url), ...normaliseParams(config.params) };
 
-    const { status, body } = await handleApi(path, query);
+    // axios has already serialised `data` for a JSON request; the handlers
+    // want the object Express's body-parser would have produced.
+    let payload = config.data;
+    if (typeof payload === "string") {
+      try { payload = JSON.parse(payload); } catch { /* leave as the raw string */ }
+    }
+    const method = String(config.method || "get").toUpperCase();
+
+    const { status, body } = await handleApi(path, query, method, payload);
     const response = {
       data: body,
       status,

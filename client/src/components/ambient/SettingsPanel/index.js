@@ -42,9 +42,15 @@ const lbl = (lang, en, fr, es) => (lang === "fr" ? fr : lang === "es" ? es : en)
 // config next, advanced last. The panel always opens on the
 // first entry (`local`) — a settings panel reads better when it's
 // predictable, so unlike DebugPanel we do NOT persist the last tab.
+// The API section holds the Mapbox / LocationIQ keys and the starting
+// coordinates, all of which live in the server's settings.json. The app has
+// no server and needs no keys — its basemap and place names are keyless — so
+// in standalone builds that section is not merely disabled, it is absent.
 const SECTIONS = [
   { id: "local", icon: settingsAdjustIcon, label: (lang) => lbl(lang, "Local", "Préf.", "Local") },
-  { id: "api", icon: passwordIcon, label: () => "API" },
+  ...(__STANDALONE__
+    ? []
+    : [{ id: "api", icon: passwordIcon, label: () => "API" }]),
   { id: "avance", icon: constructIcon, label: (lang) => lbl(lang, "Advanced", "Avancé", "Avanzado") },
 ];
 
@@ -200,7 +206,8 @@ const SettingsPanel = () => {
         <main className={styles.pane}>
           <div className={styles.paneInner}>
             {activeSection === "local" && <SectionLocalPrefs ctx={ctx} lang={lang} />}
-            {activeSection === "api" && <SectionConfig ctx={ctx} lang={lang} remote={remote} />}
+            {!__STANDALONE__ && activeSection === "api"
+              && <SectionConfig ctx={ctx} lang={lang} remote={remote} />}
             {activeSection === "avance" && <SectionAdvanced ctx={ctx} lang={lang} remote={remote} />}
           </div>
           <PaneFooter lang={lang} section={activeSection} />
@@ -364,12 +371,15 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
         />
       </div>
 
+      {/* No pointer to hide on a touch-only device. */}
       <div className={styles.toggleRow}>
-        <Toggle
-          label={lbl(lang, "Hide mouse pointer", "Masquer le pointeur de la souris", "Ocultar puntero del ratón")}
-          value={Boolean(mouseHide)}
-          onChange={saveBoolFlag(saveMouseHide)}
-        />
+        {!__STANDALONE__ && (
+          <Toggle
+            label={lbl(lang, "Hide mouse pointer", "Masquer le pointeur de la souris", "Ocultar puntero del ratón")}
+            value={Boolean(mouseHide)}
+            onChange={saveBoolFlag(saveMouseHide)}
+          />
+        )}
         {/* "Hide radar legend" toggle removed in v2.14.73 — the
          * radar legend has its own dedicated toggle in the dock now
          * (carbon:legend, gated on the active RainViewer source).
@@ -444,45 +454,48 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
       <div className={styles.toggleRow}>
       </div>
 
-      {/* Trust-this-Pi helper. Downloads the self-signed CA cert
-       * with `Content-Type: application/x-x509-ca-cert` so iOS /
-       * Android offer to install it as a trusted profile. Solves
-       * the "P on black" home-screen icon issue (iOS rejects the
-       * apple-touch-icon background fetch over an untrusted cert)
-       * AND removes the "Not secure" warning when navigating to
-       * the Pi from a remote browser. See `docs/pwa-trust-cert.md`
-       * for the per-platform install steps. */}
-      <div className={styles.trustCert}>
-        <div className={styles.trustCertLabel}>
-          {lbl(lang,
-            "Trust this Pi on this device",
-            "Faire confiance à ce Pi sur cet appareil",
-            "Confiar en este Pi en este dispositivo")}
+      {/* Trust-this-Pi helper — kiosk only. It downloads the SERVER's
+        * self-signed CA so a browser will trust it; the app talks to no
+        * such server (and `/api/cert.pem` does not exist in standalone),
+        * so the card would offer a download that 404s. */}
+      {/* Downloads the self-signed CA with
+        * `Content-Type: application/x-x509-ca-cert` so iOS / Android offer to
+        * install it as a trusted profile: fixes the "P on black" home-screen
+        * icon (iOS rejects the apple-touch-icon fetch over an untrusted cert)
+        * and removes the "Not secure" warning. See `docs/pwa-trust-cert.md`. */}
+      {!__STANDALONE__ && (
+        <div className={styles.trustCert}>
+          <div className={styles.trustCertLabel}>
+            {lbl(lang,
+              "Trust this Pi on this device",
+              "Faire confiance à ce Pi sur cet appareil",
+              "Confiar en este Pi en este dispositivo")}
+          </div>
+          <div className={styles.trustCertDesc}>
+            {lbl(lang,
+              "Installs the Pi's certificate as a trusted profile. Fixes the home-screen icon on iOS and dismisses the security warning. See the guide for per-platform steps.",
+              "Installe le certificat du Pi comme profil de confiance. Corrige l'icône d'écran d'accueil sur iOS et fait disparaître l'avertissement de sécurité. Voir le guide pour les étapes par plateforme.",
+              "Instala el certificado del Pi como perfil de confianza. Corrige el icono de la pantalla de inicio en iOS y elimina la advertencia de seguridad. Vea la guía para los pasos por plataforma.")}
+          </div>
+          <div className={styles.trustCertActions}>
+            <a className={styles.trustCertLink} href="/api/cert.pem" download="pi-weather-cert.pem">
+              {lbl(lang, "Download cert", "Télécharger le cert", "Descargar cert")}
+            </a>
+            <a
+              className={styles.trustCertLinkSecondary}
+              /* Resolve the guide URL to the matching language file —
+               * we only ship _en / _fr / _es. Any other locale (and
+               * the unlikely null/empty case) falls back to the
+               * English guide. */
+              href={`https://github.com/thicla01/pi-weather-station/blob/master/docs/pwa-trust-cert_${["fr", "es"].includes(lang) ? lang : "en"}.md`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {lbl(lang, "Read the guide", "Lire le guide", "Leer la guía")} ↗
+            </a>
+          </div>
         </div>
-        <div className={styles.trustCertDesc}>
-          {lbl(lang,
-            "Installs the Pi's certificate as a trusted profile. Fixes the home-screen icon on iOS and dismisses the security warning. See the guide for per-platform steps.",
-            "Installe le certificat du Pi comme profil de confiance. Corrige l'icône d'écran d'accueil sur iOS et fait disparaître l'avertissement de sécurité. Voir le guide pour les étapes par plateforme.",
-            "Instala el certificado del Pi como perfil de confianza. Corrige el icono de la pantalla de inicio en iOS y elimina la advertencia de seguridad. Vea la guía para los pasos por plataforma.")}
-        </div>
-        <div className={styles.trustCertActions}>
-          <a className={styles.trustCertLink} href="/api/cert.pem" download="pi-weather-cert.pem">
-            {lbl(lang, "Download cert", "Télécharger le cert", "Descargar cert")}
-          </a>
-          <a
-            className={styles.trustCertLinkSecondary}
-            /* Resolve the guide URL to the matching language file —
-             * we only ship _en / _fr / _es. Any other locale (and
-             * the unlikely null/empty case) falls back to the
-             * English guide. */
-            href={`https://github.com/thicla01/pi-weather-station/blob/master/docs/pwa-trust-cert_${["fr", "es"].includes(lang) ? lang : "en"}.md`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {lbl(lang, "Read the guide", "Lire le guide", "Leer la guía")} ↗
-          </a>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -845,9 +858,13 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
   return (
     <div className={styles.section} style={{ opacity: remote ? 0.65 : 1 }}>
       <SectionHeader
-        index="3"
+        /* Second of two sections in the app, third of three on the kiosk —
+         * the API section between them exists only where a server does. */
+        index={__STANDALONE__ ? "2" : "3"}
         title={lbl(lang, "Advanced", "Avancé", "Avanzado")}
-        subtitle={lbl(lang, "Display · alerts · sleep", "Affichage · alertes · veille", "Pantalla · alertas · suspensión")}
+        subtitle={__STANDALONE__
+          ? lbl(lang, "Display · alerts", "Affichage · alertes", "Pantalla · alertas")
+          : lbl(lang, "Display · alerts · sleep", "Affichage · alertes · veille", "Pantalla · alertas · suspensión")}
       />
       <div className={styles.advBody}>
           {/* ── Display ───────────────────────────────────────────── */}
@@ -855,6 +872,12 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
             {lbl(lang, "Display", "Affichage", "Pantalla")}
           </div>
           <div className={styles.grid4}>
+            {/* Basemap style pickers name Mapbox styles, fetched through the
+              * server's keyed tile proxy. The app's basemap is Esri's keyless
+              * Canvas pair, chosen by the light/dark palette rather than by
+              * style name, so there is nothing here for it to switch. */}
+            {!__STANDALONE__ && (
+              <>
             <Seg
               label={lbl(lang, "Map · light", "Carte · clair", "Mapa · claro")}
               options={[
@@ -876,6 +899,8 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
               onChange={display("darkModeStyle")}
               disabled={remote}
             />
+              </>
+            )}
             <RangeSlider
               label={lbl(lang, "Radar opacity · light", "Opacité radar · clair", "Opacidad radar · claro")}
               value={radarOpacityLight}
@@ -916,104 +941,116 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
             disabled={remote}
           />
 
-          {/* ── Sleep ──────────────────────────────────────────────── */}
-          <div className={`${styles.subhead} ${styles.subheadGap}`}>
-            {lbl(lang, "Sleep", "Veille", "Suspensión")}
-          </div>
-          {/* Sequence overview first, then the controls below — lets the
-            * user see what each delay/brightness actually drives before
-            * they tweak it. Bound to the live stage values. */}
-          <VeilleTimeline
-            stage1Delay={sleepStage1Delay}
-            stage2Delay={sleepStage2Delay}
-            stage2Enabled={sleepStage2Enabled}
-            stage1Brightness={sleepStage1Brightness}
-            lang={lang}
-          />
-          {/* Stage 1 — toggles separated from fields so each control
-           * type renders in a visually consistent row (Toggle = horizontal
-           * track+label; Field = vertical label-above-box). Mixing them
-           * in the same grid row produced height mismatches. */}
-          <div className={styles.toggleRow}>
-            <Toggle
-              label={lbl(lang, "Enable sleep", "Activer la veille", "Activar suspensión")}
-              value={Boolean(sleepEnabled)}
-              onChange={sleep("enabled")}
-              disabled={remote}
-            />
-            <Toggle
-              label={lbl(lang, "Red text at night", "Texte rouge nuit", "Texto rojo de noche")}
-              value={Boolean(sleepNightMode)}
-              onChange={sleep("nightMode")}
-              disabled={remote}
-            />
-          </div>
-          <div className={styles.grid4}>
-            <DelaySelect
-              label={lbl(lang, "Soft sleep · delay", "Veille douce · délai", "Suspensión suave · retraso")}
-              value={sleepStage1Delay}
-              options={SLEEP_STAGE1_DELAY_OPTIONS}
-              onChange={(v) => sleep("stage1Delay")(v)}
-              disabled={remote}
+          {/* Sleep and Diagnostic are kiosk-only.
+            *
+            * Sleep dims and blanks an always-on panel through the server's
+            * brightness control; a phone has its own screen timeout and no
+            * such endpoint, so every control here would be inert. The night-red
+            * palette it also gathers is reachable from the dock toggle.
+            *
+            * Diagnostic only reports whether the SERVICE was started with
+            * DEBUG=true, which is not a question the app can ask. */}
+          {!__STANDALONE__ && (
+            <>
+            {/* ── Sleep ──────────────────────────────────────────────── */}
+            <div className={`${styles.subhead} ${styles.subheadGap}`}>
+              {lbl(lang, "Sleep", "Veille", "Suspensión")}
+            </div>
+            {/* Sequence overview first, then the controls below — lets the
+              * user see what each delay/brightness actually drives before
+              * they tweak it. Bound to the live stage values. */}
+            <VeilleTimeline
+              stage1Delay={sleepStage1Delay}
+              stage2Delay={sleepStage2Delay}
+              stage2Enabled={sleepStage2Enabled}
+              stage1Brightness={sleepStage1Brightness}
               lang={lang}
             />
-            {brightnessAvailable ? (
-              <RangeSlider
-                label={lbl(lang, "Soft sleep · brightness", "Veille douce · lum.", "Suspensión suave · brillo")}
-                value={sleepStage1Brightness}
-                min={brightnessMinPercent ?? 10}
-                max={100}
-                step={5}
-                onChange={(v) => sleep("stage1Brightness")(Math.round(v))}
+            {/* Stage 1 — toggles separated from fields so each control
+             * type renders in a visually consistent row (Toggle = horizontal
+             * track+label; Field = vertical label-above-box). Mixing them
+             * in the same grid row produced height mismatches. */}
+            <div className={styles.toggleRow}>
+              <Toggle
+                label={lbl(lang, "Enable sleep", "Activer la veille", "Activar suspensión")}
+                value={Boolean(sleepEnabled)}
+                onChange={sleep("enabled")}
                 disabled={remote}
               />
-            ) : (
-              <Field
-                label={lbl(lang, "Soft sleep · brightness", "Veille douce · lum.", "Suspensión suave · brillo")}
-                value={sleepStage1Brightness ?? "—"}
-                unit="%"
-                mono
-                disabled
+              <Toggle
+                label={lbl(lang, "Red text at night", "Texte rouge nuit", "Texto rojo de noche")}
+                value={Boolean(sleepNightMode)}
+                onChange={sleep("nightMode")}
+                disabled={remote}
               />
-            )}
-          </div>
-          {/* Stage 2 — same pattern: toggle then fields */}
-          <div className={styles.toggleRow} style={{ marginTop: 10 }}>
-            <Toggle
-              label={lbl(lang, "Deep sleep · enabled", "Veille profonde · activée", "Suspensión profunda · activada")}
-              value={Boolean(sleepStage2Enabled)}
-              onChange={sleep("stage2Enabled")}
-              disabled={remote}
-            />
-          </div>
-          {sleepStage2Enabled ? (
+            </div>
             <div className={styles.grid4}>
               <DelaySelect
-                /* stage2Delay is INCREMENTAL (minutes AFTER soft sleep),
-                 * hence the "+" — the absolute deep-sleep threshold is
-                 * soft + this value, as shown on the VeilleTimeline. */
-                label={lbl(lang, "Deep sleep · +delay", "Veille profonde · +délai", "Suspensión profunda · +retraso")}
-                value={sleepStage2Delay}
-                options={SLEEP_STAGE2_DELAY_OPTIONS}
-                onChange={(v) => sleep("stage2Delay")(v)}
+                label={lbl(lang, "Soft sleep · delay", "Veille douce · délai", "Suspensión suave · retraso")}
+                value={sleepStage1Delay}
+                options={SLEEP_STAGE1_DELAY_OPTIONS}
+                onChange={(v) => sleep("stage1Delay")(v)}
                 disabled={remote}
                 lang={lang}
               />
+              {brightnessAvailable ? (
+                <RangeSlider
+                  label={lbl(lang, "Soft sleep · brightness", "Veille douce · lum.", "Suspensión suave · brillo")}
+                  value={sleepStage1Brightness}
+                  min={brightnessMinPercent ?? 10}
+                  max={100}
+                  step={5}
+                  onChange={(v) => sleep("stage1Brightness")(Math.round(v))}
+                  disabled={remote}
+                />
+              ) : (
+                <Field
+                  label={lbl(lang, "Soft sleep · brightness", "Veille douce · lum.", "Suspensión suave · brillo")}
+                  value={sleepStage1Brightness ?? "—"}
+                  unit="%"
+                  mono
+                  disabled
+                />
+              )}
             </div>
-          ) : null}
+            {/* Stage 2 — same pattern: toggle then fields */}
+            <div className={styles.toggleRow} style={{ marginTop: 10 }}>
+              <Toggle
+                label={lbl(lang, "Deep sleep · enabled", "Veille profonde · activée", "Suspensión profunda · activada")}
+                value={Boolean(sleepStage2Enabled)}
+                onChange={sleep("stage2Enabled")}
+                disabled={remote}
+              />
+            </div>
+            {sleepStage2Enabled ? (
+              <div className={styles.grid4}>
+                <DelaySelect
+                  /* stage2Delay is INCREMENTAL (minutes AFTER soft sleep),
+                   * hence the "+" — the absolute deep-sleep threshold is
+                   * soft + this value, as shown on the VeilleTimeline. */
+                  label={lbl(lang, "Deep sleep · +delay", "Veille profonde · +délai", "Suspensión profunda · +retraso")}
+                  value={sleepStage2Delay}
+                  options={SLEEP_STAGE2_DELAY_OPTIONS}
+                  onChange={(v) => sleep("stage2Delay")(v)}
+                  disabled={remote}
+                  lang={lang}
+                />
+              </div>
+            ) : null}
 
-          <div className={`${styles.subhead} ${styles.subheadGap}`}>
-            {lbl(lang, "Diagnostic", "Diagnostic", "Diagnóstico")}
-          </div>
-          <div className={styles.toggleRow}>
-            <Toggle
-              label={lbl(lang, "Debug panel", "Panneau Débogage", "Panel depuración")}
-              value={Boolean(debugEnabled)}
-              disabled
-              sub={lbl(lang, "(set via DEBUG=true on the service)", "(défini par DEBUG=true au service)", "(definido por DEBUG=true en el servicio)")}
-            />
-          </div>
-
+            <div className={`${styles.subhead} ${styles.subheadGap}`}>
+              {lbl(lang, "Diagnostic", "Diagnostic", "Diagnóstico")}
+            </div>
+            <div className={styles.toggleRow}>
+              <Toggle
+                label={lbl(lang, "Debug panel", "Panneau Débogage", "Panel depuración")}
+                value={Boolean(debugEnabled)}
+                disabled
+                sub={lbl(lang, "(set via DEBUG=true on the service)", "(défini par DEBUG=true au service)", "(definido por DEBUG=true en el servicio)")}
+              />
+            </div>
+            </>
+          )}
           {/* Phase 8b note removed in 2.14.22 — Display + AI subsections
            * above complete the port. Anything still on the v2 Advanced
            * panel that isn't covered here is intentionally out of scope
@@ -1345,10 +1382,17 @@ const PaneFooter = ({ lang, section }) => {
       "Keys & coordinates saved together via Save",
       "Clés et coordonnées enregistrées ensemble via Enregistrer",
       "Claves y coordenadas guardadas juntas con Guardar"),
-    avance: lbl(lang,
-      "Each setting saved to settings.json on change",
-      "Chaque réglage enregistré dans settings.json au changement",
-      "Cada ajuste se guarda en settings.json al cambiar"),
+    // settings.json is the kiosk's store; the app keeps the same values in
+    // this device's own storage (client/src/standalone/settingsStore.js).
+    avance: __STANDALONE__
+      ? lbl(lang,
+        "Each setting saved on this device on change",
+        "Chaque réglage enregistré sur cet appareil au changement",
+        "Cada ajuste se guarda en este dispositivo al cambiar")
+      : lbl(lang,
+        "Each setting saved to settings.json on change",
+        "Chaque réglage enregistré dans settings.json au changement",
+        "Cada ajuste se guarda en settings.json al cambiar"),
   }[section];
   if (!note) return null;
   return <div className={styles.paneFooter}>{note}</div>;

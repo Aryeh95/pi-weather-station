@@ -13,9 +13,9 @@
 //   sunrise-sunset   The upstream is keyless and CORS-open; the server
 //                    proxied it only to avoid mixed content on the kiosk's
 //                    self-signed HTTPS and to log the call. Call it direct.
-//   map tiles        Mapbox needs a key. The app defaults to CARTO's keyless
-//                    basemaps, which serve the same web-mercator raster grid
-//                    Leaflet already asks for.
+//   map tiles        Mapbox needs a key. The app uses Esri's Canvas basemaps,
+//                    which are genuinely keyless (see MAP_MAX_NATIVE_ZOOM
+//                    below for the one thing to know about them).
 //   geolocation      The IP fallback for when the device denies location.
 //                    Keyless and CORS-open; the server cached it to a file,
 //                    which the app has no use for (one call per cold start).
@@ -143,22 +143,38 @@ export async function ipGeolocation(req, res) {
   }
 }
 
-// Keyless basemaps. CARTO serves these as plain XYZ raster tiles with
-// `Access-Control-Allow-Origin: *` (verified 2026-09-03), so Leaflet's
-// <img> tiles need no proxy and no token. `{r}` is Leaflet's own
-// retina-suffix placeholder, filled from `detectRetina`.
-const CARTO_BASE = "https://basemaps.cartocdn.com";
-const CARTO_STYLE = { dark: "dark_all", light: "light_all" };
+// Keyless basemap: Esri's Canvas services. Grey, label-light cartography
+// designed to sit UNDER data, which is exactly what a radar overlay wants.
+//
+// CARTO's `basemaps.cartocdn.com` was used first and was wrong: it answers
+// 200 with a normal-looking PNG whose pixels carry an "API KEY REQUIRED"
+// watermark. Checking the status code is NOT enough to call a tile source
+// keyless — the tiles have to be looked at. Same lesson applies below.
+const ESRI_BASE = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
+const ESRI_SERVICE = { dark: "World_Dark_Gray_Base", light: "World_Light_Gray_Base" };
+
+// The service advertises levels 0-23, but from z17 up it serves a 200 with a
+// placeholder JPEG reading "Map data not yet available" (verified over
+// Baltimore, 2026-09-03; z16 is full street detail). So this is a real data
+// ceiling, and Leaflet must be told to upscale z17-18 from z16 rather than
+// request the placeholder — the same maxNativeZoom reasoning the IEM radar
+// layers already use.
+export const MAP_MAX_NATIVE_ZOOM = 16;
 
 /**
  * Basemap tile URL template for the app.
+ *
+ * Note the `{z}/{y}/{x}` order: Esri's REST tile endpoint takes row before
+ * column, the reverse of the XYZ convention Leaflet defaults to. Swapping
+ * them yields tiles of the wrong place rather than an error.
  *
  * @param {boolean} dark whether the dark palette is active
  * @returns {string} Leaflet URL template
  */
 export function mapTileUrl(dark) {
-  return `${CARTO_BASE}/${dark ? CARTO_STYLE.dark : CARTO_STYLE.light}/{z}/{x}/{y}{r}.png`;
+  return `${ESRI_BASE}/${dark ? ESRI_SERVICE.dark : ESRI_SERVICE.light}/MapServer/tile/{z}/{y}/{x}`;
 }
 
-/** Attribution required by CARTO's terms for the keyless basemaps. */
-export const MAP_ATTRIBUTION = "© OpenStreetMap contributors © CARTO";
+/** Attribution text the Esri service's own metadata specifies. */
+export const MAP_ATTRIBUTION =
+  "Esri, HERE, Garmin, © OpenStreetMap contributors";

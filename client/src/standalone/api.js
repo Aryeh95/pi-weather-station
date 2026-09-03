@@ -36,6 +36,7 @@ import { getStormTracks } from "../../../server/stormTracksCtrl";
 import { getLightning } from "../../../server/glmLightningCtrl";
 import { getWeatherAlerts, getNearbyAlerts } from "../../../server/govAlertsCtrl";
 import { reverseGeocode, sunriseSunset, ipGeolocation } from "./upstream";
+import { getSettings, setSetting, createSettings } from "./settingsStore";
 
 /**
  * Express `res` stand-in: records what the handler tried to send.
@@ -77,18 +78,25 @@ function makeRes() {
 //
 // `isLocal: false` is passed on every request: it gates the gov-alert test
 // injection and the kiosk-only settings writes, neither of which the app has.
+// Keyed by "METHOD path" because `/settings` is both a read and a write.
 const ROUTES = {
-  "/api/radar/site": getRadarSite,
-  "/api/radar/frames": getRadarFrames,
-  "/api/radar/radial": getRadarRadial,
-  "/api/storm-tracks": getStormTracks,
-  "/api/lightning": getLightning,
-  "/api/weather-alerts": getWeatherAlerts,
-  "/api/nearby-alerts": getNearbyAlerts,
-  "/api/reverse-geocode": reverseGeocode,
-  "/api/sunrise-sunset": sunriseSunset,
-  // Not under /api/ — a legacy path from before the prefix existed.
-  "/geolocation": ipGeolocation,
+  "GET /api/radar/site": getRadarSite,
+  "GET /api/radar/frames": getRadarFrames,
+  "GET /api/radar/radial": getRadarRadial,
+  "GET /api/storm-tracks": getStormTracks,
+  "GET /api/lightning": getLightning,
+  "GET /api/weather-alerts": getWeatherAlerts,
+  "GET /api/nearby-alerts": getNearbyAlerts,
+  "GET /api/reverse-geocode": reverseGeocode,
+  "GET /api/sunrise-sunset": sunriseSunset,
+  // Not under /api/ — legacy paths from before the prefix existed.
+  "GET /geolocation": ipGeolocation,
+  // Settings live in localStorage here (./settingsStore): the `advanced`
+  // subtree and `favorites` are written through these routes, so without
+  // them those controls would look editable and lose every change.
+  "GET /settings": getSettings,
+  "POST /settings": createSettings,
+  "PATCH /setting": setSetting,
 };
 
 // Endpoints that exist only to serve the kiosk's own hardware and
@@ -96,13 +104,15 @@ const ROUTES = {
 // them (health chip, update checker, settings panel) see a well-formed
 // "nothing to do here" rather than a network error every cycle.
 //
-// `/settings` reports the two keys as absent: the app needs neither. The
-// basemap is keyless (see ./upstream) and the place name comes from NWS,
-// so `mapApiKey` being empty must NOT trigger the missing-key prompt —
-// `AppContext` skips that prompt in standalone mode.
+// The settings the app DOES keep are served by ./settingsStore above; what
+// remains here is the kiosk's own hardware and self-management.
+//
+// `isLocal` is true: it means "this client may change its own settings",
+// which on a phone that stores them itself is simply the case. Nothing
+// dangerous rides on it — the debug panel additionally needs `debugEnabled`
+// (absent here) and the update button needs `updateAvailable` (false below).
 const STUBS = {
-  "/settings": () => ({ status: 200, body: {} }),
-  "/api/is-local": () => ({ status: 200, body: { isLocal: false } }),
+  "/api/is-local": () => ({ status: 200, body: { isLocal: true } }),
   "/api/update-check": () => ({
     status: 200,
     body: { updateAvailable: false, standalone: true },
@@ -123,16 +133,23 @@ const STUBS = {
  *
  * @param {string} pathname request path, e.g. `/api/radar/frames`
  * @param {object} query parsed query parameters
+ * @param {string} [method] HTTP method, uppercase
+ * @param {*} [body] parsed request body, for writes
  * @returns {Promise<{status: Number, body: *}>} what the server would have sent
  */
-export async function handleApi(pathname, query) {
+export async function handleApi(pathname, query, method = "GET", body = undefined) {
   const stub = STUBS[pathname];
   if (stub) return stub();
 
-  const handler = ROUTES[pathname];
-  if (!handler) return { status: 404, body: `No standalone handler for ${pathname}` };
+  const handler = ROUTES[`${method} ${pathname}`];
+  if (!handler) {
+    return { status: 404, body: `No standalone handler for ${method} ${pathname}` };
+  }
 
-  const req = { query: query || {}, params: {}, isLocal: false };
+  // `isLocal: true` for the same reason the stub reports it — the device owns
+  // its settings. It also un-gates the gov-alert test-alert opt-in, which is
+  // a per-device display preference.
+  const req = { query: query || {}, params: {}, body, isLocal: true };
   const res = makeRes();
   await handler(req, res);
   return { status: res.out.statusCode, body: res.out.body };
@@ -151,5 +168,10 @@ export async function handleApi(pathname, query) {
 export function isStandaloneRoute(url) {
   if (typeof url !== "string") return false;
   const path = url.split("?")[0];
-  return path === "/settings" || path === "/geolocation" || path.startsWith("/api/");
+  return (
+    path === "/settings"
+    || path === "/setting"
+    || path === "/geolocation"
+    || path.startsWith("/api/")
+  );
 }

@@ -604,3 +604,15 @@ which lets the client run without `server/index.js` at all. Full write-up in
   payloads via Playwright `ctx.route()`. That still exercises adapter →
   controller → parser → hook → UI; it does not prove live connectivity, which
   is verified on the device.
+- **"Keyless" needs a LOOK, not a status code.** CARTO's basemaps return 200
+  with an "API KEY REQUIRED" watermark burned into the tile; Esri's Canvas
+  tiles return 200 with a "Map data not yet available" placeholder above z16
+  (hence `MAP_MAX_NATIVE_ZOOM = 16`). Both pass every check that only reads
+  the response status. Esri's REST tile path is also `{z}/{y}/{x}` — row
+  before column — so a wrong order yields the wrong place, not an error.
+- **The app owns its settings.** `/api/is-local` reports true and
+  `standalone/settingsStore.js` backs `/settings` + `PATCH /setting` with
+  localStorage; without it the Advanced sliders and saved places looked
+  editable and lost every change. The panel hides what has no meaning without
+  a server (API keys, trust-cert, Mapbox styles, sleep, diagnostics) behind
+  `__STANDALONE__` rather than disabling it.

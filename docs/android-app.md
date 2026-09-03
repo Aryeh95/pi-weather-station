@@ -15,7 +15,7 @@ CORS-open. Verified 2026-09-03, all answering `Access-Control-Allow-Origin: *`:
 | `unidata-nexrad-level3.s3.amazonaws.com` | raw N0B / N0G radials, storm tracks |
 | `noaa-mrms-pds.s3.amazonaws.com` | MRMS MESH hail |
 | `noaa-goes19.s3.amazonaws.com` | GLM lightning |
-| `basemaps.cartocdn.com` | basemap |
+| `server.arcgisonline.com` | basemap (Esri Canvas) |
 | `api.sunrise-sunset.org` | auto dark-mode switch |
 
 ## How the server runs inside the app
@@ -36,6 +36,10 @@ CORS-open. Verified 2026-09-03, all answering `Access-Control-Allow-Origin: *`:
   server held a key or a socket — reverse geocoding (now the city/state that
   `api.weather.gov/points` already returns beside the radar station), sunrise/
   sunset, and the IP-geolocation fallback — plus the keyless basemap URL.
+- **`settingsStore.js`** backs `GET /settings`, `PATCH /setting` and
+  `POST /settings` with localStorage, so the Advanced controls and saved
+  places persist on the device instead of appearing editable and losing every
+  change on relaunch.
 - **`shims/`** supplies `zlib` (via pako, because the decoders need
   *synchronous* inflate and `DecompressionStream` is async-only), a no-op
   `fs`/`path`, and static product/packet tables for the Level III library,
@@ -52,14 +56,40 @@ are hardest to observe. The server test suite covers the app's data path.
 | | Kiosk | App |
 | --- | --- | --- |
 | Data | `server/index.js` over LAN | in-process, direct to upstreams |
-| Basemap | Mapbox via server proxy (key) | CARTO, keyless |
+| Basemap | Mapbox via server proxy (key) | Esri Canvas, keyless |
 | Place name | LocationIQ (key) | `api.weather.gov` point metadata |
 | Position | server IP lookup | device GPS, IP fallback |
 | Controls | dock along the bottom | left sidebar rail |
 | Header | place + clock + date | place only |
 | Zoom buttons | shown | hidden (pinch) |
+| Settings | 3 sections incl. API keys | 2 sections; no keys, no cert, no sleep |
+| Settings store | `settings.json` on the server | this device's storage |
 
 No API keys are needed, and none ship in the APK.
+
+### A caution about "keyless"
+
+The first attempt used CARTO's basemaps, which answer **HTTP 200 with a
+normal-looking PNG whose pixels carry an "API KEY REQUIRED" watermark**. A
+status-code check said keyless; the map said otherwise. Esri's Canvas tiles
+have a quieter version of the same trap — above z16 they return 200 with a
+JPEG reading "Map data not yet available", which is why the layer is capped
+with `maxNativeZoom: 16` and upscales beyond it.
+
+Whenever a tile source is swapped, look at the tiles.
+
+### What the Settings panel drops in the app
+
+Removed because there is no server or no pointer behind them: the whole API
+section (Mapbox / LocationIQ keys, starting coordinates), "Trust this Pi"
+(downloads the server's CA), "Hide mouse pointer", the Mapbox basemap-style
+pickers, the entire Sleep group (it dims an always-on panel through the
+server's brightness endpoint; a phone has its own screen timeout, and the
+night-red palette it also gathers is on the dock), and the Diagnostic row
+(it reports whether the *service* was started with `DEBUG=true`).
+
+What remains is everything that acts on this device: language, font size,
+clock, units, alert display toggles, radar opacity and alert radius.
 
 ## Building
 
