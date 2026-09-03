@@ -1526,6 +1526,8 @@ const WeatherMap = ({ zoom, dark }) => {
             mesos={stormMesos}
             home={homePoint}
             zoom={currentMapZoom}
+            scanTime={stormScanTime}
+            timezone={mapTimezone}
             dark={dark}
             nightRed={nightRed}
           />

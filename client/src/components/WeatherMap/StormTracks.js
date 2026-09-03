@@ -1,8 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useContext } from "react";
 import PropTypes from "prop-types";
 import { Polyline, CircleMarker, Marker, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import { useTranslation } from "react-i18next";
+import { UiPrefsContext } from "~/AppContext";
 import styles from "./styles.css";
 import { estimateArrival } from "./stormArrival";
 
@@ -34,8 +35,8 @@ import { estimateArrival } from "./stormArrival";
  * server/stormTracksCtrl.js.
  *
  * LABELS ARE PERMANENT — the kiosk is a touchscreen, nothing hovers. Each
- * cell carries its id beside the dot, each forecast tick its minute mark
- * (15 · 30 · 45 · 60) at single-site zoom, and a cell whose forecast
+ * cell carries its id beside the dot, each forecast tick the clock time
+ * the cell reaches it (scan time + 15/30/45/60 min) at single-site zoom, and a cell whose forecast
  * motion carries it within ~20 km of `home` appends its arrival lead
  * ("≈ N min" / "≈ H h MM min") — the answer to the kiosk's actual
  * question, "is that coming here, and when". Geometry in stormArrival.js.
@@ -119,14 +120,34 @@ function buildAttrIcons(nightRed) {
  * @param {Array<object>} [props.mesos] mesocyclone features from the same payload
  * @param {{lat: Number, lon: Number}} [props.home] point to estimate arrival times for
  * @param {Number} [props.zoom] current map zoom; tick time labels show from z ≥ 9
+ * @param {String} [props.scanTime] ISO scan time of the product, base for the tick clock labels
+ * @param {String} [props.timezone] IANA timezone for the tick clock labels
  * @param {Boolean} [props.dark] dark palette active
  * @param {Boolean} [props.nightRed] night-vision palette active
  * @returns {JSX.Element|null} overlay layers, or null when there are no cells
  */
-const StormTracks = ({ cells, mesos, home = null, zoom = null, dark = false, nightRed = false }) => {
+const StormTracks = ({
+  cells, mesos, home = null, zoom = null, scanTime = null, timezone = null, dark = false, nightRed = false,
+}) => {
   const { t } = useTranslation();
+  const { clockTime } = useContext(UiPrefsContext);
   // Tick time labels need room: from the single-site band up (z ≥ 9).
   const showTickLabels = !Number.isFinite(zoom) || zoom >= 9;
+  // RadarScope labels each forecast tick with the CLOCK TIME the cell gets
+  // there (scan time + 15/30/45/60 min), not the offset — "9:34 AM" answers
+  // the question directly. Falls back to the minute mark when the product
+  // carries no scan time. Honours the 12 h / 24 h preference and the map's
+  // timezone like the timeline does.
+  const scanEpoch = scanTime ? Date.parse(scanTime) : NaN;
+  const tickLabel = (minutes) => {
+    if (!Number.isFinite(scanEpoch)) return String(minutes);
+    return new Date(scanEpoch + minutes * 60 * 1000).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: clockTime === "12",
+      timeZone: timezone || undefined,
+    });
+  };
   // RadarScope draws tracks in plain white on its dark basemap. White
   // needs a dark counterpart in light mode; nightRed collapses to the
   // red family like the rest of the map chrome.
@@ -204,8 +225,8 @@ const StormTracks = ({ cells, mesos, home = null, zoom = null, dark = false, nig
               ) : (cell.isNew ? " · new" : "")}
             </Tooltip>
           </CircleMarker>
-          {/* Time labels on the forecast ticks ("15 30 45 60" minutes),
-              as RadarScope draws them. Only in the single-site zoom band —
+          {/* Clock-time labels on the forecast ticks ("9:19 AM", "9:34 AM"
+              …), as RadarScope draws them. Only in the single-site zoom band —
               at mosaic zoom the ticks are a few pixels apart and the
               numbers would pile up. Each label rides an invisible
               CircleMarker at the tick so it never intercepts a map tap. */}
@@ -225,7 +246,7 @@ const StormTracks = ({ cells, mesos, home = null, zoom = null, dark = false, nig
                   permanent
                   className={styles.trackTickLabel}
                 >
-                  {f.minutes}
+                  {tickLabel(f.minutes)}
                 </Tooltip>
               </CircleMarker>
             ) : null
@@ -269,6 +290,8 @@ StormTracks.propTypes = {
   mesos: PropTypes.array,
   home: PropTypes.shape({ lat: PropTypes.number, lon: PropTypes.number }),
   zoom: PropTypes.number,
+  scanTime: PropTypes.string,
+  timezone: PropTypes.string,
   dark: PropTypes.bool,
   nightRed: PropTypes.bool,
 };
