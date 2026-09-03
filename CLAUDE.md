@@ -506,6 +506,16 @@ logs failures, and reports `error` / `errorMessage` / `upstream`. Triage:
   steps, floor 0.5 in); MRMS MESH is a multi-radar estimate. They disagree
   by a few tenths of an inch routinely; neither is an observation.
 
+### History loads on play, not on open (2026-09-03)
+
+Opening the timeline no longer warms the loop or mounts every frame's tile
+layer — that was ~30 radial fetches + renders and up to 41 tile layers
+refetching on every pan, the biggest cost on the kiosk. `loopActive =
+radarTimelineVisible && animateWeatherMap` gates both. Paused scrubbing
+mounts/renders only the frame under the playhead (`scrubStamp`), fetched
+on demand; pause releases every cached frame but the current one (the loop
+hook already evicts stamps that leave its list).
+
 ### Site follows the view (2026-09-03)
 
 The single-site product used to be resolved from the location PIN, so

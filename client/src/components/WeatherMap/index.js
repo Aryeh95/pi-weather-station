@@ -994,16 +994,31 @@ const WeatherMap = ({ zoom, dark }) => {
   // then.
   const radialShown = Boolean(radial.url) && iemFromEnd === 0 && iemVisible.site;
 
-  // Historical raw radials for playback — every loop frame rendered
-  // through the same pipeline as "latest", so scrubbing and playing stay
-  // as sharp as the live picture instead of dropping to IEM's smoothed
-  // tiles. Fetched newest-first (the frames a user scrubs to first);
+  // History is loaded ON PLAY, not on opening the timeline. Opening the
+  // scrubber used to warm every loop frame (~30 fetches + ~30 canvas
+  // renders, ~15 s of background main-thread work) and mount every
+  // frame's tile layer, whether or not anything was ever played — the
+  // largest single cost on the kiosk (2026-09-03). Now:
+  //   - PLAYING: every frame's tiles stay mounted for flicker-free opacity
+  //     flips and the raw-radial loop warms all frames.
+  //   - SCRUBBING (timeline open, paused): only the frame under the
+  //     playhead is mounted / rendered, fetched on demand. Stepping back
+  //     onto a frame refetches it — the price of not caching the loop.
+  //   - Pressing pause releases every cached frame except the current one.
+  const loopActive = radarTimelineVisible && animateWeatherMap;
+  const scrubStamp = (!loopActive && radarTimelineVisible && currentSiteFrame && iemFromEnd > 0)
+    ? currentSiteFrame.stamp
+    : null;
+
+  // Historical raw radials — every loop frame rendered through the same
+  // pipeline as "latest", so playback stays as sharp as the live picture
+  // instead of dropping to IEM's smoothed tiles. Fetched newest-first;
   // the newest stamp is excluded because the latest-radial feed above
   // already covers frame 0.
-  const loopStamps = useMemo(
-    () => (radarTimelineVisible ? iemSiteFrames.slice(0, -1).map((f) => f.stamp).reverse() : []),
-    [iemSiteFrames, radarTimelineVisible]
-  );
+  const loopStamps = useMemo(() => {
+    if (loopActive) return iemSiteFrames.slice(0, -1).map((f) => f.stamp).reverse();
+    return scrubStamp ? [scrubStamp] : [];
+  }, [iemSiteFrames, loopActive, scrubStamp]);
   const radialLoop = useRadarRadialLoop({
     site: iemSite,
     stamps: loopStamps,
@@ -1045,9 +1060,8 @@ const WeatherMap = ({ zoom, dark }) => {
     && Boolean(currentSiteFrame)
     && !radialShown;
 
-  // Which frames actually get a mounted TileLayer. With the timeline
-  // open (scrubbing or playing), EVERY frame stays mounted and playback
-  // just flips opacity between them — swapping one layer's URL (or
+  // Which frames actually get a mounted TileLayer. While PLAYING, EVERY
+  // frame stays mounted and playback just flips opacity between them — swapping one layer's URL (or
   // remounting it per frame, as this used to do) forces Leaflet to
   // refetch tiles on every step, which blanked the map between frames
   // and made storms pop in and out instead of moving. With all frames
@@ -1066,7 +1080,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // stack mounted with every layer at opacity 0 — unmounting would
   // refetch the whole stack when the playhead comes back into range.
   const mountedMosaicFrames = (iemVisible.mosaic && iemMosaicFrames.length)
-    ? (radarTimelineVisible ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
+    ? (loopActive ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
     : [];
   //
   // VELOCITY MODE mounts no site tiles at all: IEM's tiles are
@@ -1075,7 +1089,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // not rendered yet show nothing at the site layer — honest, and the
   // loop warms in ~15 s.
   const mountedSiteFrames = (!radarVelocity && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
-    ? (radarTimelineVisible ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
+    ? (loopActive ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
   // Storm tracks reuse the NEXRAD site the frame poller already resolved,
