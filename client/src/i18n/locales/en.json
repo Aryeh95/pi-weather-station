@@ -396,7 +396,8 @@
     "ageMosaic": "Mosaic",
     "ageTracks": "Tracks",
     "ageLightning": "GLM",
-    "ageVelocity": "VEL"
+    "ageVelocity": "VEL",
+    "stormArrivalHours": "≈ {{hours}} h {{minutes}} min"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",

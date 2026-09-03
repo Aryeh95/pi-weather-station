@@ -186,7 +186,12 @@ const StormTracks = ({ cells, mesos, home = null, dark = false, nightRed = false
               >
                 {cell.id}
                 {" · "}
-                {t("radar.stormArrival", { minutes: arrival.minutes })}
+                {arrival.minutes >= 90
+                  ? t("radar.stormArrivalHours", {
+                    hours: Math.floor(arrival.minutes / 60),
+                    minutes: String(arrival.minutes % 60).padStart(2, "0"),
+                  })
+                  : t("radar.stormArrival", { minutes: arrival.minutes })}
               </Tooltip>
             ) : (
               <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>

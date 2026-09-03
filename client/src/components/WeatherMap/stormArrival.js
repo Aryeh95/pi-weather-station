@@ -16,8 +16,11 @@
 export const ARRIVAL_MAX_PASS_KM = 20;
 
 // Beyond this the extrapolation is guesswork — SCIT itself only forecasts
-// an hour, and storms turn.
-export const ARRIVAL_MAX_MINUTES = 120;
+// an hour, and storms turn. Three hours: a line 200 km out at 40 kt is
+// exactly the "is that coming here tonight" case the kiosk exists for
+// (measured live 2026-09-03: a cell 195 km WNW of home, passing 7 km off,
+// 147 min out — invisible under the earlier 120-min cap).
+export const ARRIVAL_MAX_MINUTES = 180;
 
 const KM_PER_DEG_LAT = 110.574;
 const KM_PER_DEG_LON_EQUATOR = 111.32;

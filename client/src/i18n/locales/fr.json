@@ -396,7 +396,8 @@
     "ageMosaic": "Mosaïque",
     "ageTracks": "Cellules",
     "ageLightning": "GLM",
-    "ageVelocity": "VIT"
+    "ageVelocity": "VIT",
+    "stormArrivalHours": "≈ {{hours}} h {{minutes}} min"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",

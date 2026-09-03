@@ -18,7 +18,7 @@ const assert = require("node:assert/strict");
 
 const ARRIVAL_MAX_PASS_KM = 20;
 
-const ARRIVAL_MAX_MINUTES = 120;
+const ARRIVAL_MAX_MINUTES = 180;
 
 const KM_PER_DEG_LAT = 110.574;
 const KM_PER_DEG_LON_EQUATOR = 111.32;
