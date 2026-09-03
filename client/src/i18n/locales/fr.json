@@ -405,7 +405,10 @@
     "cellScan": "Balayage {{time}}",
     "cellHail": "Grêle (MRMS MESH) : {{size}}",
     "cellHailNone": "Grêle (MRMS MESH) : aucune détectée",
-    "cellHailShort": "grêle {{size}}"
+    "cellHailShort": "grêle {{size}}",
+    "cellHailUnavailable": "Grêle (MRMS MESH) : indisponible",
+    "cellHailPeak": "Grêle (MRMS MESH) : {{size}} maintenant · max {{peak}} sur 30 min",
+    "cellHailPeakOnly": "Grêle (MRMS MESH) : aucune maintenant · max {{peak}} sur 30 min"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",

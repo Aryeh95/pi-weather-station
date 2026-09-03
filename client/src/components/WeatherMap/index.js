@@ -1018,7 +1018,9 @@ const WeatherMap = ({ zoom, dark }) => {
 
   // Storm tracks reuse the NEXRAD site the frame poller already resolved,
   // so enabling the overlay costs no extra site lookup.
-  const { cells: stormCells, mesos: stormMesos, scanTime: stormScanTime, stale: stormStale } = useStormTracks({
+  const {
+    cells: stormCells, mesos: stormMesos, scanTime: stormScanTime, hail: stormHailMeta, stale: stormStale,
+  } = useStormTracks({
     site: iemSite,
     enabled: showStormTracks && Boolean(iemSite),
     paused: pollingPaused,
@@ -1527,6 +1529,7 @@ const WeatherMap = ({ zoom, dark }) => {
             home={homePoint}
             zoom={currentMapZoom}
             scanTime={stormScanTime}
+            hailMeta={stormHailMeta}
             timezone={mapTimezone}
             dark={dark}
             nightRed={nightRed}

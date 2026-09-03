@@ -304,14 +304,19 @@ a heading from it. A `NEW` cell has no motion: `track` is a single point.
 The client's arrival estimate (StormTracks overlay) projects the home point
 onto the track direction; the server does no arrival math.
 
-**Hail.** Each cell carries `hail: { meshMm, meshIn }` — the maximum
-**MRMS MESH** (NOAA's Multi-Radar Multi-Sensor Maximum Estimated Size of
-Hail) within 10 km of the cell centre, or `null` when the product shows
-none there (values under 5 mm are treated as none). The payload's top-level
-`hail` object gives `{ source: "MRMS MESH", validTime, available }`. The
+**Hail.** Each cell carries `hail: { meshMm, meshIn, max30Mm, max30In }` —
+the maximum **MRMS MESH** (NOAA's Multi-Radar Multi-Sensor Maximum
+Estimated Size of Hail) within 10 km of the cell centre on the current
+2-minute field, and on the 30-minute running-maximum swath — or `null`
+when neither shows hail there (values under 5 mm are treated as none). The
+payload's top-level `hail` object gives `{ source: "MRMS MESH", validTime,
+available, error? }`; `available: false` means the feed could not be read
+and cells carry no `hail` key at all — the client shows "unavailable", not
+"none". The
 field comes from the public `noaa-mrms-pds` bucket (`CONUS/MESH_00.50/`,
-one ~54 KB gzipped GRIB2 every 2 min); its PNG packing (template 5.41) is
-decoded in-process with Node's zlib — no system dependency. Cached per file
+one ~54 KB gzipped GRIB2 every 2 min); its PNG packing (template 5.41,
+8- or 16-bit depending on the frame's maximum) is decoded in-process with
+Node's zlib — no system dependency. Cached per file
 for 2 min. A MESH outage leaves `hail: null` on every cell and
 `hail.available: false`; it never fails the tracks.
 

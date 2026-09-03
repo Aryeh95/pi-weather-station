@@ -405,7 +405,10 @@
     "cellScan": "Barrido {{time}}",
     "cellHail": "Granizo (MRMS MESH): {{size}}",
     "cellHailNone": "Granizo (MRMS MESH): no detectado",
-    "cellHailShort": "granizo {{size}}"
+    "cellHailShort": "granizo {{size}}",
+    "cellHailUnavailable": "Granizo (MRMS MESH): no disponible",
+    "cellHailPeak": "Granizo (MRMS MESH): {{size}} ahora · máx {{peak}} en 30 min",
+    "cellHailPeakOnly": "Granizo (MRMS MESH): ninguno ahora · máx {{peak}} en 30 min"
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",

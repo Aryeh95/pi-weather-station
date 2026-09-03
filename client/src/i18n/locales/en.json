@@ -405,7 +405,10 @@
     "cellScan": "Scan {{time}}",
     "cellHail": "Hail (MRMS MESH): {{size}}",
     "cellHailNone": "Hail (MRMS MESH): none detected",
-    "cellHailShort": "hail {{size}}"
+    "cellHailShort": "hail {{size}}",
+    "cellHailUnavailable": "Hail (MRMS MESH): unavailable",
+    "cellHailPeak": "Hail (MRMS MESH): {{size}} now · {{peak}} peak in 30 min",
+    "cellHailPeakOnly": "Hail (MRMS MESH): none now · {{peak}} peak in 30 min"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",

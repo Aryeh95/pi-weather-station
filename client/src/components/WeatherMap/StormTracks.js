@@ -148,23 +148,41 @@ function buildAttrIcons(nightRed) {
  * @param {{lat: Number, lon: Number}} [props.home] point to estimate arrival times for
  * @param {Number} [props.zoom] current map zoom; tick time labels show from z ≥ 9
  * @param {String} [props.scanTime] ISO scan time of the product, base for the tick clock labels
+ * @param {{available: Boolean, validTime: String}} [props.hailMeta] MRMS hail field status from the payload
  * @param {String} [props.timezone] IANA timezone for the tick clock labels
  * @param {Boolean} [props.dark] dark palette active
  * @param {Boolean} [props.nightRed] night-vision palette active
  * @returns {JSX.Element|null} overlay layers, or null when there are no cells
  */
 const StormTracks = ({
-  cells, mesos, home = null, zoom = null, scanTime = null, timezone = null, dark = false, nightRed = false,
+  cells, mesos, home = null, zoom = null, scanTime = null, hailMeta = null, timezone = null, dark = false, nightRed = false,
 }) => {
   const { t } = useTranslation();
   const { clockTime, speedUnit, lengthUnit } = useContext(UiPrefsContext);
-  // MRMS MESH hail size in the user's precipitation unit (inches / mm).
-  const hailLabel = (hail) => (lengthUnit === "mm"
-    ? `${Math.round(hail.meshMm)} mm`
-    : `${hail.meshIn.toFixed(2).replace(/0$/, "")} in`);
-  // Severe-hail threshold (1 in / 25 mm, the NWS severe criterion): cells
-  // at or above it carry the size in their always-on label too.
-  const severeHail = (hail) => Boolean(hail) && hail.meshMm >= 25;
+  // MRMS MESH hail sizes in the user's precipitation unit (inches / mm).
+  const sizeLabel = (mm) => (lengthUnit === "mm"
+    ? `${Math.round(mm)} mm`
+    : `${(mm / 25.4).toFixed(2).replace(/0$/, "")} in`);
+  // Popup line: instantaneous MESH, plus the 30-minute peak when it is
+  // larger — a pulsing cell can read small right now and have dropped
+  // bigger hail minutes ago. "Unavailable" (feed down) is distinct from
+  // "none" (feed up, nothing at the cell).
+  const hailLine = (hail) => {
+    if (hailMeta && hailMeta.available === false) return t("radar.cellHailUnavailable");
+    if (!hail) return t("radar.cellHailNone");
+    const now = Number.isFinite(hail.meshMm) ? hail.meshMm : null;
+    const peak = Number.isFinite(hail.max30Mm) ? hail.max30Mm : null;
+    if (now !== null && peak !== null && peak > now) {
+      return t("radar.cellHailPeak", { size: sizeLabel(now), peak: sizeLabel(peak) });
+    }
+    if (now === null && peak !== null) return t("radar.cellHailPeakOnly", { peak: sizeLabel(peak) });
+    return t("radar.cellHail", { size: sizeLabel(now) });
+  };
+  // Severe-hail threshold (1 in / 25 mm, the NWS severe criterion) on the
+  // 30-minute peak: cells at or above it carry the size in their always-on
+  // label too.
+  const severeHail = (hail) => Boolean(hail) && Math.max(hail.meshMm || 0, hail.max30Mm || 0) >= 25;
+  const severeSize = (hail) => sizeLabel(Math.max(hail.meshMm || 0, hail.max30Mm || 0));
   // Tap popup: id of the open cell, or null. Local state — nothing outside
   // this overlay cares which cell is open.
   const [openCellId, setOpenCellId] = useState(null);
@@ -261,7 +279,7 @@ const StormTracks = ({
                   {leadLabel(arrival.minutes)}
                 </>
               ) : (cell.isNew ? " · new" : "")}
-              {severeHail(cell.hail) ? ` · ${t("radar.cellHailShort", { size: hailLabel(cell.hail) })}` : ""}
+              {severeHail(cell.hail) ? ` · ${t("radar.cellHailShort", { size: severeSize(cell.hail) })}` : ""}
             </Tooltip>
           </CircleMarker>
           {/* Tap target: a wide invisible disc over the dot (a 5 px dot is
@@ -303,9 +321,7 @@ const StormTracks = ({
                     : t("radar.cellNotToward")}
                 </div>
                 <div className={`${styles.cellPopupRow} ${severeHail(cell.hail) ? styles.cellPopupArrival : ""}`}>
-                  {cell.hail
-                    ? t("radar.cellHail", { size: hailLabel(cell.hail) })
-                    : t("radar.cellHailNone")}
+                  {hailLine(cell.hail)}
                 </div>
                 {Number.isFinite(scanEpoch) ? (
                   <div className={styles.cellPopupMeta}>{t("radar.cellScan", { time: tickLabel(0) })}</div>
@@ -379,6 +395,7 @@ StormTracks.propTypes = {
   home: PropTypes.shape({ lat: PropTypes.number, lon: PropTypes.number }),
   zoom: PropTypes.number,
   scanTime: PropTypes.string,
+  hailMeta: PropTypes.shape({ available: PropTypes.bool, validTime: PropTypes.string }),
   timezone: PropTypes.string,
   dark: PropTypes.bool,
   nightRed: PropTypes.bool,

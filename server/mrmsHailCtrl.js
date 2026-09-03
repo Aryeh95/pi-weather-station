@@ -32,7 +32,15 @@ const { increment } = require("./requestCounter");
 
 const SERVICE_NAME = "MRMS (hail)";
 const BUCKET_BASE = "https://noaa-mrms-pds.s3.amazonaws.com";
-const PRODUCT_PREFIX = "CONUS/MESH_00.50";
+// Two products: the instantaneous 2-min MESH, and its 30-minute running
+// maximum (the swath). A pulsing cell can read small on the instant field
+// while having dropped severe hail ten minutes earlier — the swath is the
+// "what has this storm done lately" number RadarScope-style attribute
+// tables answer with a single-radar MEHS.
+const PRODUCTS = {
+  now: "CONUS/MESH_00.50",
+  max30: "CONUS/MESH_Max_30min_00.50",
+};
 const API_TIMEOUT_MS = 15_000;
 
 // New file every ~2 min; the listing and the decoded field share that cadence.
@@ -47,8 +55,8 @@ const SAMPLE_RADIUS_KM = 10;
 // Below this the product is reporting graupel-sized noise; treat as none.
 const MIN_REPORT_MM = 5;
 
-let listCache = null;   // { value: key|null, expires }
-let fieldCache = null;  // { key, value: {points, validTime}, expires }
+const listCache = new Map();   // product → { value: key|null, expires }
+const fieldCache = new Map();  // product → { key, value: {points, validTime}, expires }
 // One decode per file even when several requests arrive together.
 const inflightByKey = new Map();
 const inflight = (key, fn) => {
@@ -83,19 +91,21 @@ function keyValidTime(key) {
 }
 
 /**
- * Newest MESH key, looking at today's folder and, around midnight UTC,
- * yesterday's.
+ * Newest key for a product, looking at today's folder and, around
+ * midnight UTC, yesterday's.
  *
+ * @param {String} product bucket prefix (see PRODUCTS)
  * @returns {Promise<String|null>}
  */
-async function latestKey() {
-  if (listCache && listCache.expires > Date.now()) return listCache.value;
+async function latestKey(product) {
+  const hit = listCache.get(product);
+  if (hit && hit.expires > Date.now()) return hit.value;
   const now = new Date();
   let best = null;
   for (const d of [now, new Date(now.getTime() - 86_400_000)]) {
     // eslint-disable-next-line no-await-in-loop -- stop at the first day with data
     const res = await axios.get(BUCKET_BASE, {
-      params: { "list-type": 2, prefix: `${PRODUCT_PREFIX}/${dayFolder(d)}/`, "max-keys": 1000 },
+      params: { "list-type": 2, prefix: `${product}/${dayFolder(d)}/`, "max-keys": 1000 },
       timeout: API_TIMEOUT_MS,
       responseType: "text",
     });
@@ -106,7 +116,7 @@ async function latestKey() {
       break;
     }
   }
-  listCache = { value: best, expires: Date.now() + LIST_TTL_MS };
+  listCache.set(product, { value: best, expires: Date.now() + LIST_TTL_MS });
   return best;
 }
 
@@ -159,7 +169,7 @@ function parseGrib2(buf) {
 }
 
 /**
- * Decode a 16-bit grayscale PNG (as MRMS packs it) into raw sample values.
+ * Decode a grayscale PNG (8- or 16-bit, as MRMS packs it) into raw sample values.
  *
  * @param {Buffer} png the PNG file bytes
  * @param {Number} width expected width
@@ -189,10 +199,15 @@ function decodePng16(png, width, height) {
     }
     p += 12 + len;
   }
-  if (bitDepth !== 16 || colorType !== 0) throw new Error(`PNG ${bitDepth}-bit type ${colorType}`);
+  // MRMS writes whichever depth the field needs: 16-bit when the maximum
+  // sample exceeds 255, 8-bit otherwise (a quiet CONUS frame). Both are
+  // grayscale; the GRIB scaling is identical either way.
+  if ((bitDepth !== 16 && bitDepth !== 8) || colorType !== 0) {
+    throw new Error(`PNG ${bitDepth}-bit type ${colorType}`);
+  }
 
   const raw = zlib.inflateSync(Buffer.concat(idat));
-  const bpp = 2;
+  const bpp = bitDepth / 8;
   const stride = width * bpp;
   const out = new Uint16Array(width * height);
   let prev = Buffer.alloc(stride);
@@ -219,7 +234,11 @@ function decodePng16(png, width, height) {
       cur[i] = v & 255;
     }
     const base = y * width;
-    for (let x = 0; x < width; x += 1) out[base + x] = (cur[x * 2] << 8) | cur[x * 2 + 1];
+    if (bpp === 2) {
+      for (let x = 0; x < width; x += 1) out[base + x] = (cur[x * 2] << 8) | cur[x * 2 + 1];
+    } else {
+      for (let x = 0; x < width; x += 1) out[base + x] = cur[x];
+    }
     prev = Buffer.from(cur);
   }
   return out;
@@ -254,14 +273,16 @@ function hailPoints(g, samples, minMm = MIN_REPORT_MM) {
 }
 
 /**
- * Fetch, decode and reduce the newest MESH field. Cached per file.
+ * Fetch, decode and reduce the newest field of a product. Cached per file.
  *
+ * @param {String} product bucket prefix (see PRODUCTS)
  * @returns {Promise<{points: Array, validTime: String|null, key: String}|null>} null when no file is available
  */
-async function fetchField() {
-  const key = await latestKey();
+async function fetchField(product) {
+  const key = await latestKey(product);
   if (!key) return null;
-  if (fieldCache && fieldCache.key === key && fieldCache.expires > Date.now()) return fieldCache.value;
+  const cached = fieldCache.get(product);
+  if (cached && cached.key === key && cached.expires > Date.now()) return cached.value;
   return inflight(key, async () => {
     const res = await axios.get(`${BUCKET_BASE}/${key}`, { responseType: "arraybuffer", timeout: API_TIMEOUT_MS });
     increment("mrms", "mesh");
@@ -270,7 +291,7 @@ async function fetchField() {
     const samples = decodePng16(g.png, g.ni, g.nj);
     const points = hailPoints(g, samples);
     const value = { points, validTime: keyValidTime(key), key };
-    fieldCache = { key, value, expires: Date.now() + FIELD_TTL_MS };
+    fieldCache.set(product, { key, value, expires: Date.now() + FIELD_TTL_MS });
     recordServiceCall(SERVICE_NAME, 200, `${points.length} hail points in ${key.split("/").pop()}`);
     return value;
   });
@@ -303,27 +324,49 @@ function maxWithin(points, lat, lon, radiusKm = SAMPLE_RADIUS_KM) {
 /**
  * Attach a `hail` attribute to each storm cell (mutates the cells) and
  * return the field metadata for the payload. Never throws: a MESH outage
- * leaves the cells without hail rather than failing the tracks.
+ * leaves `hail` undefined on the cells and `available: false` in the
+ * metadata, so the client can say "unavailable" rather than "none".
+ *
+ * Per cell: `{ meshMm, meshIn, max30Mm, max30In }` — the instantaneous
+ * MESH and the 30-minute running maximum, each the largest value within
+ * SAMPLE_RADIUS_KM of the cell centre; `null` when neither product shows
+ * hail there.
  *
  * @param {Array<Object>} cells storm cells with lat/lon
- * @returns {Promise<{source: String, validTime: String|null, available: Boolean}>} field metadata
+ * @returns {Promise<{source: String, validTime: String|null, available: Boolean, error?: String}>} field metadata
  */
 async function attachHail(cells) {
   const meta = { source: "MRMS MESH", validTime: null, available: false };
   if (!Array.isArray(cells) || !cells.length) return meta;
   try {
-    const field = await fetchField();
-    if (!field) return meta;
-    meta.validTime = field.validTime;
+    const [now, max30] = await Promise.all([
+      fetchField(PRODUCTS.now),
+      // The swath is a bonus: its failure must not take the instant value down.
+      fetchField(PRODUCTS.max30).catch((err) => {
+        recordServiceCall(SERVICE_NAME, err?.response?.status || 500, `MESH 30-min swath unavailable: ${err.message}`);
+        return null;
+      }),
+    ]);
+    if (!now) return meta;
+    meta.validTime = now.validTime;
     meta.available = true;
+    const inches = (mm) => Math.round((mm / 25.4) * 100) / 100;
     for (const c of cells) {
       if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) continue;
-      const mm = maxWithin(field.points, c.lat, c.lon);
-      c.hail = mm === null ? null : { meshMm: mm, meshIn: Math.round((mm / 25.4) * 100) / 100 };
+      const mm = maxWithin(now.points, c.lat, c.lon);
+      const peak = max30 ? maxWithin(max30.points, c.lat, c.lon) : null;
+      c.hail = (mm === null && peak === null) ? null : {
+        meshMm: mm,
+        meshIn: mm === null ? null : inches(mm),
+        max30Mm: peak,
+        max30In: peak === null ? null : inches(peak),
+      };
     }
   } catch (err) {
     const status = err?.response?.status || 500;
-    recordServiceCall(SERVICE_NAME, status, `MESH unavailable: ${err.message}`);
+    meta.error = String(err && err.message ? err.message : err).slice(0, 120);
+    console.error(`[mrms] MESH unavailable: ${meta.error}`);
+    recordServiceCall(SERVICE_NAME, status, `MESH unavailable: ${meta.error}`);
   }
   return meta;
 }
@@ -336,6 +379,7 @@ module.exports = {
   hailPoints,
   maxWithin,
   keyValidTime,
+  PRODUCTS,
   SAMPLE_RADIUS_KM,
   MIN_REPORT_MM,
 };

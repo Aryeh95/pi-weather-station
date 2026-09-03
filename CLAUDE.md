@@ -488,6 +488,20 @@ logs failures, and reports `error` / `errorMessage` / `upstream`. Triage:
 - Validated against eccodes on the same file: 5 570 points > 0, max 59.1 mm
   at 40.595 N / 90.755 W — identical. Decode ≈ 1.3 s for 24.5 M samples,
   then reduced to a sparse point list so nothing large stays resident.
-- Cells sample the max MESH within 10 km (`hail: {meshMm, meshIn}`), values
-  < 5 mm treated as none; ≥ 25 mm (NWS severe) also shows in the always-on
-  label. Attached inside `fetchTracks`, never fatal.
+- **PNG depth varies per frame.** MRMS writes 16-bit when any CONUS sample
+  exceeds 255, **8-bit otherwise** (quiet frames). A 16-bit-only decoder
+  rejected an 8-bit frame on 2026-09-03 14:02 Z and, because the failure
+  was swallowed, every cell read "no hail" while RadarScope showed 0.5 in
+  near Lansing MI. Both depths are decoded now; a decode failure is
+  reported as `hail.available: false` and the popup says "unavailable".
+- Cells sample the max within 10 km of TWO fields: the 2-min `MESH_00.50`
+  and the 30-minute swath `MESH_Max_30min_00.50` (`hail: {meshMm, meshIn,
+  max30Mm, max30In}`). The swath matters: near Lansing the instant field
+  read 7–11 mm while the swath read 16–24 mm — a pulsing cell's recent
+  peak. Values < 5 mm treated as none; ≥ 25 mm (NWS severe) on either
+  field also shows in the always-on label. Attached inside `fetchTracks`,
+  never fatal.
+- **MESH is not the same algorithm as RadarScope's hail number.**
+  RadarScope shows the single-radar Hail Index (MEHS, reported in 0.25-in
+  steps, floor 0.5 in); MRMS MESH is a multi-radar estimate. They disagree
+  by a few tenths of an inch routinely; neither is an observation.

@@ -29,6 +29,10 @@ const {
 } = require("../server/mrmsHailCtrl");
 
 const FIXTURE = path.join(__dirname, "fixtures", "MRMS_MESH_00.50_20260903-133641.grib2.gz");
+// Second live capture, 26 minutes later: MRMS wrote this frame as an 8-bit
+// PNG (no CONUS sample above 255), which a 16-bit-only decoder rejects —
+// the failure that briefly showed "no hail" for every cell on 2026-09-03.
+const FIXTURE_8BIT = path.join(__dirname, "fixtures", "MRMS_MESH_00.50_20260903-140242.grib2.gz");
 
 let grib;
 let samples;
@@ -110,4 +114,23 @@ test("keyValidTime reads the UTC stamp out of a bucket key", () => {
 test("non-MRMS layouts are refused rather than misread", () => {
   assert.throws(() => parseGrib2(Buffer.from("not a grib file at all, really")), /not GRIB/);
   assert.throws(() => decodePng16(Buffer.alloc(16), 1, 1), /not PNG/);
+});
+
+test("8-bit frames decode too (the depth MRMS uses on a quiet CONUS)", () => {
+  const g = parseGrib2(zlib.gunzipSync(fs.readFileSync(FIXTURE_8BIT)));
+  // Same grid and scaling regardless of PNG depth.
+  assert.equal(g.ni, 7000);
+  assert.equal(g.nj, 3500);
+  assert.equal(g.ref, -30);
+  assert.equal(g.decScale, 1);
+  // PNG IHDR bit depth lives at byte 24 of the payload.
+  assert.equal(g.png[24], 8);
+  const s = decodePng16(g.png, g.ni, g.nj);
+  assert.equal(s.length, g.ni * g.nj);
+  const pts = hailPoints(g, s);
+  assert.ok(pts.length > 0, "the quiet frame still carried hail in Michigan");
+  // Cells near Lansing, MI read 0.2–0.45 in on this frame (verified live).
+  const lansing = maxWithin(pts, 42.82, -84.48, 10);
+  assert.ok(lansing !== null && lansing >= 5 && lansing <= 15, `Lansing-area MESH ${lansing} mm`);
+  assert.ok(pts.every(([, , mm]) => mm <= (255 - 30) / 10), "8-bit samples cap at 22.5 mm");
 });
