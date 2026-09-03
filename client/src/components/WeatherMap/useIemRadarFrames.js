@@ -27,12 +27,14 @@ const COORD_EPSILON = 0.05;
  * @param {Number|null} params.latitude
  * @param {Number|null} params.longitude
  * @param {Boolean} params.enabled false pauses polling entirely (layer hidden / other source selected)
- * @returns {{site: String|null, frames: Array, stale: Boolean, loading: Boolean, available: Boolean}} the resolved site and its recent frames
+ * @param {Boolean} [params.paused] true suspends polling but KEEPS the last list (screensaver up / tab hidden)
+ * @returns {{site: String|null, frames: Array, mosaic: {epoch: Number, valid: String}|null, stale: Boolean, loading: Boolean, available: Boolean}} the resolved site, its recent frames, and the composite mosaic's current time
  */
-export default function useIemRadarFrames({ latitude, longitude, enabled }) {
+export default function useIemRadarFrames({ latitude, longitude, enabled, paused = false }) {
   const [state, setState] = useState({
     site: null,
     frames: [],
+    mosaic: null,
     stale: false,
     loading: false,
     available: true,
@@ -51,16 +53,20 @@ export default function useIemRadarFrames({ latitude, longitude, enabled }) {
     try {
       const res = await axios.get("/api/radar/frames", { params: { lat, lon } });
       if (cancelledRef.current) return;
-      const { available, site, frames } = res.data || {};
+      const { available, site, frames, mosaic } = res.data || {};
+      // The composite's current time rides along on every answer — even
+      // a no-coverage one, since the mosaic is exactly what shows then.
+      const mosaicMeta = mosaic && Number.isFinite(mosaic.epoch) ? mosaic : null;
       if (available === false) {
         // No NEXRAD coverage here (outside the US). Not an error — the
         // map simply stays on the mosaic layer.
-        setState({ site: null, frames: [], stale: false, loading: false, available: false });
+        setState({ site: null, frames: [], mosaic: mosaicMeta, stale: false, loading: false, available: false });
         return;
       }
       setState({
         site: site || null,
         frames: Array.isArray(frames) ? frames : [],
+        mosaic: mosaicMeta,
         stale: false,
         loading: false,
         available: true,
@@ -80,6 +86,10 @@ export default function useIemRadarFrames({ latitude, longitude, enabled }) {
     if (!enabled || latKey == null || lonKey == null) {
       return () => { cancelledRef.current = true; };
     }
+    // Paused (screensaver / hidden tab): no interval, but the last list
+    // stays so the layers don't blank. The effect re-runs on resume and
+    // fetches immediately, so the age chip catches up within a second.
+    if (paused) return undefined;
 
     const lat = latKey * COORD_EPSILON;
     const lon = lonKey * COORD_EPSILON;
@@ -92,7 +102,7 @@ export default function useIemRadarFrames({ latitude, longitude, enabled }) {
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [enabled, latKey, lonKey, fetchFrames]);
+  }, [enabled, paused, latKey, lonKey, fetchFrames]);
 
   return state;
 }

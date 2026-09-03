@@ -31,7 +31,7 @@ const ZONE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ZONE_FETCH_TIMEOUT_MS = 5000;
 // NWS requires a User-Agent on all requests; mirror what nws.js
 // sends so any rate-limit / contact policy applies uniformly.
-const USER_AGENT = "pi-weather-station (https://github.com/thicla01/pi-weather-station)";
+const USER_AGENT = "sweep-radar (https://github.com/aryeh95/pi-weather-station)";
 
 // Map<zoneUrl, { geometry, expiresAt }>
 const _zoneCache = new Map();

@@ -1,4 +1,9 @@
-# pi-weather-station → radar-focused rework
+# Sweep (formerly pi-weather-station) → radar-focused rework
+
+> Product name changed to **Sweep** on 2026-09-03. The repository slug and
+> every on-disk identifier (`pi-weather-server.service`,
+> `~/.config/pi-weather-station/`, the log path) deliberately keep the old
+> name so existing installs and the updater's drift check keep working.
 
 ## Context
 
@@ -189,11 +194,14 @@ dock toggle (carbon `filter` funnel glyph, pressed = filtering). Toggling
 re-renders the current scan immediately — the render key in
 `useRadarRadial` carries the filter state alongside the volume-scan key.
 
-Known limitation: the filter applies to the client-rendered radial layer
-only. The IEM mosaic (N0Q) and timestamped site tiles are pre-rendered
-PNGs, so low-zoom / history-scrub views still show clear-air return.
-Filtering those would mean palette-matching tile pixels in a canvas tile
-layer — deliberately not built.
+~~Known limitation: the filter applies to the client-rendered radial layer
+only.~~ **Closed 2026-09-03:** `FilteredTileLayer` applies the same 15 dBZ
+floor to the IEM tiles. It turned out not to need palette *matching*: IEM
+publishes the exact N0Q lookup table (`GIS/rasters.php?rid=2`, 255 colours,
+dBZ = index/2 − 32.5, every colour unique) and a live check found 100 % of
+opaque pixels in both a mosaic tile and a `ridge::` N0B tile are exact table
+entries (tile.py resamples nearest-neighbour). The filter is therefore an
+exact colour → dBZ lookup; unknown colours are left alone.
 
 ## Frame age display
 
@@ -401,3 +409,57 @@ line — one 20-second file.
   not expand under PowerShell and silently runs **zero** tests. Pass the files
   explicitly there. Two `settingsCtrl` tests also fail on Windows because NTFS
   has no POSIX `0600` — both pass on the Ubuntu target.
+
+## September 2026 additions — findings to keep
+
+### Velocity mode (N0G) — DONE (2026-09-03)
+
+- Product **154** (Super Res Digital Base Velocity) shares product 94's
+  layout exactly like 153 does; the same clone-and-rebadge shim decodes it.
+  Verified live (DIX): 720 radials × 0.5°, **1200 bins × 0.25 km = 300 km**,
+  plot scaling **min −63.5 / inc 0.5 / 254 levels (m/s)**, elevation 0.5°.
+- **Level 1 is RANGE FOLDED** for velocity (23k gates in the verified scan),
+  not "missing" — paint it (purple), never skip it. Level 0 stays transparent.
+- IEM has **no velocity tile product** for the site layer (`operation=products`
+  lists N0B and N0S only; N0S is storm-*relative* velocity, a different
+  product). Velocity mode therefore mounts no site tiles at all; frames whose
+  N0G radial has not rendered show nothing at high zoom until the loop warms.
+- N0G files carry the **same volume-scan timestamps** as N0B
+  (`DIX_N0B_…_02_55_41` / `DIX_N0G_…_02_55_41`), so the N0B frame list from
+  IEM drives both products through `keyForStamp(site, product, stamp)`.
+- The clear-air filter is a dBZ concept and is not applied to velocity.
+
+### Mosaic timestamp — DONE (2026-09-03)
+
+IEM publishes `data/gis/images/4326/USCOMP/n0q_0.json` with the current
+composite's `valid` time (`{"meta":{"valid":"2026-09-03T02:55:00Z",…,
+"radar_quorum":"142/147"}}`). `/api/radar/frames` relays it as `mosaic`
+(60 s cache, never fatal) and `buildMosaicFrames(now, validEpoch)` steps the
+`-mNNm` offsets back from it — exact ages, no "~". Falls back to the
+5-minute boundary (approximate) when absent.
+
+### Storm arrival — DONE (2026-09-03)
+
+`stormArrival.estimateArrival(cell, home)`: heading from the cell's current
+position to its LAST forecast position (never from MOVEMENT), speed from
+`speedKt` (kt × 1.852 / 60 km/min) or the forecast span, home projected
+onto that ray in local km. Null when moving away, passing > 20 km wide, or
+> 120 min out. Label is permanent on the marker; miss distance on hover.
+
+### Idle polling — DONE (2026-09-03)
+
+`pollingPaused = sleepStage > 0 || document.hidden`, published on
+SystemContext. Every poller takes a `paused` flag that stops the interval
+but KEEPS state (the `enabled` flag still clears state). The loop hook's
+generation-reset effect must NOT depend on `paused`, or a pause would
+revoke every cached frame.
+
+### Update-check finding (2026-09-03)
+
+The kiosk's update button only renders when `updateAvailable` is true, and
+the checker compared HEAD to a hard-coded `origin/master` and swallowed
+fetch errors. A non-master checkout that already contains master's tip, or
+a private-fork fetch with no credentials under systemd, both looked exactly
+like "up to date". Now compares against `@{u}` (fallback origin/master),
+logs failures, and reports `error` / `errorMessage` / `upstream`. Triage:
+`curl -sk https://localhost:8443/api/update-check`.

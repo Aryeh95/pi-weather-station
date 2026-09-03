@@ -41,10 +41,12 @@ const PACE_MS = 150;
  * @param {String|null} params.site 3-letter NEXRAD id
  * @param {Array<String>} params.stamps frame stamps to cover, in fetch-priority order
  * @param {Boolean} params.enabled false pauses fetching and clears everything
- * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ
+ * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ (reflectivity only)
+ * @param {String} [params.product] "N0B" (reflectivity, default) or "N0G" (velocity)
+ * @param {Boolean} [params.paused] true stops the warm-up pump but keeps rendered frames
  * @returns {{byStamp: Object<String, {url: String, bounds: Array}>}} rendered frames
  */
-export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter }) {
+export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter, product = "N0B", paused = false }) {
   const [byStamp, setByStamp] = useState({});
   // stamp → {url, bounds} for rendered frames, {miss: true, at} for
   // known-absent scans. Lives in a ref so the pump can mutate it without
@@ -59,17 +61,19 @@ export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter 
     cacheRef.current.clear();
   };
 
-  // Site or filter changed (or the layer left view): everything cached
-  // was rendered for the wrong site/filter, so drop it. Bumping the
-  // generation makes any in-flight pump abandon its results.
+  // Site, product or filter changed (or the layer left view): everything
+  // cached was rendered for the wrong site/product/filter, so drop it.
+  // Bumping the generation makes any in-flight pump abandon its results.
+  // `paused` is deliberately NOT here — pausing must keep the cache.
   useEffect(() => {
     generationRef.current += 1;
     revokeAll();
     setByStamp({});
-  }, [site, noiseFilter, enabled]);
+  }, [site, product, noiseFilter, enabled]);
 
   useEffect(() => {
     if (!enabled || !site || !stamps || !stamps.length) return undefined;
+    if (paused) return undefined;
     const gen = generationRef.current;
     let cancelled = false;
 
@@ -101,7 +105,7 @@ export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter 
       let s = nextStamp();
       while (!cancelled && generationRef.current === gen && s) {
         try {
-          const res = await axios.get("/api/radar/radial", { params: { site, stamp: s } });
+          const res = await axios.get("/api/radar/radial", { params: { site, product, stamp: s } });
           const d = res.data || {};
           if (cancelled || generationRef.current !== gen) return;
           if (d.available) {
@@ -130,7 +134,7 @@ export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter 
     pump();
 
     return () => { cancelled = true; };
-  }, [site, enabled, noiseFilter, stamps]);
+  }, [site, product, enabled, paused, noiseFilter, stamps]);
 
   // Revoke everything on unmount — each URL pins a blob for the life of
   // the page otherwise.

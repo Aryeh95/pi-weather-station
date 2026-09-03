@@ -388,7 +388,15 @@
     "legendFlood": "Inundación",
     "legendLightning": "Rayos",
     "lightningCount_one": "{{count}} destello · 5 min",
-    "lightningCount_other": "{{count}} destellos · 5 min"
+    "lightningCount_other": "{{count}} destellos · 5 min",
+    "legendVelocity": "Velocidad (m/s)",
+    "legendToward": "hacia el radar",
+    "legendAway": "se aleja",
+    "stormArrival": "≈ {{minutes}} min",
+    "ageMosaic": "Mosaico",
+    "ageTracks": "Células",
+    "ageLightning": "GLM",
+    "ageVelocity": "VEL"
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",
@@ -437,7 +445,9 @@
     "showLightning": "Mostrar rayos",
     "hideLightning": "Ocultar rayos",
     "noiseFilterEnable": "Filtrar ruido de aire claro",
-    "noiseFilterDisable": "Mostrar ecos de aire claro"
+    "noiseFilterDisable": "Mostrar ecos de aire claro",
+    "velocityOn": "Mostrar velocidad radial",
+    "velocityOff": "Mostrar reflectividad"
   },
   "mobile": {
     "settingsHint": "Para los ajustes avanzados, abre la app desde el Pi en local."
@@ -478,7 +488,9 @@
     "lightningOn": "Rayos activados",
     "lightningOff": "Rayos desactivados",
     "noiseFilterOn": "Filtro de ruido activado",
-    "noiseFilterOff": "Filtro de ruido desactivado"
+    "noiseFilterOff": "Filtro de ruido desactivado",
+    "velocityOn": "Modo velocidad activado",
+    "velocityOff": "Modo velocidad desactivado"
   },
   "health": {
     "title": "Estado de los servicios",

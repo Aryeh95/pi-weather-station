@@ -66,28 +66,35 @@ export function mosaicTileUrl(minutesAgo) {
 /**
  * Build the mosaic frame list.
  *
- * Timestamps are DERIVED from the offsets rather than reported by IEM,
- * so they're accurate to the generation schedule rather than to a
- * specific volume scan. That distinction matters for the age display:
- * the mosaic's "current" frame is itself built from scans that are
- * already a few minutes old, so its true age is at least the offset,
- * never less. `approximate: true` marks that for the UI.
+ * Two anchors, in order of preference:
  *
- * Recomputed from `now` on each poll so the ages stay live.
+ *   1. `validEpoch` — the current composite's nominal time as published
+ *      in IEM's `n0q_0.json` (relayed by `/api/radar/frames` as
+ *      `mosaic.epoch`). The `-mNNm` offsets step back from it in exact
+ *      5-minute multiples, so every frame's time is REAL and the age
+ *      chip reports it without a "~".
+ *   2. The most recent 5-minute boundary before `now`, when the metadata
+ *      is unavailable. IEM regenerates on that schedule, so the boundary
+ *      is the nominal time — but the composite is itself built from scans
+ *      a few minutes older, so the true age is at least the offset, never
+ *      less. `approximate: true` marks that for the UI.
  *
- * @param {Number} [now] epoch ms to anchor the offsets against
+ * Recomputed on each poll so the ages stay live.
+ *
+ * @param {Number} [now] epoch ms to fall back to when no valid time is known
+ * @param {Number|null} [validEpoch] epoch ms of the current composite, from IEM's metadata
  * @returns {Array<{stamp: String, epoch: Number, url: String, approximate: Boolean}>} oldest-first
  */
-export function buildMosaicFrames(now = Date.now()) {
-  // Anchor on the most recent 5-minute boundary — IEM regenerates on
-  // that schedule, so a frame's nominal time is the boundary, not the
-  // arbitrary wall-clock moment we happened to poll at.
-  const anchor = Math.floor(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
+export function buildMosaicFrames(now = Date.now(), validEpoch = null) {
+  const exact = Number.isFinite(validEpoch);
+  const anchor = exact
+    ? validEpoch
+    : Math.floor(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
   return MOSAIC_OFFSET_MINUTES.map((minutesAgo) => ({
     stamp: `m${minutesAgo}`,
     epoch: anchor - minutesAgo * 60 * 1000,
     url: mosaicTileUrl(minutesAgo),
-    approximate: true,
+    approximate: !exact,
   }));
 }
 

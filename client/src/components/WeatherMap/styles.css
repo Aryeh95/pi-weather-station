@@ -1252,10 +1252,12 @@
   left: var(--c-edge-gap, 16px);
   z-index: 1000;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
+  /* One row per visible layer (site / mosaic / tracks / lightning) —
+   * each has its own clock, so each gets its own age. */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 10px;
   border-radius: 8px;
   border: 1px solid var(--c-border, rgba(0, 0, 0, 0.12));
   background: var(--c-surface, rgba(255, 250, 240, 0.94));
@@ -1291,7 +1293,14 @@
 
 /* The site id (e.g. "DIX") when the single-site layer is the one being
  * described — dimmed, since it's context rather than the value. */
+.frame-age-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+}
 .frame-age-site {
+  min-width: 3.2em;
   color: var(--c-text-dim, #8a8578);
   letter-spacing: 0.04em;
 }
@@ -1338,8 +1347,10 @@
 @media (max-height: 520px) {
   .frame-age {
     top: 110px;
-    height: 24px;
     font-size: calc(10px * var(--c-font-scale, 1));
+  }
+  .frame-age-row {
+    height: 16px;
   }
 }
 
@@ -1354,4 +1365,24 @@
   background: none;
   border: none;
   pointer-events: none;
+}
+
+/* Storm arrival label — a permanent Leaflet tooltip beside a cell that is
+ * headed for home. Compact mono chip, no tooltip arrow (the leader would
+ * read as part of the track vector). */
+.arrival-label {
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.2));
+  background: var(--c-surface, rgba(255, 250, 240, 0.94));
+  color: var(--c-text, #3a3938);
+  font-family: "Geist Mono", monospace;
+  font-size: calc(11px * var(--c-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.arrival-label::before {
+  display: none;
 }

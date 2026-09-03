@@ -57,8 +57,10 @@ const { increment } = require("./requestCounter");
 const { BoundedMap } = require("./boundedCache");
 
 const SERVICE_NAME = "NEXRAD L3 (storm tracks)";
-const BUCKET_BASE = "https://unidata-nexrad-level3.s3.amazonaws.com";
-const API_TIMEOUT_MS = 15_000;
+// Bucket access (listing, newest-key lookup, key timestamps) lives in
+// nexradBucket.js and is shared with the raw-radial controller. The
+// names are re-exported below so existing imports keep working.
+const { BUCKET_BASE, API_TIMEOUT_MS, newestKey, l3KeyEpoch } = require("./nexradBucket");
 
 // One volume scan per file (4-6 min). 60 s keeps the display close to the
 // radar's own cadence without re-listing the bucket for every client poll.
@@ -199,19 +201,6 @@ function toGeoCell(row, radarLat, radarLon) {
 const MESO_MAX_AGE_MS = 20 * 60 * 1000;
 
 /**
- * Epoch ms from a Level III bucket key (`SSS_PPP_YYYY_MM_DD_HH_MM_SS`).
- *
- * @param {String} key bucket object key
- * @returns {Number|null} epoch ms, or null when the key doesn't match
- */
-function l3KeyEpoch(key) {
-  const m = /_(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})$/.exec(key || "");
-  if (!m) return null;
-  const [, y, mo, d, hh, mm, ss] = m.map(Number);
-  return Date.UTC(y, mo - 1, d, hh, mm, ss);
-}
-
-/**
  * Extract mesocyclone rows from the NMD tabular page.
  *
  * Same normalise-then-tokenise approach as the STI parser: collapse the
@@ -287,41 +276,6 @@ async function fetchMesos(site, radarLat, radarLon) {
   } catch {
     return [];
   }
-}
-
-/**
- * List the bucket and return the newest Level III key for a site+product.
- *
- * Shared by storm tracks (NST) and the raw-radial renderer (N0B) — same
- * bucket, same key shape, different product token. Scoped to an hour
- * prefix so the listing stays ~12 keys instead of a full day's ~300.
- * Falls back to the previous hours, which also covers the first minutes
- * after a UTC day/hour rollover when the current prefix is still empty.
- *
- * @param {String} site 3-letter radar id (e.g. "DIX")
- * @param {String} product Level III product token in the key (e.g. "NST", "N0B")
- * @returns {Promise<String|null>} newest key, or null when none recently
- */
-async function newestKey(site, product) {
-  const now = new Date();
-  for (let back = 0; back < 3; back += 1) {
-    const t = new Date(now.getTime() - back * 60 * 60 * 1000);
-    const p = `${site}_${product}_${t.getUTCFullYear()}_`
-      + `${String(t.getUTCMonth() + 1).padStart(2, "0")}_`
-      + `${String(t.getUTCDate()).padStart(2, "0")}_`
-      + `${String(t.getUTCHours()).padStart(2, "0")}`;
-    const res = await axios.get(BUCKET_BASE, {
-      params: { "list-type": 2, prefix: p, "max-keys": 1000 },
-      timeout: API_TIMEOUT_MS,
-      responseType: "text",
-    });
-    const keys = String(res.data).match(/<Key>([^<]+)<\/Key>/g) || [];
-    if (keys.length) {
-      // Lexicographic order is chronological for this key shape.
-      return keys[keys.length - 1].replace(/<\/?Key>/g, "");
-    }
-  }
-  return null;
 }
 
 /**

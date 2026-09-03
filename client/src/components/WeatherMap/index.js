@@ -72,6 +72,8 @@ import LightningOverlay from "./LightningOverlay";
 import useRadarRadial from "./useRadarRadial";
 import useRadarRadialLoop from "./useRadarRadialLoop";
 import StormTracks from "./StormTracks";
+import FilteredTileLayer from "./FilteredTileLayer";
+import { NOISE_FILTER_MIN_DBZ } from "./radialRender";
 import {
   IEM_ATTRIBUTION,
   buildMosaicFrames,
@@ -667,6 +669,9 @@ const WeatherMap = ({ zoom, dark }) => {
     piRadarMaximized,
     piLayoutState,
     piScrubberOpen,
+    // Screensaver up or document hidden: every poller below pauses and
+    // keeps its last data; they refetch the moment this clears.
+    pollingPaused,
   } = useContext(SystemContext);
   const {
     browserGeo,
@@ -699,6 +704,7 @@ const WeatherMap = ({ zoom, dark }) => {
     showStormTracks,
     showLightning,
     radarNoiseFilter,
+    radarVelocity,
     showAlertRing,
     nearbyAlerts,
     alertRadiusKm,
@@ -844,21 +850,32 @@ const WeatherMap = ({ zoom, dark }) => {
   const {
     site: iemSite,
     frames: iemSiteFrames,
+    mosaic: iemMosaicMeta,
     stale: iemStale,
     available: iemSiteAvailable,
   } = useIemRadarFrames({
     latitude: mapGeo ? mapGeo.latitude : null,
     longitude: mapGeo ? mapGeo.longitude : null,
     enabled: true,
+    paused: pollingPaused,
   });
+
+  // Which single-site product the raw-radial pipeline renders. The
+  // frame LIST always comes from N0B (IEM's tile product); velocity
+  // scans share the same volume-scan timestamps, so the same stamps
+  // resolve N0G files too.
+  const radialProduct = radarVelocity ? "N0G" : "N0B";
 
   // Mosaic frame list, recomputed whenever the single-site list
   // refreshes so both age displays advance together. The dependency on
   // `iemSiteFrames` is deliberate: it's the app's existing 60 s
-  // heartbeat, and the mosaic offsets are cheap to rebuild.
+  // heartbeat, and the mosaic offsets are cheap to rebuild. Anchored on
+  // IEM's published composite time when the poller relays one, so the
+  // mosaic's age is a measured number rather than a schedule guess.
+  const iemMosaicValidEpoch = iemMosaicMeta ? iemMosaicMeta.epoch : null;
   const iemMosaicFrames = useMemo(
-    () => buildMosaicFrames(),
-    [iemSiteFrames]  // eslint-disable-line react-hooks/exhaustive-deps -- iemSiteFrames is the intentional 60s recompute heartbeat
+    () => buildMosaicFrames(Date.now(), iemMosaicValidEpoch),
+    [iemSiteFrames, iemMosaicValidEpoch]  // eslint-disable-line react-hooks/exhaustive-deps -- iemSiteFrames is the intentional 60s recompute heartbeat
   );
 
   // Playhead for the IEM layers, kept separate from the RainViewer
@@ -906,6 +923,8 @@ const WeatherMap = ({ zoom, dark }) => {
     site: iemSite,
     enabled: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
     noiseFilter: radarNoiseFilter,
+    product: radialProduct,
+    paused: pollingPaused,
   });
   // The latest radial image replaces the site TILES only when it exists
   // AND the playhead is on the newest frame; historical frames come from
@@ -928,6 +947,8 @@ const WeatherMap = ({ zoom, dark }) => {
     stamps: loopStamps,
     enabled: radarTimelineVisible && iemVisible.site && iemSiteAvailable && Boolean(iemSite),
     noiseFilter: radarNoiseFilter,
+    product: radialProduct,
+    paused: pollingPaused,
   });
 
   // Which loop radials get a MOUNTED overlay: a sliding window around
@@ -985,23 +1006,22 @@ const WeatherMap = ({ zoom, dark }) => {
   const mountedMosaicFrames = (iemVisible.mosaic && iemMosaicFrames.length)
     ? (radarTimelineVisible ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
     : [];
-  const mountedSiteFrames = (iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
+  //
+  // VELOCITY MODE mounts no site tiles at all: IEM's tiles are
+  // reflectivity, and showing them under (or instead of) a velocity
+  // frame would mislabel the picture. Frames whose velocity radial has
+  // not rendered yet show nothing at the site layer — honest, and the
+  // loop warms in ~15 s.
+  const mountedSiteFrames = (!radarVelocity && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
     ? (radarTimelineVisible ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
-  // Which frame the age chip describes: whichever layer is currently
-  // dominant. The single-site product (tiles OR the raw-radial image —
-  // same volume scans, same timestamps) carries real scan-derived times;
-  // the mosaic's schedule-derived time is marked approximate.
-  const siteLayerDominant = (radialShown || showIemSite) && iemOpacity.site >= iemOpacity.mosaic;
-  const iemAgeFrame = siteLayerDominant ? currentSiteFrame : currentMosaicFrame;
-  const iemAgeIsApproximate = !siteLayerDominant;
-
   // Storm tracks reuse the NEXRAD site the frame poller already resolved,
   // so enabling the overlay costs no extra site lookup.
-  const { cells: stormCells, mesos: stormMesos } = useStormTracks({
+  const { cells: stormCells, mesos: stormMesos, scanTime: stormScanTime, stale: stormStale } = useStormTracks({
     site: iemSite,
     enabled: showStormTracks && Boolean(iemSite),
+    paused: pollingPaused,
   });
 
   // GLM lightning, centred on the map position like the alert survey.
@@ -1009,7 +1029,56 @@ const WeatherMap = ({ zoom, dark }) => {
     latitude: mapGeo ? mapGeo.latitude : null,
     longitude: mapGeo ? mapGeo.longitude : null,
     enabled: showLightning && Boolean(mapGeo),
+    paused: pollingPaused,
   });
+
+  // Frame-age stack: one row per VISIBLE layer, each with its own clock.
+  // The single-site row describes the frame ON SCREEN (scrubbed or
+  // latest) from the tiles or the radial image — same volume scans,
+  // same timestamps. The mosaic row is exact when IEM's composite time
+  // came through, approximate (schedule-derived, "~") otherwise. Storm
+  // tracks report their product's scan time; lightning the newest flash.
+  const siteRowShown = iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
+    && (radialShown || showIemSite || radarVelocity || currentLoopRadial);
+  const mosaicRowShown = iemVisible.mosaic && Boolean(currentMosaicFrame);
+  const stormScanEpoch = stormScanTime ? Date.parse(stormScanTime) : NaN;
+  const ageRows = [];
+  if (siteRowShown) {
+    ageRows.push({
+      key: "site",
+      label: radarVelocity ? `${iemSite} ${t("radar.ageVelocity")}` : iemSite,
+      epoch: currentSiteFrame.epoch,
+      approximate: false,
+      sourceStale: iemStale,
+    });
+  }
+  if (mosaicRowShown) {
+    ageRows.push({
+      key: "mosaic",
+      label: t("radar.ageMosaic"),
+      epoch: currentMosaicFrame.epoch,
+      approximate: Boolean(currentMosaicFrame.approximate),
+      sourceStale: iemStale,
+    });
+  }
+  if (showStormTracks && Number.isFinite(stormScanEpoch)) {
+    ageRows.push({
+      key: "tracks",
+      label: t("radar.ageTracks"),
+      epoch: stormScanEpoch,
+      approximate: false,
+      sourceStale: stormStale,
+    });
+  }
+  if (showLightning && Number.isFinite(lightning.dataEpoch)) {
+    ageRows.push({
+      key: "lightning",
+      label: t("radar.ageLightning"),
+      epoch: lightning.dataEpoch,
+      approximate: false,
+      sourceStale: lightning.stale,
+    });
+  }
 
   // Timeline-shaped view of the frames. RadarTimeline was built
   // against RainViewer's frame objects (`time` in UNIX *seconds*, plus a
@@ -1060,7 +1129,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // Pi MAX view for the same reason — there the map is a ~190 px
   // decorative thumbnail and cycling tiles just burns the GPU.
   useEffect(() => {
-    if (!animateWeatherMap || isPiMaxView(piLayoutState)) return undefined;
+    if (!animateWeatherMap || isPiMaxView(piLayoutState) || pollingPaused) return undefined;
     if (!iemTimelineSourceFrames.length) return undefined;
     const id = setInterval(() => {
       // Counts DOWN because the index is an offset from the newest
@@ -1072,7 +1141,7 @@ const WeatherMap = ({ zoom, dark }) => {
       });
     }, MAP_CYCLE_RATE / radarSpeed);
     return () => clearInterval(id);
-  }, [animateWeatherMap, radarSpeed, iemTimelineSourceFrames.length, piLayoutState]);  // eslint-disable-line react-hooks/exhaustive-deps -- only the length is read
+  }, [animateWeatherMap, radarSpeed, iemTimelineSourceFrames.length, piLayoutState, pollingPaused]);  // eslint-disable-line react-hooks/exhaustive-deps -- only the length is read
 
   // Snap back to the newest frame whenever the scrubber is dismissed or
   // the source changes, so the user is never left parked on an old
@@ -1124,6 +1193,13 @@ const WeatherMap = ({ zoom, dark }) => {
   const markerLon = mapGeo ? mapGeo.longitude : null;
   const markerPosition = useMemo(
     () => (markerLat != null && markerLon != null ? [markerLat, markerLon] : null),
+    [markerLat, markerLon]
+  );
+  // Same point as an object, for the storm-arrival estimate ("when does
+  // this cell reach here?"). Memoised so StormTracks' per-cell geometry
+  // only recomputes when the point or the cells change.
+  const homePoint = useMemo(
+    () => (markerLat != null && markerLon != null ? { lat: markerLat, lon: markerLon } : null),
     [markerLat, markerLon]
   );
   const radiusRingOptions = useMemo(
@@ -1282,7 +1358,25 @@ const WeatherMap = ({ zoom, dark }) => {
           *
           * `maxNativeZoom` is a data-resolution choice rather than a
           * server limit — see the note in iemRadar.js. */}
-        {mountedMosaicFrames.map((f) => (
+        {/* With the clear-air noise filter on, the tiles go through
+          * FilteredTileLayer, which looks every pixel's colour up in
+          * IEM's published N0Q table and clears anything below 15 dBZ —
+          * the same floor the raw-radial LUT applies, so low zoom and
+          * history scrubbing stop showing the speckle the live layer
+          * hides. Off, the stock TileLayer draws the PNGs untouched. */}
+        {mountedMosaicFrames.map((f) => (radarNoiseFilter ? (
+          <FilteredTileLayer
+            key={`iem-mosaic-f-${f.stamp}`}
+            attribution={IEM_ATTRIBUTION}
+            url={f.url}
+            minDbz={NOISE_FILTER_MIN_DBZ}
+            opacity={currentMosaicFrame && f.stamp === currentMosaicFrame.stamp ? iemOpacity.mosaic : 0}
+            maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
+            maxZoom={MOSAIC_MAX_ZOOM}
+            updateWhenIdle={true}
+            keepBuffer={2}
+          />
+        ) : (
           <TileLayer
             key={`iem-mosaic-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
@@ -1293,7 +1387,7 @@ const WeatherMap = ({ zoom, dark }) => {
             updateWhenIdle={true}
             keepBuffer={2}
           />
-        ))}
+        )))}
         {/* ── Layer 2: single-site super-res (high zoom) ────────
           * N0B base reflectivity from the covering NEXRAD: 0.5°
           * tilt at 0.25 km gates, native radial data rather than a
@@ -1305,7 +1399,19 @@ const WeatherMap = ({ zoom, dark }) => {
           * never the `-0` "latest" sentinel: `-0` would render but
           * gives no way to know how old the picture is, and making
           * frame age visible is the point of this work. */}
-        {mountedSiteFrames.map((f) => (
+        {mountedSiteFrames.map((f) => (radarNoiseFilter ? (
+          <FilteredTileLayer
+            key={`iem-site-f-${iemSite}-${f.stamp}`}
+            attribution={IEM_ATTRIBUTION}
+            url={siteTileUrl(iemSite, f.stamp)}
+            minDbz={NOISE_FILTER_MIN_DBZ}
+            opacity={currentSiteFrame && f.stamp === currentSiteFrame.stamp && !radialShown && !currentLoopRadial ? iemOpacity.site : 0}
+            maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
+            minZoom={SITE_MIN_ZOOM}
+            updateWhenIdle={true}
+            keepBuffer={2}
+          />
+        ) : (
           <TileLayer
             key={`iem-site-${iemSite}-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
@@ -1316,7 +1422,7 @@ const WeatherMap = ({ zoom, dark }) => {
             updateWhenIdle={true}
             keepBuffer={2}
           />
-        ))}
+        )))}
         {/* Raw-radial layer — the actual super-res picture, rendered
             client-side from N0B radial data instead of IEM's pre-smoothed
             tiles (see radialRender.js). Lives in its own pane between the
@@ -1415,7 +1521,7 @@ const WeatherMap = ({ zoom, dark }) => {
             on top, and a filled warning polygon would otherwise bury the
             thin dashed track running through it. */}
         {showStormTracks ? (
-          <StormTracks cells={stormCells} mesos={stormMesos} dark={dark} nightRed={nightRed} />
+          <StormTracks cells={stormCells} mesos={stormMesos} home={homePoint} dark={dark} nightRed={nightRed} />
         ) : null}
         {/* GLM lightning flashes -- age-faded dots, painted last so the
             freshest strikes read over every other overlay. */}
@@ -1470,14 +1576,8 @@ const WeatherMap = ({ zoom, dark }) => {
           rather than hidden. IEM-only for now: RainViewer's timeline
           already carries its own relative-time chip, and ECCC exposes
           no frame timestamp to report. */}
-      {!isPiMaxView(piLayoutState) && iemAgeFrame && (
-        <RadarFrameAge
-          epoch={iemAgeFrame.epoch}
-          approximate={iemAgeIsApproximate}
-          sourceStale={iemStale}
-          site={showIemSite ? iemSite : null}
-          dark={dark}
-        />
+      {!isPiMaxView(piLayoutState) && ageRows.length > 0 && (
+        <RadarFrameAge rows={ageRows} dark={dark} />
       )}
       {/* Legend + timeline serve both reflectivity sources (RainViewer
           and IEM); the legend's dBZ colour ramp describes either. Hidden
@@ -1491,7 +1591,12 @@ const WeatherMap = ({ zoom, dark }) => {
           in the 7" kiosk's vertical budget, but the legend stays one
           tap away instead of vanishing. */}
       {legendShown && !isPiMaxView(piLayoutState) && (
-        <RadarLegend dark={dark} chipMode={radarTimelineVisible && isSmallScreen} lightningCount={showLightning ? lightning.count : null} />
+        <RadarLegend
+          dark={dark}
+          chipMode={radarTimelineVisible && isSmallScreen}
+          lightningCount={showLightning ? lightning.count : null}
+          velocity={radarVelocity && iemVisible.site}
+        />
       )}
       {timelineShown && (
         <RadarTimeline

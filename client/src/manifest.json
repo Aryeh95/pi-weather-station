@@ -1,7 +1,7 @@
 {
-  "name": "Pi Weather Station",
-  "short_name": "Pi Weather",
-  "description": "Weather station with radar, forecasts, AI summary, and government alerts.",
+  "name": "Sweep",
+  "short_name": "Sweep",
+  "description": "NEXRAD radar kiosk: mosaic + super-res single-site radar, storm tracks, lightning and NWS alerts with visible frame age.",
   "start_url": ".",
   "display": "standalone",
   "orientation": "any",

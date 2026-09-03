@@ -26,6 +26,9 @@ import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
 import lightningIcon from "@iconify/icons-carbon/lightning";
 import noiseFilterIcon from "@iconify/icons-carbon/filter";
+/* Velocity mode: opposed horizontal arrows read as "toward / away from
+ * the radar" — the one thing a base-velocity field shows. */
+import velocityIcon from "@iconify/icons-carbon/arrows-horizontal";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -110,6 +113,7 @@ const ControlButtons = () => {
     toggleStormTracks,
     toggleLightning,
     toggleRadarNoiseFilter,
+    toggleRadarVelocity,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -141,6 +145,7 @@ const ControlButtons = () => {
     showStormTracks,
     showLightning,
     radarNoiseFilter,
+    radarVelocity,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -566,6 +571,33 @@ const ControlButtons = () => {
       <InlineIcon icon={noiseFilterIcon} />
     </div>
   );
+  // Velocity mode — swaps the high-zoom single-site product from N0B
+  // reflectivity to N0G base velocity (raw radials, same renderer). The
+  // low-zoom mosaic has no velocity counterpart and stays reflectivity.
+  const btnVelocity = (
+    <div
+      key="velocity"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleRadarVelocity();
+        notify(radarVelocity ? "toasts.velocityOff" : "toasts.velocityOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${radarVelocity && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarVelocity ? "controls.velocityOff" : "controls.velocityOn")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarVelocity ? "controls.velocityOff" : "controls.velocityOn")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={velocityIcon} />
+    </div>
+  );
   const btnContrast = (
     <div
       key="contrast"
@@ -752,6 +784,7 @@ const ControlButtons = () => {
         {btnStormTracks}
         {btnLightning}
         {btnNoiseFilter}
+        {btnVelocity}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

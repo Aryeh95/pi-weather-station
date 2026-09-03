@@ -3,7 +3,7 @@
 > **Status: historical snapshot, not actively maintained.** This document captures the narrative of major improvements landed up to ~v2.10 as a single-pass overview for newcomers. For up-to-date information see:
 > - [`CHANGELOG.md`](CHANGELOG.md) — full per-version history (canonical)
 > - [`ROADMAP.md`](ROADMAP.md) — shipped items + future plans
-> - [`docs/ui-layout_fr.md`](docs/ui-layout_fr.md) / [`docs/ui-layout_en.md`](docs/ui-layout_en.md) — current UI reference
+> - [`docs/archive/ui-layout_fr.md`](docs/archive/ui-layout_fr.md) / [`docs/archive/ui-layout_en.md`](docs/archive/ui-layout_en.md) — current UI reference
 > - [`docs/api.md`](docs/api.md) — current API surface
 >
 > Major features shipped after this snapshot (PWA mobile layout, health-indicator dot, radar focus mode, severity colour coding, ECCC alert detail expansion, sleep mode, severe-weather alerts, OpenAQ + AirNow integration, trend-aware radar, calm-day fast path, etc.) are documented in the canonical sources above.

@@ -146,16 +146,16 @@ const sslOptions = (() => {
   // Cert Subject Common Name shown by iOS / macOS / Android when the
   // user inspects the profile before trusting it. v2.16.1: switched
   // from the bare `localhost` default (which read as confusing on a
-  // user's iPhone — "trust localhost?") to "Pi Weather Station -
+  // user's iPhone — "trust localhost?") to "Sweep -
   // <hostname>" so each Pi in a multi-Pi household shows up
   // distinguishably. Falls back to the static label if hostname
   // collection fails.
   const targetCN = safeHostname
-    ? `Pi Weather Station - ${safeHostname}`
-    : "Pi Weather Station";
+    ? `Sweep - ${safeHostname}`
+    : "Sweep";
   const caTargetCN = safeHostname
-    ? `Pi Weather Station CA - ${safeHostname}`
-    : "Pi Weather Station CA";
+    ? `Sweep CA - ${safeHostname}`
+    : "Sweep CA";
 
   // Collect all non-loopback, non-internal IPv4 LAN addresses + the
   // device hostname so the cert's SubjectAltName covers every way
@@ -196,7 +196,7 @@ const sslOptions = (() => {
 
   // Does the existing cert's Subject CN match what we'd generate now?
   // If not, regenerate so the iOS profile dialog shows the friendly
-  // "Pi Weather Station - <hostname>" name. openssl prints the
+  // "Sweep - <hostname>" name. openssl prints the
   // subject as either `subject= /CN=value` (LibreSSL) or
   // `subject=CN = value` (OpenSSL 3+) — match both.
   const certHasTargetCN = () => {
@@ -673,7 +673,7 @@ app.get("/api/cert.pem", (req, res) => {
   fs.readFile(sourcePath, (err, data) => {
     if (err) return res.status(404).send("cert.pem not found");
     res.setHeader("Content-Type", "application/x-x509-ca-cert");
-    res.setHeader("Content-Disposition", "attachment; filename=\"pi-weather-cert.pem\"");
+    res.setHeader("Content-Disposition", "attachment; filename=\"sweep-cert.pem\"");
     return res.status(200).send(data);
   });
 });

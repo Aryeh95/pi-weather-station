@@ -2,15 +2,22 @@
 
 ## Overview
 
-Pi Weather Station is designed to run on a local network (Raspberry Pi + 7" touchscreen). This document describes the security model, the protections in place, and the boundaries of the threat model.
+Sweep runs on a trusted local network as an always-on kiosk. This document
+describes the security model, the protections in place, and the boundaries
+of the threat model.
 
 ---
 
 ## API key protection
 
-All outbound API calls (Tomorrow.io, Mapbox, LocationIQ, sunrise-sunset.org, Anthropic) are **proxied through the Express server**. API keys are stored in `settings.json` on the Pi and are never included in client-side request URLs — they are invisible in the browser's network inspector and in third-party server logs.
+The only keyed upstreams are **Mapbox** (basemap tiles) and **LocationIQ**
+(reverse geocoding). Both are called by the Express server; the keys live in
+`settings.json` on the host and never appear in client-side URLs.
+Everything radar-related (IEM, the NEXRAD Level III and GOES buckets,
+api.weather.gov, ECCC, sunrise-sunset.org, ipapi.co) is keyless.
 
-Remote clients receive only boolean values (`true` / `false`) from `GET /settings` — actual key values are never transmitted over the network. Key values are only returned when the request originates from the Pi itself (`localhost`).
+Remote clients receive booleans (`true` / `false`) for key fields from
+`GET /settings`; key values are returned only to `localhost`.
 
 ---
 
@@ -19,84 +26,99 @@ Remote clients receive only boolean values (`true` / `false`) from `GET /setting
 | Endpoint | Localhost | Remote (`ALLOW_REMOTE=true`) |
 |---|:---:|:---:|
 | `GET /` — app UI | ✅ | ✅ |
-| `GET /api/*` — weather, maps, geocoding | ✅ | ✅ |
-| `GET /settings` — returns masked booleans for keys | ✅ | ✅ (masked) |
-| `POST / PUT / PATCH /settings` — write API keys, coordinates | ✅ | ❌ always blocked |
-| `GET /api/debug` — debug panel data | ✅ | ❌ always blocked |
+| `GET /api/*` — radar, alerts, tiles, geocoding, health | ✅ | ✅ |
+| `GET /settings` — keys masked to booleans | ✅ | ✅ (masked) |
+| `POST / PUT / PATCH / DELETE /settings` | ✅ | ❌ always blocked |
+| `POST /api/brightness`, `/api/display-scale`, `/api/relaunch-kiosk` | ✅ | ❌ always blocked |
+| `POST /api/update`, `/api/update-check/force` | ✅ | ❌ always blocked |
+| `GET /api/debug*` | ✅ | ❌ always blocked |
 
-Settings writes and the debug endpoint are **always restricted to localhost**, regardless of the `ALLOW_REMOTE` flag. There is no configuration option to enable remote settings writes — use an SSH tunnel instead (see below).
+Localhost is decided from the **socket peer address**, never from `X-
+Forwarded-For` or `req.ip`. There is no option to enable remote writes; use
+an SSH tunnel:
+
+```bash
+ssh -L 8443:localhost:8443 user@<kiosk-ip>
+# then open https://localhost:8443
+```
 
 ---
 
 ## Remote access
 
-Remote access is **disabled by default**. The server only accepts connections from `localhost` (127.0.0.1) unless `ALLOW_REMOTE=true` is set in the systemd service environment.
+Disabled by default. With `ALLOW_REMOTE=true`:
 
-When remote access is enabled:
-- All API proxy calls remain server-side — no key exposure
-- Settings writes remain localhost-only
-- The debug endpoint remains localhost-only
-- Rate limiting is applied per client IP: 120 req/min on weather/geocoding endpoints, 600 req/min on map tile endpoints
-
-**To change settings from a remote machine**, use an SSH tunnel so the browser sees the request as localhost:
-
-```bash
-ssh -L 8443:localhost:8443 pi@<pi-ip>
-# then open https://localhost:8443 in your browser
-```
+- keyed upstreams stay proxied; no key exposure
+- writes, hardware controls, the updater and debug stay localhost-only
+- rate limiting applies per socket peer: 120 req/min on JSON routes, 600
+  req/min on map tiles, plus a 3-in-flight cap per remote peer on
+  `/api/nearby-alerts` (which fans out to several NWS calls)
+- `/api/health` redacts internal host:port strings for remote callers
+- `showTest=1` on the alert endpoints is honoured for localhost only
 
 ---
 
 ## Transport security
 
-The server runs over **HTTPS** using a self-signed certificate generated automatically on first launch (`server/cert.pem` / `server/key.pem`). All communication between browser and Pi is encrypted. Mixed-content issues are avoided because all external API calls are routed through the server.
+HTTPS with a self-signed root CA and a leaf certificate generated on first
+launch (`server/cert.pem`, `server/key.pem`, mode 0600). The leaf's SAN
+covers `localhost`, `127.0.0.1`, every LAN IPv4 and the hostname; an IP
+change re-signs the leaf under the same CA. `GET /api/cert.pem` serves the
+certificate for trusting on other devices. `SKIP_CERT_AUTOGEN=true` uses
+operator-supplied files. If no certificate can be produced the server falls
+back to HTTP on the loopback interface only.
 
-The certificate covers `localhost` and `127.0.0.1` by default. For remote access with a valid certificate, regenerate it with the Pi's IP as a Subject Alternative Name — `deploy/install.sh` does this automatically when remote access is enabled during installation.
-
----
-
-## Rate limiting
-
-All `/api/*` endpoints are rate-limited per client IP using `express-rate-limit`:
-
-| Endpoint group | Limit |
-|---|---|
-| Weather & geocoding | 120 requests / minute |
-| Map tiles | 600 requests / minute |
-
-This protects external API quotas from exhaustion by rogue or misbehaving clients.
+Security headers on every response: `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
+`Content-Security-Policy: frame-ancestors 'none'`; `X-Powered-By` removed.
 
 ---
 
-## Settings key whitelist
+## Settings file
 
-`POST`, `PUT`, and `PATCH` requests to `/settings` enforce a server-side key whitelist. Only known keys are accepted:
+`settings.json` is written atomically (temp file, fsync, rename), owned by
+the service user with mode 0600, and validated against a default-deny
+allow-list: `mapApiKey`, `reverseGeoApiKey`, `startingLat`, `startingLon`,
+`favorites` (shape-validated), `advanced`. Legacy keys from the removed
+forecast features are still accepted but unused. Unknown keys are stripped
+(PUT/POST) or rejected with HTTP 400 (PATCH).
 
-- `weatherApiKey`, `mapApiKey`, `reverseGeoApiKey`, `anthropicApiKey`, `airNowApiKey`, `openAqApiKey`
-- `startingLat`, `startingLon`
+---
 
-Unknown keys are stripped silently (PUT/POST) or rejected with HTTP 400 (PATCH).
+## Update flow
+
+`POST /api/update` refuses to run on a detached HEAD, a branch other than
+`master`, or a dirty working tree, runs `git pull --ff-only`, and rejects
+concurrent invocations. `git fetch` uses whatever credentials the checkout
+already has; no tokens are stored by the application.
 
 ---
 
 ## Security events
 
-Blocked requests (write attempts from remote clients) are logged server-side and visible in the **Debug panel** under the "Security events" section (localhost only, `DEBUG=true` required).
+Blocked write attempts from remote clients are logged and listed in the
+debug panel (localhost only, `DEBUG=true`).
 
 ---
 
 ## Threat model and boundaries
 
-This application is designed for a **trusted local network** (home LAN). It is not hardened for exposure to the public internet. In particular:
+Designed for a **trusted home LAN**. Not hardened for the public internet:
 
-- The self-signed certificate will trigger browser warnings on first visit
-- No authentication is implemented for remote read access
-- `settings.json` stores API keys in plain text on the Pi's filesystem
+- self-signed certificate (browser warning on first visit)
+- no authentication for remote read access
+- `settings.json` stores keys in plain text on the host
 
-If you choose to expose the server beyond your local network (e.g. via port forwarding), do so at your own risk and consider adding a reverse proxy with authentication (e.g. nginx + HTTP Basic Auth).
+For a kiosk in a semi-public place see
+[`docs/security-hardening.md`](docs/security-hardening.md) (USB lockdown,
+virtual-terminal masking, outbound firewall, SSH hardening). If you expose
+the server beyond your LAN, put an authenticating reverse proxy in front of
+it.
 
 ---
 
 ## Reporting a vulnerability
 
-This is a personal/hobbyist project. If you discover a security issue, please open a [GitHub issue](https://github.com/thicla01/pi-weather-station/issues) with the label `security`. For sensitive disclosures, contact the maintainer directly via GitHub.
+Open a [GitHub issue](https://github.com/aryeh95/pi-weather-station/issues)
+with the label `security`, or contact the maintainer directly via GitHub
+for sensitive disclosures.

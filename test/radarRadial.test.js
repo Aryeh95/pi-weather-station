@@ -26,6 +26,9 @@ const { packRadials, NUM_BUCKETS, BIN_KM } = require("../server/radarRadialCtrl"
 const parseLevel3 = require("nexrad-level-3-data");
 
 const FIXTURE = path.join(__dirname, "fixtures", "DIX_N0B_2026_08_12_00_37_12.bin");
+// Super-res base velocity from the same site — one volume scan, live
+// capture 2026-09-03. Keeps the product-154 shim testable offline.
+const VEL_FIXTURE = path.join(__dirname, "fixtures", "DIX_N0G_2026_09_03_02_55_41.bin");
 
 // ---------- start of verbatim copy from client/src/components/WeatherMap/radialRender.js ----------
 
@@ -52,15 +55,35 @@ const DBZ_STOPS = [
   [75, 253, 253, 253, 255],
 ];
 
-function colorForDbz(dbz) {
-  if (dbz < DBZ_STOPS[0][0]) return [0, 0, 0, 0];
-  const last = DBZ_STOPS[DBZ_STOPS.length - 1];
-  if (dbz >= last[0]) return [last[1], last[2], last[3], last[4]];
-  for (let i = 1; i < DBZ_STOPS.length; i += 1) {
-    if (dbz < DBZ_STOPS[i][0]) {
-      const lo = DBZ_STOPS[i - 1];
-      const hi = DBZ_STOPS[i];
-      const t = (dbz - lo[0]) / (hi[0] - lo[0]);
+// Base velocity ramp, m/s: [value, r, g, b, a]. Meteorological convention
+// — NEGATIVE is motion TOWARD the radar (greens, cooling to cyan at the
+// extreme), POSITIVE is AWAY (reds, warming to yellow). Near-zero is a
+// quiet grey so the eye lands on the gradients, which is where the
+// shear and rotation live. Range-folded gates (level 1) get their own
+// purple, RF being real information ("the radar could not resolve this")
+// rather than an absence of echo.
+const VEL_STOPS = [
+  [-64, 0, 240, 255, 255],
+  [-40, 0, 200, 60, 255],
+  [-20, 0, 130, 30, 255],
+  [-5, 100, 108, 100, 235],
+  [0, 118, 118, 118, 220],
+  [5, 110, 98, 98, 235],
+  [20, 150, 20, 20, 255],
+  [40, 230, 30, 30, 255],
+  [64, 255, 235, 90, 255],
+];
+const VEL_RF_COLOR = [170, 0, 190, 255];
+
+function colorForValue(stops, v) {
+  if (v < stops[0][0]) return [0, 0, 0, 0];
+  const last = stops[stops.length - 1];
+  if (v >= last[0]) return [last[1], last[2], last[3], last[4]];
+  for (let i = 1; i < stops.length; i += 1) {
+    if (v < stops[i][0]) {
+      const lo = stops[i - 1];
+      const hi = stops[i];
+      const t = (v - lo[0]) / (hi[0] - lo[0]);
       return [
         Math.round(lo[1] + (hi[1] - lo[1]) * t),
         Math.round(lo[2] + (hi[2] - lo[2]) * t),
@@ -72,14 +95,26 @@ function colorForDbz(dbz) {
   return [0, 0, 0, 0];
 }
 
+function colorForDbz(dbz) {
+  return colorForValue(DBZ_STOPS, dbz);
+}
+
+function colorForVelocity(ms) {
+  return colorForValue(VEL_STOPS, ms);
+}
+
 const NOISE_FILTER_MIN_DBZ = 15;
 
-function buildLevelLut(scaling, minDbz = -Infinity) {
+function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
   const lut = new Uint8ClampedArray(256 * 4);
+  const velocity = kind === "velocity";
+  if (velocity) {
+    lut.set(VEL_RF_COLOR, 4);
+  }
   for (let level = 2; level < 256; level += 1) {
-    const dbz = scaling.min + level * scaling.increment;
-    if (dbz < minDbz) continue;
-    const [r, g, b, a] = colorForDbz(dbz);
+    const v = scaling.min + level * scaling.increment;
+    if (!velocity && v < minDbz) continue;
+    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v);
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -272,4 +307,77 @@ test("radialBounds: square contains the display disc, centred on the site", () =
   const ymN = Math.asinh(Math.tan((north * Math.PI) / 180));
   const ymS = Math.asinh(Math.tan((south * Math.PI) / 180));
   assert.ok(Math.abs((ymN - ym0) - (ym0 - ymS)) < 1e-9);
+});
+
+test("shim: product 154 (N0G super-res velocity) is parseable too", () => {
+  const parsed = parseLevel3(fs.readFileSync(VEL_FIXTURE));
+  assert.equal(parsed.messageHeader.code, 154);
+  assert.equal(parsed.textHeader.type, "N0G");
+  const pd = parsed.productDescription;
+  assert.equal(pd.elevationAngle, 0.5);
+  // Velocity scaling: -63.5 m/s minimum in 0.5 m/s steps.
+  assert.equal(pd.plot.minimumDataValue, -63.5);
+  assert.equal(pd.plot.dataIncrement, 0.5);
+  assert.equal(pd.plot.dataLevels, 254);
+  const packet = parsed.radialPackets[0];
+  assert.equal(packet.radialsRaw.length, 720);
+  // 1200 bins x 0.25 km = 300 km — the documented super-res velocity range.
+  assert.equal(packet.numberBins * BIN_KM, 300);
+});
+
+test("velocity fixture decodes to physically plausible speeds", () => {
+  const parsed = parseLevel3(fs.readFileSync(VEL_FIXTURE));
+  const { minimumDataValue: min, dataIncrement: inc } = parsed.productDescription.plot;
+  let maxLevel = 0;
+  let rf = 0;
+  for (const radial of parsed.radialPackets[0].radialsRaw) {
+    for (const level of radial.bins) {
+      if (level === 1) rf += 1;
+      if (level > maxLevel) maxLevel = level;
+    }
+  }
+  const maxMs = min + maxLevel * inc;
+  assert.ok(maxMs <= 63.5 && maxMs > -63.5, `max ${maxMs} m/s`);
+  // Range folding is real information in a velocity product and the
+  // renderer paints it — the live scan carried thousands of RF gates.
+  assert.ok(rf > 0, "expected range-folded gates");
+});
+
+test("PRODUCTS table names both radial products with their kinds", () => {
+  const { PRODUCTS } = require("../server/radarRadialCtrl");
+  assert.equal(PRODUCTS.N0B.code, 153);
+  assert.equal(PRODUCTS.N0B.kind, "reflectivity");
+  assert.equal(PRODUCTS.N0G.code, 154);
+  assert.equal(PRODUCTS.N0G.kind, "velocity");
+  assert.equal(PRODUCTS.N0G.units, "m/s");
+});
+
+test("velocity LUT: level 1 is range-folded purple, zero is grey, sign picks the family", () => {
+  const scaling = { min: -63.5, increment: 0.5, levels: 254 };
+  const lut = buildLevelLut(scaling, NOISE_FILTER_MIN_DBZ, "velocity");
+  // Level 1 = RF, painted (not transparent) in the velocity ramp.
+  assert.deepEqual(Array.from(lut.subarray(4, 8)), VEL_RF_COLOR);
+  // Level 0 stays transparent.
+  assert.equal(lut[3], 0);
+  // 0 m/s = level 127 -> the neutral grey.
+  const zero = 127;
+  assert.equal(scaling.min + zero * scaling.increment, 0);
+  assert.deepEqual(Array.from(lut.subarray(zero * 4, zero * 4 + 3)), [118, 118, 118]);
+  // -40 m/s (toward): green dominates. +40 m/s (away): red dominates.
+  const toward = (-40 - scaling.min) / scaling.increment;
+  const away = (40 - scaling.min) / scaling.increment;
+  assert.ok(lut[toward * 4 + 1] > lut[toward * 4], "toward should be green-heavy");
+  assert.ok(lut[away * 4] > lut[away * 4 + 1], "away should be red-heavy");
+  // The clear-air noise filter is a reflectivity concept: a velocity LUT
+  // built with the filter on must still paint strong inbound motion.
+  assert.ok(lut[toward * 4 + 3] > 0, "velocity must not be filtered by minDbz");
+});
+
+test("reflectivity LUT is unchanged by the kind default", () => {
+  const scaling = { min: -32, increment: 0.5, levels: 254 };
+  const a = buildLevelLut(scaling, NOISE_FILTER_MIN_DBZ);
+  const b = buildLevelLut(scaling, NOISE_FILTER_MIN_DBZ, "reflectivity");
+  assert.deepEqual(Array.from(a), Array.from(b));
+  // Level 1 stays transparent for reflectivity.
+  assert.equal(a[7], 0);
 });

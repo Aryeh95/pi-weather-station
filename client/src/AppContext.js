@@ -8,6 +8,7 @@ import { useScreenSaver } from "~/hooks/useScreenSaver";
 import { useDisplayScale } from "~/hooks/useDisplayScale";
 import { useUiPreferences } from "~/hooks/useUiPreferences";
 import useIdleDetection from "~/hooks/useIdleDetection";
+import useDocumentVisible from "~/hooks/useDocumentVisible";
 import useFavoriteLocations from "~/hooks/useFavoriteLocations";
 import { placeLabelFromAddress } from "~/ui/placeLabel";
 import { eventProductType } from "~/ui/alertLogic";
@@ -390,6 +391,15 @@ export function AppContextProvider({ children }) {
     stage2Enabled: sleepStage2Enabled,
     stage2Delay: sleepStage2Delay,
   });
+  // One flag every poller gates on: nobody is looking at the screen.
+  // True while the screensaver is up (stage ≥ 1) or the document is
+  // hidden (minimised kiosk window, background tab on a remote client).
+  // Pollers keep their last data and refetch the moment this clears, so
+  // the cost of a pause is at most one fetch on wake — while an unwatched
+  // night of 60 s radar/lightning/track polls is exactly the idle traffic
+  // this exists to remove.
+  const documentVisible = useDocumentVisible();
+  const pollingPaused = sleepStage > 0 || !documentVisible;
   const [darkMode, setDarkMode] = useState(true);
   // When darkModeAuto is on, an interval flips darkMode at sunrise /
   // sunset based on AppContext's sunriseTime / sunsetTime. Manual taps
@@ -499,6 +509,22 @@ export function AppContextProvider({ children }) {
     setRadarNoiseFilter((prev) => {
       const next = !prev;
       try { window.localStorage.setItem("radarNoiseFilter", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
+  // Velocity mode for the single-site layer: raw N0G (super-res base
+  // velocity, product 154) instead of N0B reflectivity at high zoom. The
+  // low-zoom mosaic has no velocity counterpart and stays reflectivity.
+  // Per-device, OFF by default — reflectivity is the everyday picture;
+  // velocity is what you switch to when a cell is rotating.
+  const [radarVelocity, setRadarVelocity] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("radarVelocity") === "true";
+  });
+  const toggleRadarVelocity = useCallback(() => {
+    setRadarVelocity((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("radarVelocity", String(next)); } catch { /* localStorage may be unavailable */ }
       return next;
     });
   }, []);
@@ -1773,7 +1799,7 @@ export function AppContextProvider({ children }) {
   // redundant requests). Failures silently keep the previous list so
   // a transient network blip doesn't blank the banner.
   useEffect(() => {
-    if (!mapGeo) return undefined;
+    if (!mapGeo || pollingPaused) return undefined;
     const GOV_ALERTS_INTERVAL = 10 * 60 * 1000;
     // Cancellation flag (same pattern as the AQI / pollen effects below):
     // without it, a slow response keyed to the PREVIOUS position can
@@ -1795,7 +1821,7 @@ export function AppContextProvider({ children }) {
     fetchAlerts();
     const interval = setInterval(fetchAlerts, GOV_ALERTS_INTERVAL);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [mapGeo, showTestAlerts]);
+  }, [mapGeo, showTestAlerts, pollingPaused]);
 
   // Nearby-alerts radius survey (display-only overlay). Only polls while
   // the layer is toggled ON; clears immediately when it's off so the map
@@ -1808,6 +1834,8 @@ export function AppContextProvider({ children }) {
       setNearbyResidualCount(0);
       return undefined;
     }
+    // Paused (screensaver / hidden): keep the polygons, stop polling.
+    if (pollingPaused) return undefined;
     const NEARBY_ALERTS_INTERVAL = 5 * 60 * 1000;
     // Cancellation flag: a late response for the previous position (or
     // one that lands after the toggle just cleared the state above)
@@ -1842,7 +1870,7 @@ export function AppContextProvider({ children }) {
     fetchNearby();
     const interval = setInterval(fetchNearby, NEARBY_ALERTS_INTERVAL);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [showWeatherAlerts, mapGeo, alertRadiusKm, showTestAlerts]);
+  }, [showWeatherAlerts, mapGeo, alertRadiusKm, showTestAlerts, pollingPaused]);
 
   // Sunrise/sunset refresh. What used to be a three-poller weather block
   // (current / hourly / daily on staggered intervals against Tomorrow.io)
@@ -1850,12 +1878,12 @@ export function AppContextProvider({ children }) {
   // still needs, because auto dark-mode switches the kiosk palette on it.
   // No API key gate any more: sunrise-sunset.org is keyless.
   useEffect(() => {
-    if (!mapGeo) return undefined;
+    if (!mapGeo || pollingPaused) return undefined;
     const SOLAR_INTERVAL = 60 * 60 * 1000;
     updateSunriseSunset(mapGeo);
     const id = setInterval(() => updateSunriseSunset(mapGeo), SOLAR_INTERVAL);
     return () => clearInterval(id);
-  }, [mapGeo, updateSunriseSunset]);
+  }, [mapGeo, updateSunriseSunset, pollingPaused]);
 
   // The air-quality and pollen pollers lived here; both went with their
   // server controllers in the radar rework (pollen was Europe-only and
@@ -1936,6 +1964,7 @@ export function AppContextProvider({ children }) {
     toggleStormTracks,
     toggleLightning,
     toggleRadarNoiseFilter,
+    toggleRadarVelocity,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2002,6 +2031,7 @@ export function AppContextProvider({ children }) {
     toggleStormTracks,
     toggleLightning,
     toggleRadarNoiseFilter,
+    toggleRadarVelocity,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2059,6 +2089,7 @@ export function AppContextProvider({ children }) {
     sleepStage2Delay,
     sleepNightMode,
     sleepStage,
+    pollingPaused,
     updateAvailable: updateAvailable && latestSha !== skippedSha,
     latestVersion,
     latestSha,
@@ -2100,6 +2131,7 @@ export function AppContextProvider({ children }) {
     sleepStage2Delay,
     sleepNightMode,
     sleepStage,
+    pollingPaused,
     updateAvailable,
     latestVersion,
     latestSha,
@@ -2241,6 +2273,7 @@ export function AppContextProvider({ children }) {
     showStormTracks,
     showLightning,
     radarNoiseFilter,
+    radarVelocity,
     showAlertRing,
     alertRadiusKm,
   }), [
@@ -2254,6 +2287,7 @@ export function AppContextProvider({ children }) {
     showStormTracks,
     showLightning,
     radarNoiseFilter,
+    radarVelocity,
     showAlertRing,
     alertRadiusKm,
   ]);

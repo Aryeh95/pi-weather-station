@@ -388,7 +388,15 @@
     "legendFlood": "Inondation",
     "legendLightning": "Foudre",
     "lightningCount_one": "{{count}} éclair · 5 min",
-    "lightningCount_other": "{{count}} éclairs · 5 min"
+    "lightningCount_other": "{{count}} éclairs · 5 min",
+    "legendVelocity": "Vitesse (m/s)",
+    "legendToward": "vers le radar",
+    "legendAway": "s'éloigne",
+    "stormArrival": "≈ {{minutes}} min",
+    "ageMosaic": "Mosaïque",
+    "ageTracks": "Cellules",
+    "ageLightning": "GLM",
+    "ageVelocity": "VIT"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",
@@ -437,7 +445,9 @@
     "showLightning": "Afficher la foudre",
     "hideLightning": "Masquer la foudre",
     "noiseFilterEnable": "Filtrer le bruit en air clair",
-    "noiseFilterDisable": "Afficher les échos en air clair"
+    "noiseFilterDisable": "Afficher les échos en air clair",
+    "velocityOn": "Afficher la vitesse radiale",
+    "velocityOff": "Afficher la réflectivité"
   },
   "mobile": {
     "settingsHint": "Pour les réglages avancés, ouvre l'app depuis le Pi en local."
@@ -478,7 +488,9 @@
     "lightningOn": "Foudre activée",
     "lightningOff": "Foudre désactivée",
     "noiseFilterOn": "Filtre de bruit activé",
-    "noiseFilterOff": "Filtre de bruit désactivé"
+    "noiseFilterOff": "Filtre de bruit désactivé",
+    "velocityOn": "Mode vitesse activé",
+    "velocityOff": "Mode vitesse désactivé"
   },
   "health": {
     "title": "État des services",

@@ -6,7 +6,7 @@ import { AlertsContext, UiPrefsContext } from "~/AppContext";
 import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
-import { DBZ_STOPS } from "./radialRender";
+import { DBZ_STOPS, VEL_STOPS } from "./radialRender";
 
 // Warning-family rows, RadarScope convention (the map overlay is
 // warnings-only and coloured by event type): tornado red, severe
@@ -32,6 +32,20 @@ const PrecipScale = () => (
 );
 
 /**
+ * Velocity colour bar matching VEL_STOPS in radialRender.js — toward
+ * the radar on the left (greens), away on the right (reds).
+ *
+ * @returns {JSX.Element} Scale bar
+ */
+const VelocityScale = () => (
+  <span className={styles.precipScale} aria-hidden="true">
+    {VEL_STOPS.map(([v, r, g, b]) => (
+      <span key={v} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />
+    ))}
+  </span>
+);
+
+/**
  * Radar map legend (v3.1 Phase 3, Claude Design v2.1). Three sections:
  * (the analysis-radii section was removed with the rings — unit- and
  * extended-radius-aware), the precipitation scale (the real 6-colour
@@ -51,9 +65,11 @@ const PrecipScale = () => (
  * @param {object} props
  * @param {boolean} props.dark Dark-palette variant
  * @param {boolean} props.chipMode Render the compact chip instead of the card (short screens with the timeline open)
+ * @param {number|null} [props.lightningCount] GLM flash count for the lightning section (null hides it)
+ * @param {boolean} [props.velocity] Show the base-velocity colour bar (velocity mode on, site layer in view)
  * @returns {JSX.Element} Legend overlay
  */
-const RadarLegend = ({ dark, chipMode, lightningCount = null }) => {
+const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false }) => {
   const { t } = useTranslation();
   const {
     showWeatherAlerts,
@@ -103,6 +119,17 @@ const RadarLegend = ({ dark, chipMode, lightningCount = null }) => {
           <span>75 dBZ</span>
         </div>
       </div>
+      {velocity ? (
+        <div className={styles.legendSection}>
+          <div className={styles.legendTitle}>{t("radar.legendVelocity")}</div>
+          <VelocityScale />
+          <div className={styles.scaleLabels}>
+            <span>{t("radar.legendToward")}</span>
+            <span>0</span>
+            <span>{t("radar.legendAway")}</span>
+          </div>
+        </div>
+      ) : null}
       {lightningCount != null ? (
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.legendLightning")}</div>
@@ -212,6 +239,7 @@ RadarLegend.propTypes = {
   dark: PropTypes.bool,
   chipMode: PropTypes.bool,
   lightningCount: PropTypes.number,
+  velocity: PropTypes.bool,
 };
 
 export default RadarLegend;

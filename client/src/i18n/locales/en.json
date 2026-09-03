@@ -388,7 +388,15 @@
     "legendFlood": "Flood",
     "legendLightning": "Lightning",
     "lightningCount_one": "{{count}} flash · 5 min",
-    "lightningCount_other": "{{count}} flashes · 5 min"
+    "lightningCount_other": "{{count}} flashes · 5 min",
+    "legendVelocity": "Velocity (m/s)",
+    "legendToward": "toward",
+    "legendAway": "away",
+    "stormArrival": "≈ {{minutes}} min",
+    "ageMosaic": "Mosaic",
+    "ageTracks": "Tracks",
+    "ageLightning": "GLM",
+    "ageVelocity": "VEL"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",
@@ -437,7 +445,9 @@
     "showLightning": "Show lightning",
     "hideLightning": "Hide lightning",
     "noiseFilterEnable": "Filter clear-air noise",
-    "noiseFilterDisable": "Show clear-air returns"
+    "noiseFilterDisable": "Show clear-air returns",
+    "velocityOn": "Show base velocity",
+    "velocityOff": "Show reflectivity"
   },
   "mobile": {
     "settingsHint": "Open the app on the Pi locally for advanced settings."
@@ -478,7 +488,9 @@
     "lightningOn": "Lightning on",
     "lightningOff": "Lightning off",
     "noiseFilterOn": "Noise filter on",
-    "noiseFilterOff": "Noise filter off"
+    "noiseFilterOff": "Noise filter off",
+    "velocityOn": "Velocity mode on",
+    "velocityOff": "Velocity mode off"
   },
   "health": {
     "title": "Service health",

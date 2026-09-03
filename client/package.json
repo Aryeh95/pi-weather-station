@@ -1,7 +1,7 @@
 {
-  "name": "pi-weather-station-client",
+  "name": "sweep-radar-client",
   "version": "2.2.0",
-  "description": "Client for pi-weather-station",
+  "description": "Sweep radar kiosk — client bundle",
   "main": "webpack.config.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

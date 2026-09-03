@@ -1,93 +1,125 @@
-# Contributing to Pi Weather Station
+# Contributing to Sweep
 
-Thank you for your interest in contributing! This is a personal hobbyist project, but pull requests and issue reports are welcome.
+This is a personal hobbyist project, but pull requests and issue reports are
+welcome.
 
 ---
 
 ## Getting started
 
 ```bash
-git clone https://github.com/thicla01/pi-weather-station.git
+git clone https://github.com/aryeh95/pi-weather-station.git
 cd pi-weather-station
 npm install
 cd client && npm install && cd ..
 cp settings.example.json settings.json
-# edit settings.json and add your API keys
+# edit settings.json: add your Mapbox key (LocationIQ optional)
 npm start
 ```
 
-The app will open at `https://localhost:8443`. Accept the self-signed certificate warning in your browser.
+The app is at `https://localhost:8443`. Accept the self-signed certificate
+warning once.
 
-To rebuild the client after making frontend changes:
+To rebuild the client after frontend changes:
 
 ```bash
 cd client && npm run prod
 ```
 
-The compiled `dist/` files are committed to git so Raspberry Pis can update with a simple `git pull` without rebuilding.
+The compiled `client/dist/` is committed so kiosks update with a plain
+`git pull` and never need a build toolchain. Rebuild and stage it in the
+same commit as any `client/src` change; CI fails when the committed file
+set does not match a fresh build.
 
 ---
 
 ## Project structure
 
-See [`architecture.md`](architecture.md) for the system diagram and [`CLAUDE.md`](CLAUDE.md) for a detailed breakdown of every file.
+- [`architecture.md`](architecture.md) — system view, server modules, radar
+  data flow, deployment layout, decision records
+- [`docs/api.md`](docs/api.md) — every HTTP endpoint
+- [`CLAUDE.md`](CLAUDE.md) — engineering notes from the radar rework:
+  measurements, upstream quirks, traps (read this before touching the radar
+  pipeline)
+
+---
+
+## Tests
+
+```bash
+npm test                      # server suite, node --test
+node --test test/foo.test.js  # one file
+```
+
+Server modules are tested directly. Pure client modules are covered through
+**verbatim copies** inside test files, delimited by
+`// ---------- start of verbatim copy from <path> ----------` markers;
+`test/verbatimSync.test.js` compares each copy to its source and fails on
+drift. When you change a copied client function, update the copy and, if
+you add or remove declarations, the `EXPECTED_CHECK_COUNT` in that file.
+
+Binary fixtures under `test/fixtures/` (a live N0B scan, an N0G scan, an
+NMD product, a GLM file) keep the decode paths testable offline.
+
+On Windows, `npm test`'s glob does not expand under PowerShell; pass the
+files explicitly. Two `settingsCtrl` tests need POSIX `0600` and fail on
+NTFS.
 
 ---
 
 ## Commit conventions
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/):
-
-| Prefix | Use for |
-|---|---|
-| `feat:` | New feature |
-| `fix:` | Bug fix |
-| `docs:` | Documentation only |
-| `chore:` | Build, dependencies, tooling |
-| `refactor:` | Code change with no behaviour change |
-
-Please include a short body explaining the *why*, not just the *what*. See the git log for examples.
+[Conventional Commits](https://www.conventionalcommits.org/) prefixes are
+welcome (`feat:`, `fix:`, `perf:`, `style:`, `docs:`, `chore:`,
+`refactor:`) — the in-app updater uses them to badge the "What's new" list —
+but plain-sentence subjects are fine and still count as updates. Explain
+the *why* in the body.
 
 ---
 
 ## Code style
 
-- **CSS**: CSS Modules with kebab-case class names in `.css` files, camelCase in JSX
-- **JSDoc**: all React components must have a JSDoc block with `@param` and `@returns`
-- **PropTypes**: all component props must be declared with `PropTypes`
-- **ESLint**: run `cd client && npx eslint src/` before submitting — the build will fail on errors
+- **CSS**: CSS Modules, kebab-case class names in `.css`, camelCase in JSX
+- **JSDoc**: every React component and exported helper has a JSDoc block
+  with `@param` and `@returns`
+- **PropTypes**: declared on every component that takes props (React 19 no
+  longer validates them at runtime; they are documentation and a lint
+  contract). No `defaultProps` — use destructuring defaults; a test guards
+  this.
+- **ESLint** runs inside the client build: `cd client && npm run prod` must
+  finish with 0 errors. Warnings are tolerated but do not add new ones.
 
-Key ESLint rules to watch:
-- `prefer-destructuring` — use `const { x } = obj` instead of `const x = obj.x`
-- `react-hooks/exhaustive-deps` — stable `setState` functions can be excluded with `// eslint-disable-line`
-- `no-empty-function` — use a named no-op (`const noop = () => {}`) instead of an inline empty arrow
+Key rules: `prefer-destructuring`, `react-hooks/exhaustive-deps` (justify
+every disable inline), `no-empty-function`.
 
 ---
 
 ## Server conventions
 
-- All outbound `axios.get()` calls must include `{ timeout: 10_000 }`
-- New endpoints must be added to [`docs/api.md`](docs/api.md)
-- Security-relevant changes must be reflected in [`SECURITY.md`](SECURITY.md)
+- Every outbound `axios` call carries a `timeout`
+- New endpoints are documented in [`docs/api.md`](docs/api.md) and recorded
+  in the service journal (`recordServiceCall`) so the health dot sees them
+- Security-relevant changes are reflected in [`SECURITY.md`](SECURITY.md)
+- Public S3 bucket access goes through `server/nexradBucket.js`
 
 ---
 
 ## Pull requests
 
-1. Fork the repository and create a branch from `master`
-2. Make your changes and rebuild the client if needed (`cd client && npm run prod`)
-3. Run the ESLint check
-4. Open a pull request against `master` with a clear description of what changed and why
-
-There are no automated tests at this time — manual testing on the target hardware (Raspberry Pi + 7" touchscreen) is appreciated when possible.
+1. Branch from `master`.
+2. Make the change; rebuild the client if `client/src` changed.
+3. `npm test` and `cd client && npm run prod` both clean.
+4. Open a pull request against `master` describing what changed and why.
 
 ---
 
 ## Reporting issues
 
 Please include:
-- Raspberry Pi OS version (`cat /etc/os-release`)
-- Node.js version (`node --version`)
+
+- OS and version (`cat /etc/os-release`), Node.js version
 - Browser / Chromium version
-- Relevant lines from the server log (`tail -50 ~/.local/state/pi-weather-station/server.log`; `/tmp/weather-server.log` on pre-2026-06 installs)
+- Relevant lines from `~/.local/state/pi-weather-station/server.log`
+- The output of `https://localhost:8443/api/health` and, for update
+  problems, `/api/update-check`
 - Steps to reproduce

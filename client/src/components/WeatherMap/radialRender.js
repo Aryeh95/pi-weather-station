@@ -1,9 +1,11 @@
-// Client-side renderer for raw NEXRAD super-res base reflectivity.
+// Client-side renderer for raw NEXRAD super-res radial products — base
+// reflectivity (N0B) and base velocity (N0G).
 //
 // This is the RadarScope-parity path: instead of showing IEM's
-// pre-rendered (and measurably smoothed) tiles, the raw N0B radial data
-// from /api/radar/radial is drawn here, gate by gate, into a canvas that
-// becomes a Leaflet ImageOverlay.
+// pre-rendered (and measurably smoothed) tiles, the raw radial data from
+// /api/radar/radial is drawn here, gate by gate, into a canvas that
+// becomes a Leaflet ImageOverlay. The payload's `kind` picks the colour
+// ramp; everything else about the geometry is shared.
 //
 // Approach: INVERSE mapping. The canvas covers a square in Web Mercator
 // space centred on the radar; every pixel is mapped mercator → lat/lon →
@@ -62,21 +64,45 @@ export const DBZ_STOPS = [
   [75, 253, 253, 253, 255],
 ];
 
+// Base velocity ramp, m/s: [value, r, g, b, a]. Meteorological convention
+// — NEGATIVE is motion TOWARD the radar (greens, cooling to cyan at the
+// extreme), POSITIVE is AWAY (reds, warming to yellow). Near-zero is a
+// quiet grey so the eye lands on the gradients, which is where the
+// shear and rotation live. Range-folded gates (level 1) get their own
+// purple, RF being real information ("the radar could not resolve this")
+// rather than an absence of echo.
+export const VEL_STOPS = [
+  [-64, 0, 240, 255, 255],
+  [-40, 0, 200, 60, 255],
+  [-20, 0, 130, 30, 255],
+  [-5, 100, 108, 100, 235],
+  [0, 118, 118, 118, 220],
+  [5, 110, 98, 98, 235],
+  [20, 150, 20, 20, 255],
+  [40, 230, 30, 30, 255],
+  [64, 255, 235, 90, 255],
+];
+export const VEL_RF_COLOR = [170, 0, 190, 255];
+
 /**
- * RGBA for a reflectivity value, interpolated along DBZ_STOPS.
+ * RGBA for a value interpolated along a stop table.
  *
- * @param {Number} dbz reflectivity
+ * Below the first stop is transparent; at or past the last stop the last
+ * colour holds.
+ *
+ * @param {Array<Array<Number>>} stops [value, r, g, b, a] rows, ascending
+ * @param {Number} v the value to colour
  * @returns {[Number, Number, Number, Number]} [r, g, b, a] 0-255
  */
-export function colorForDbz(dbz) {
-  if (dbz < DBZ_STOPS[0][0]) return [0, 0, 0, 0];
-  const last = DBZ_STOPS[DBZ_STOPS.length - 1];
-  if (dbz >= last[0]) return [last[1], last[2], last[3], last[4]];
-  for (let i = 1; i < DBZ_STOPS.length; i += 1) {
-    if (dbz < DBZ_STOPS[i][0]) {
-      const lo = DBZ_STOPS[i - 1];
-      const hi = DBZ_STOPS[i];
-      const t = (dbz - lo[0]) / (hi[0] - lo[0]);
+export function colorForValue(stops, v) {
+  if (v < stops[0][0]) return [0, 0, 0, 0];
+  const last = stops[stops.length - 1];
+  if (v >= last[0]) return [last[1], last[2], last[3], last[4]];
+  for (let i = 1; i < stops.length; i += 1) {
+    if (v < stops[i][0]) {
+      const lo = stops[i - 1];
+      const hi = stops[i];
+      const t = (v - lo[0]) / (hi[0] - lo[0]);
       return [
         Math.round(lo[1] + (hi[1] - lo[1]) * t),
         Math.round(lo[2] + (hi[2] - lo[2]) * t),
@@ -89,23 +115,52 @@ export function colorForDbz(dbz) {
 }
 
 /**
- * Precompute the 256-entry level → RGBA lookup for a product's scaling.
- * Levels 0 and 1 are below-threshold/missing by the ICD and stay
- * transparent; level L ≥ 2 decodes as `min + L × increment` dBZ.
+ * RGBA for a reflectivity value, interpolated along DBZ_STOPS.
  *
- * Levels decoding below `minDbz` also stay transparent — that is the
- * whole clear-air noise filter, applied once here rather than per pixel.
+ * @param {Number} dbz reflectivity
+ * @returns {[Number, Number, Number, Number]} [r, g, b, a] 0-255
+ */
+export function colorForDbz(dbz) {
+  return colorForValue(DBZ_STOPS, dbz);
+}
+
+/**
+ * RGBA for a radial velocity, interpolated along VEL_STOPS.
+ *
+ * @param {Number} ms radial velocity in m/s (negative = toward the radar)
+ * @returns {[Number, Number, Number, Number]} [r, g, b, a] 0-255
+ */
+export function colorForVelocity(ms) {
+  return colorForValue(VEL_STOPS, ms);
+}
+
+/**
+ * Precompute the 256-entry level → RGBA lookup for a product's scaling.
+ * Levels 0 and 1 are reserved by the ICD (below threshold, and missing
+ * or — for velocity — range folded); level L ≥ 2 decodes as `min + L ×
+ * increment` in the product's units.
+ *
+ * Reflectivity levels decoding below `minDbz` also stay transparent —
+ * that is the whole clear-air noise filter, applied once here rather
+ * than per pixel. The filter does not apply to velocity: there is no
+ * "weak echo" axis on a velocity field, and the RF level (1) is painted
+ * in VEL_RF_COLOR because a folded gate is information, not absence.
  *
  * @param {{min: Number, increment: Number}} scaling from /api/radar/radial
- * @param {Number} [minDbz] hide everything below this reflectivity
+ * @param {Number} [minDbz] hide reflectivity below this value
+ * @param {String} [kind] "reflectivity" (default) or "velocity"
  * @returns {Uint8ClampedArray} 256 × 4 RGBA entries
  */
-export function buildLevelLut(scaling, minDbz = -Infinity) {
+export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
   const lut = new Uint8ClampedArray(256 * 4);
+  const velocity = kind === "velocity";
+  if (velocity) {
+    lut.set(VEL_RF_COLOR, 4);
+  }
   for (let level = 2; level < 256; level += 1) {
-    const dbz = scaling.min + level * scaling.increment;
-    if (dbz < minDbz) continue;
-    const [r, g, b, a] = colorForDbz(dbz);
+    const v = scaling.min + level * scaling.increment;
+    if (!velocity && v < minDbz) continue;
+    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v);
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -145,15 +200,19 @@ export function radialBounds(lat, lon) {
  * once per row, azimuth/range per pixel). A few hundred ms on the
  * kiosk's x86 — irrelevant at this cadence.
  *
- * @param {Object} data /api/radar/radial payload (bins already decoded)
+ * @param {Object} data /api/radar/radial payload (bins already decoded); `kind` picks the ramp
  * @param {Uint8Array} bins raw levels, numBuckets × numBins
- * @param {Number} [minDbz] noise-filter floor passed through to the LUT
+ * @param {Number} [minDbz] noise-filter floor passed through to the LUT (reflectivity only)
  * @returns {{canvas: HTMLCanvasElement, bounds: Array}} drawable + corners
  */
 export function renderRadialImage(data, bins, minDbz) {
   const size = RADIAL_CANVAS_PX;
-  const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling } = data;
-  const lut = buildLevelLut(scaling, minDbz);
+  const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling, kind } = data;
+  const velocity = kind === "velocity";
+  const lut = buildLevelLut(scaling, minDbz, velocity ? "velocity" : "reflectivity");
+  // Reflectivity skips the two reserved levels outright; velocity keeps
+  // level 1 (range folded) because the LUT paints it.
+  const minLevel = velocity ? 1 : 2;
   const lut32 = new Uint32Array(lut.buffer);
   // (xm0 is only needed for the bounds themselves — the column loop is
   // symmetric around the site, so it works in offsets.)
@@ -202,7 +261,7 @@ export function renderRadialImage(data, bins, minDbz) {
       if (az < 0) az += 360;
       const bucket = Math.min(numBuckets - 1, Math.floor(az / bucketDeg));
       const level = bins[bucket * numBins + bin];
-      if (level < 2) continue;
+      if (level < minLevel) continue;
       px32[rowBase + x] = lut32[level];
     }
   }

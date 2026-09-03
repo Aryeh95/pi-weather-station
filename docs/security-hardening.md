@@ -32,9 +32,8 @@ In scope:
   keyboard and types attack commands)
 - An attacker on the IoT VLAN tries to SSH in with guessed passwords
 - Malware already on the Pi trying to exfiltrate data to arbitrary servers
-- A remote user with `ALLOW_REMOTE=true` access tries to inflate the
-  Anthropic API bill by toggling AI radar settings (see "Cost-related
-  controls" below)
+- A remote user with `ALLOW_REMOTE=true` access tries to change the
+  kiosk's settings (see "Remote clients and settings" below)
 
 Out of scope (by design — see the "If you need more" section):
 
@@ -179,41 +178,22 @@ Plug an unknown USB stick or keyboard into the Pi — it should be visible in
 `sudo usbguard list-devices` with status `block`, and have no effect on the
 system.
 
-## Cost-related controls
+## Remote clients and settings
 
-Beyond classical network/physical hardening, a Pi Weather Station instance
-can incur real money through its paid integrations. The defenses below are
-in place by default and should not be relaxed without thinking through
-the billing implications.
-
-### Threat: a remote user inflates the API bill
-
-The AI weather summary consumes Anthropic API tokens. Each refresh of the
-summary makes one Claude call (cached 15 min server-side). The size and
-behavior of that call is controlled by `advanced.ai.*` settings:
-
-| Setting | Effect on Claude billing |
-|---|---|
-| `radarAnalysisEnabled` | Adds a third paragraph fed by RainViewer samples — larger prompt, larger response |
-| `extendedRadius` | Adds the outer-ring samples (161 → 481 points fed to the prompt) — meaningfully larger context |
-| `showSamplingPoints` | Purely client-side rendering; no billing impact |
-
-The per-toggle impact is small (a few cents per refresh at most), but the
-aggregate risk on a long-running deployment is real, and the principle
-matters: **only the device owner should be able to dial up settings that
-bill against their API key**.
-
-### How it's enforced
+With `ALLOW_REMOTE=true` a browser anywhere on the LAN can read the radar
+view. What it cannot do:
 
 - `PATCH /setting` (and POST/PUT/DELETE) is unconditionally `localhostOnly`.
-  A remote client cannot change `advanced.ai.*` even if `ALLOW_REMOTE=true`.
+  A remote client cannot change coordinates, favorites, map styles or
+  sleep-mode settings even with `ALLOW_REMOTE=true`.
 - `GET /settings` is allowed remote, but the response masks API key fields
-  to booleans so a remote viewer can confirm the key is configured without
+  to booleans so a remote viewer can confirm a key is configured without
   reading it.
-- The Settings UI shows the Advanced section to remote clients in read-only
-  mode (toggles dimmed, click-blocked) with a notice directing the user to
-  open an SSH tunnel for actual changes. The UI lock is cosmetic — the
-  server-side `localhostOnly` is the real enforcement.
+- Brightness, display scale, the kiosk relaunch and the updater are
+  localhost-only for the same reason: they act on the physical screen.
+- The Settings UI shows remote clients a read-only view with a notice
+  directing them to an SSH tunnel for changes. The UI lock is cosmetic —
+  the server-side `localhostOnly` is the real enforcement.
 
 #### What `GET /settings` still exposes to a remote client
 
@@ -229,17 +209,6 @@ If that is not acceptable for a given deployment, add `favorites` to
 from remote responses entirely, at the cost of the Places list rendering
 empty for remote viewers. Editing is unaffected either way — every write path
 is `localhostOnly`.
-
-### Recommendations beyond the defaults
-
-- Set per-period quotas in the Anthropic dashboard so a misbehaving deploy
-  cannot run away with billing. The debug panel already tracks per-endpoint
-  request counters but doesn't enforce caps.
-- For multi-Pi deployments, prefer one API key per device rather than one
-  shared key — limits blast radius if a single device is compromised.
-- Watch for unexpected spikes in `services` activity in the debug panel,
-  particularly Anthropic call rates. A sudden 24x jump is more likely
-  configuration drift than an attack but worth investigating either way.
 
 ## TLS / SSL — using your own certificate
 

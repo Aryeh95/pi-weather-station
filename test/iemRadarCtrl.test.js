@@ -74,3 +74,16 @@ test("normalizeSiteId rejects implausible ids", () => {
     assert.equal(normalizeSiteId(bad), null, `expected null for ${JSON.stringify(bad)}`);
   }
 });
+
+test("parseMosaicMeta: relays IEM's composite valid time, null without one", () => {
+  const { parseMosaicMeta } = require("../server/iemRadarCtrl");
+  const meta = parseMosaicMeta({
+    meta: { product: "N0Q", site: "USCOMP", valid: "2026-09-03T02:55:00Z", radar_quorum: "142/147" },
+  });
+  assert.equal(meta.valid, "2026-09-03T02:55:00Z");
+  assert.equal(meta.epoch, Date.UTC(2026, 8, 3, 2, 55));
+  assert.equal(meta.radarQuorum, "142/147");
+  assert.equal(parseMosaicMeta({}), null);
+  assert.equal(parseMosaicMeta(null), null);
+  assert.equal(parseMosaicMeta({ meta: { valid: "garbage" } }), null);
+});

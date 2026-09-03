@@ -45,7 +45,7 @@ const NWS_POINTS_BASE = "https://api.weather.gov/points";
 
 // NWS asks for an identifying User-Agent on api.weather.gov. The existing
 // govAlertSources/nws.js sends the same courtesy header.
-const NWS_USER_AGENT = "pi-weather-station (radar site lookup)";
+const NWS_USER_AGENT = "sweep-radar (radar site lookup; github.com/aryeh95/pi-weather-station)";
 
 // Default product. N0B is super-res base reflectivity (0.5° tilt,
 // 0.25 km gates) — native radial data, the same product RadarScope
@@ -72,6 +72,20 @@ const MAX_FRAME_COUNT = 30;
 const FRAMES_TTL_MS = 45 * 1000;
 const FRAMES_CACHE_MAX = 32;
 const framesCache = new BoundedMap(FRAMES_CACHE_MAX);
+
+// Composite mosaic metadata. IEM publishes a small JSON beside the N0Q
+// composite it regenerates every 5 minutes; its `valid` field is the
+// nominal product time of the CURRENT mosaic frame — the one the bare
+// `nexrad-n0q-900913` layer serves. Verified live 2026-09-03:
+//   {"meta": {"product": "N0Q", "site": "USCOMP", "valid": "2026-09-03T02:55:00Z",
+//             "processing_time_secs": 100, "radar_quorum": "142/147"}}
+// Without it the client could only ASSUME the mosaic sits on the 5-min
+// boundary it was polled after; with it the mosaic's frame age is a
+// real number like the single-site layer's. Cached one minute — the
+// file changes every five.
+const MOSAIC_META_URL = "https://mesonet.agron.iastate.edu/data/gis/images/4326/USCOMP/n0q_0.json";
+const MOSAIC_META_TTL_MS = 60 * 1000;
+let mosaicMetaCache = null;
 
 // Site resolution is far more stable — the radar assigned to a point
 // only changes when the user moves the map somewhere else entirely.
@@ -270,6 +284,45 @@ async function getRadarSite(req, res) {
 }
 
 /**
+ * Normalise IEM's mosaic metadata JSON into the shape the client uses.
+ *
+ * @param {Object} data parsed n0q_0.json body
+ * @returns {{valid: String, epoch: Number, radarQuorum: String|null}|null} null when the body carries no usable time
+ */
+function parseMosaicMeta(data) {
+  const meta = data && data.meta;
+  const valid = meta && typeof meta.valid === "string" ? meta.valid : null;
+  const epoch = valid ? Date.parse(valid) : NaN;
+  if (!Number.isFinite(epoch)) return null;
+  return {
+    valid,
+    epoch,
+    radarQuorum: typeof meta.radar_quorum === "string" ? meta.radar_quorum : null,
+  };
+}
+
+/**
+ * Current mosaic frame time, cached. Never throws: the mosaic layer
+ * works without it (the client falls back to schedule-derived times),
+ * so a metadata hiccup must not fail the whole frame list.
+ *
+ * @returns {Promise<Object|null>} parsed metadata, or null
+ */
+async function fetchMosaicMeta() {
+  if (mosaicMetaCache && mosaicMetaCache.expires > Date.now()) return mosaicMetaCache.value;
+  let value = null;
+  try {
+    const res = await axios.get(MOSAIC_META_URL, { timeout: API_TIMEOUT_MS });
+    increment("iem", "mosaic-meta");
+    value = parseMosaicMeta(res.data);
+  } catch {
+    value = null;
+  }
+  mosaicMetaCache = { value, expires: Date.now() + MOSAIC_META_TTL_MS };
+  return value;
+}
+
+/**
  * Fetch and normalise the recent scan list for one site+product.
  *
  * Returned frames are oldest-first (IEM's own order), each carrying the
@@ -320,7 +373,7 @@ async function fetchFrames(site, product, count) {
 }
 
 /**
- * GET /api/radar/frames?site=DIX&product=N0B&count=12
+ * GET /api/radar/frames?site=DIX&product=N0B&count=30
  *
  * The frame-list poller. Answers with the concrete scan timestamps that
  * build `ridge::<site>-<product>-<stamp>` tile URLs, plus each frame's
@@ -356,13 +409,16 @@ async function getRadarFrames(req, res) {
     try {
       ({ site } = await resolveRadarSite(lat, lon));
     } catch {
-      return res.status(200).json({ available: false, frames: [], reason: "no-radar-coverage" }).end();
+      const mosaic = await fetchMosaicMeta();
+      return res.status(200).json({ available: false, frames: [], reason: "no-radar-coverage", mosaic }).end();
     }
   }
 
   try {
-    const payload = await fetchFrames(site, product, count);
-    return res.status(200).json({ available: true, ...payload }).end();
+    // The mosaic time rides along with every frame list so the client's
+    // single 60 s poll refreshes both layers' ages.
+    const [payload, mosaic] = await Promise.all([fetchFrames(site, product, count), fetchMosaicMeta()]);
+    return res.status(200).json({ available: true, ...payload, mosaic }).end();
   } catch (err) {
     const status = err?.response?.status || 500;
     recordServiceCall(SERVICE_NAME, status, `frame list failed for ${site}`);
@@ -381,4 +437,6 @@ module.exports = {
   toEpochMs,
   normalizeSiteId,
   resolveRadarSite,
+  parseMosaicMeta,
+  fetchMosaicMeta,
 };

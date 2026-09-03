@@ -61,7 +61,7 @@ const COPY_END_RE = /^\/\/ -{4,} end of verbatim copy -{4,}\s*$/m;
 // not be discovered as standalone declarations.
 const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|const\s+(\w+)\s*=)/gm;
 
-// Inventory size after the radar rework (9 + 6 + 4 + 4 + 1 + 6). Guards against the
+// Inventory size after the radar rework (9 + 6 + 4 + 4 + 1 + 11 + 5). Guards against the
 // discovery silently finding nothing (which would fake-pass the suite).
 // If a copied declaration is legitimately removed from a test file,
 // lower this consciously.
@@ -71,7 +71,7 @@ const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|
 // geometry, the temperature/speed conversions, and the astronomy helpers all
 // belonged to the forecast UI), and trimmed alertLogic to the government-alert
 // helpers.
-const EXPECTED_CHECK_COUNT = 31;
+const EXPECTED_CHECK_COUNT = 42;
 
 /**
  * The four copy-carrying test files and how to find their copies.
@@ -105,6 +105,11 @@ const PAIRS = [
     // Marker-delimited copy of the eventProductType classifier, used by the
     // warnings-only overlay filter.
     testFile: "test/warningsOnlyOverlay.test.js",
+  },
+  {
+    // Marker-delimited copy of the storm-arrival geometry (closest-approach
+    // projection of the home point onto a cell's forecast motion).
+    testFile: "test/stormArrival.test.js",
   },
   {
     // Marker-delimited copy of the raw-radial renderer's pure helpers

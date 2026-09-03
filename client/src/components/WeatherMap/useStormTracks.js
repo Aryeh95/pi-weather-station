@@ -19,9 +19,10 @@ const POLL_INTERVAL_MS = 60 * 1000;
  * @param {Object} params
  * @param {String|null} params.site 3-letter NEXRAD id, from the radar frame poller
  * @param {Boolean} params.enabled false pauses polling (toggle off / no site yet)
+ * @param {Boolean} [params.paused] true suspends polling but keeps the current cells
  * @returns {{cells: Array, mesos: Array, scanTime: String|null, stale: Boolean}} current cells + mesocyclone features
  */
-export default function useStormTracks({ site, enabled }) {
+export default function useStormTracks({ site, enabled, paused = false }) {
   const [state, setState] = useState({ cells: [], mesos: [], scanTime: null, stale: false });
   const cancelledRef = useRef(false);
 
@@ -33,6 +34,7 @@ export default function useStormTracks({ site, enabled }) {
       setState({ cells: [], mesos: [], scanTime: null, stale: false });
       return () => { cancelledRef.current = true; };
     }
+    if (paused) return undefined;
 
     const fetchTracks = () => {
       axios.get("/api/storm-tracks", { params: { site } })
@@ -60,7 +62,7 @@ export default function useStormTracks({ site, enabled }) {
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [site, enabled]);
+  }, [site, enabled, paused]);
 
   return state;
 }

@@ -2,7 +2,9 @@ import React, { useMemo } from "react";
 import PropTypes from "prop-types";
 import { Polyline, CircleMarker, Marker, Tooltip } from "react-leaflet";
 import L from "leaflet";
+import { useTranslation } from "react-i18next";
 import styles from "./styles.css";
+import { estimateArrival } from "./stormArrival";
 
 /**
  * Storm-track overlay — SCIT cells drawn in the RadarScope convention:
@@ -30,6 +32,11 @@ import styles from "./styles.css";
  * flag is set. The dedicated TVS product stopped being archived in the
  * bucket after 2021, so the flag comes from the NMD table — see
  * server/stormTracksCtrl.js.
+ *
+ * ARRIVAL LABELS: when `home` is given, every cell whose forecast motion
+ * carries it within ~20 km of that point gets a permanent "≈ N min"
+ * label — the answer to the kiosk's actual question, "is that coming
+ * here, and when". Geometry in stormArrival.js.
  */
 
 // Tick geometry in degrees of latitude: half-length of the regular
@@ -108,11 +115,13 @@ function buildAttrIcons(nightRed) {
  * @param {object} props
  * @param {Array<object>} props.cells storm cells from /api/storm-tracks
  * @param {Array<object>} [props.mesos] mesocyclone features from the same payload
+ * @param {{lat: Number, lon: Number}} [props.home] point to estimate arrival times for
  * @param {Boolean} [props.dark] dark palette active
  * @param {Boolean} [props.nightRed] night-vision palette active
  * @returns {JSX.Element|null} overlay layers, or null when there are no cells
  */
-const StormTracks = ({ cells, mesos, dark = false, nightRed = false }) => {
+const StormTracks = ({ cells, mesos, home = null, dark = false, nightRed = false }) => {
+  const { t } = useTranslation();
   // RadarScope draws tracks in plain white on its dark basemap. White
   // needs a dark counterpart in light mode; nightRed collapses to the
   // red family like the rest of the map chrome.
@@ -133,8 +142,8 @@ const StormTracks = ({ cells, mesos, dark = false, nightRed = false }) => {
         const isLast = i === track.length - 1;
         ticks.push(tickSegment(track[i], brg, isLast ? ENDCAP_HALF_DEG : TICK_HALF_DEG));
       }
-      return { cell: c, path, ticks };
-    }), [cells]);
+      return { cell: c, path, ticks, arrival: estimateArrival(c, home) };
+    }), [cells, home]);
 
   const attrIcons = useMemo(() => buildAttrIcons(nightRed), [nightRed]);
   const mesoMarkers = (mesos || [])
@@ -144,7 +153,7 @@ const StormTracks = ({ cells, mesos, dark = false, nightRed = false }) => {
 
   return (
     <>
-      {layers.map(({ cell, path, ticks }) => (
+      {layers.map(({ cell, path, ticks, arrival }) => (
         <React.Fragment key={`sti-${cell.id}-${cell.lat.toFixed(3)}`}>
           {path.length > 1 ? (
             <Polyline positions={path} pathOptions={stroke} />
@@ -165,10 +174,26 @@ const StormTracks = ({ cells, mesos, dark = false, nightRed = false }) => {
               fillOpacity: cell.isNew ? 0 : 1,
             }}
           >
-            <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>
-              {cell.id}
-              {cell.speedKt != null ? ` · ${cell.speedKt} kt` : " · new"}
-            </Tooltip>
+            {arrival ? (
+              /* Permanent label: this cell is headed for home. Minutes
+                 to closest approach, plus the miss distance on hover. */
+              <Tooltip
+                direction="right"
+                offset={[8, 0]}
+                opacity={0.95}
+                permanent
+                className={styles.arrivalLabel}
+              >
+                {cell.id}
+                {" · "}
+                {t("radar.stormArrival", { minutes: arrival.minutes })}
+              </Tooltip>
+            ) : (
+              <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>
+                {cell.id}
+                {cell.speedKt != null ? ` · ${cell.speedKt} kt` : " · new"}
+              </Tooltip>
+            )}
           </CircleMarker>
         </React.Fragment>
       ))}
@@ -207,6 +232,7 @@ StormTracks.propTypes = {
   cells: PropTypes.array,
   // eslint-disable-next-line react/forbid-prop-types -- payload-shaped, not statically typed
   mesos: PropTypes.array,
+  home: PropTypes.shape({ lat: PropTypes.number, lon: PropTypes.number }),
   dark: PropTypes.bool,
   nightRed: PropTypes.bool,
 };

@@ -88,7 +88,7 @@ function getRepo() {
     const match = remoteUrl.match(/github\.com[:/]([^/]+\/[^/.]+)(\.git)?$/);
     if (match) return match[1];
   } catch { /* git not available or no remote */ }
-  return "thicla01/pi-weather-station"; // fallback
+  return "aryeh95/pi-weather-station"; // fallback
 }
 
 // Commit that added `npm install` to /api/update (v2.4.1). Anything older
@@ -236,14 +236,41 @@ function parseCommitLine(firstLine) {
 }
 
 /**
- * Checks origin/master for new commits, entirely through local git.
+ * Resolve which remote branch the checkout should be compared against.
+ *
+ * The tracked upstream of HEAD when there is one (`origin/master` on a
+ * standard install; `origin/<branch>` on a checkout deliberately running
+ * another branch), else `origin/master`. Comparing a non-master checkout
+ * against origin/master used to yield an EMPTY commit range whenever the
+ * branch already contained master's tip — so `updateAvailable` stayed
+ * false forever and the update button never appeared, with nothing in
+ * the logs to say why. The /api/update pre-flight still refuses to pull on
+ * a non-master branch; that message is at least visible.
+ *
+ * @param {Function} git command runner
+ * @returns {Promise<{remote: String, branch: String, ref: String}>} e.g. {remote:"origin", branch:"master", ref:"origin/master"}
+ */
+async function resolveUpstream(git) {
+  try {
+    const ref = await git("git rev-parse --abbrev-ref --symbolic-full-name @{u}");
+    const m = /^([^/]+)\/(.+)$/.exec(ref.trim());
+    if (m) return { remote: m[1], branch: m[2], ref: ref.trim() };
+  } catch {
+    // Detached HEAD or no upstream configured — fall through.
+  }
+  return { remote: "origin", branch: "master", ref: "origin/master" };
+}
+
+/**
+ * Checks the tracked remote branch (normally origin/master) for new
+ * commits, entirely through local git.
  *
  * `git fetch` uses whatever credentials the checkout already has — the
  * same ones `/api/update`'s `git pull` needs — so this works for private
  * forks where the old unauthenticated GitHub API calls returned 404 and
  * silently disabled the whole update flow.
  *
- * @returns {Promise<object>} { updateAvailable, latestVersion, latestSha, localSha, checkedAt, error? }
+ * @returns {Promise<object>} { updateAvailable, latestVersion, latestSha, localSha, checkedAt, upstream, error?, errorMessage? }
  */
 async function checkForUpdate() {
   const now = Date.now();
@@ -255,14 +282,15 @@ async function checkForUpdate() {
     execAsync(cmd, { cwd: projectRoot, timeout, maxBuffer: 4 * 1024 * 1024 })
       .then((r) => r.stdout.trim());
 
+  const upstream = await resolveUpstream(git);
   try {
     // Generous timeout for the network step: slow links (VPN'd Pi, mobile
     // hotspot) routinely need tens of seconds — same reasoning as the
     // 90 s pull timeout in /api/update.
-    await git("git fetch origin master", 60_000);
+    await git(`git fetch ${upstream.remote} ${upstream.branch}`, 60_000);
 
-    const latestSha = await git("git rev-parse origin/master");
-    const pkgJson = await git("git show origin/master:package.json");
+    const latestSha = await git(`git rev-parse ${upstream.ref}`);
+    const pkgJson = await git(`git show ${upstream.ref}:package.json`);
     const latestVersion = JSON.parse(pkgJson).version;
     const shasDiffer = Boolean(localSha && latestSha !== localSha);
 
@@ -316,13 +344,21 @@ async function checkForUpdate() {
       latestSha: latestSha.slice(0, 7),
       localSha: localSha ? localSha.slice(0, 7) : null,
       checkedAt: new Date().toISOString(),
+      upstream: upstream.ref,
       commits,
       changedDeployFiles,
       needsManualUpgrade,
     };
-  } catch {
-    // On network error: keep last known result if available, otherwise return no-update
-    // to avoid false positives.
+  } catch (err) {
+    // A failed check used to be swallowed without a trace, which made
+    // "the update button never shows up" undiagnosable from the logs —
+    // a private fork whose `git fetch` has no credentials under systemd
+    // looks exactly like an up-to-date kiosk. Log it, and carry the
+    // reason in the payload so /api/update-check and the debug panel
+    // show it. Keep the last known result when there is one (no false
+    // positives), but flag it.
+    const errorMessage = String(err && err.message ? err.message : err).slice(0, 200);
+    console.error(`[update-check] ${upstream.ref} check failed: ${errorMessage}`);
     if (!_cache) {
       _cache = {
         updateAvailable: false,
@@ -330,8 +366,12 @@ async function checkForUpdate() {
         latestSha: null,
         localSha: localSha ? localSha.slice(0, 7) : null,
         checkedAt: new Date().toISOString(),
+        upstream: upstream.ref,
         error: true,
+        errorMessage,
       };
+    } else {
+      _cache = { ..._cache, error: true, errorMessage };
     }
   }
 

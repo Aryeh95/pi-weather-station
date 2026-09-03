@@ -18,7 +18,7 @@ const { TIMEOUT_MS, pointInUSBox, normalizeSeverity, severityToTier, isWatchEven
 const { getZoneGeometry, mergeAsMultiPolygon } = require("./nwsZones");
 
 const SERVICE_NAME = "NWS (severe weather alerts)";
-const USER_AGENT = "pi-weather-station (github.com/thicla01/pi-weather-station)";
+const USER_AGENT = "sweep-radar (github.com/aryeh95/pi-weather-station)";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — alerts don't change minute-to-minute
 
 // Bounded so a remote client can't grow it without limit by walking the

@@ -22,10 +22,11 @@ const RADIUS_KM = 300;
  * @param {Number|null} params.latitude map centre
  * @param {Number|null} params.longitude map centre
  * @param {Boolean} params.enabled false pauses polling and clears
- * @returns {{flashes: Array, count: Number|null, fetchedAt: Number|null, stale: Boolean}}
+ * @param {Boolean} [params.paused] true suspends polling but keeps the current flashes
+ * @returns {{flashes: Array, count: Number|null, fetchedAt: Number|null, dataEpoch: Number|null, stale: Boolean}} `dataEpoch` is the time of the newest flash (or of the window itself when it holds none)
  */
-export default function useLightning({ latitude, longitude, enabled }) {
-  const [state, setState] = useState({ flashes: [], count: null, fetchedAt: null, stale: false });
+export default function useLightning({ latitude, longitude, enabled, paused = false }) {
+  const [state, setState] = useState({ flashes: [], count: null, fetchedAt: null, dataEpoch: null, stale: false });
   const cancelledRef = useRef(false);
 
   // Quantised coords so map jitter doesn't restart the poller — same
@@ -36,9 +37,10 @@ export default function useLightning({ latitude, longitude, enabled }) {
   useEffect(() => {
     cancelledRef.current = false;
     if (!enabled || latKey == null || lonKey == null) {
-      setState({ flashes: [], count: null, fetchedAt: null, stale: false });
+      setState({ flashes: [], count: null, fetchedAt: null, dataEpoch: null, stale: false });
       return () => { cancelledRef.current = true; };
     }
+    if (paused) return undefined;
     const lat = latKey * 0.05;
     const lon = lonKey * 0.05;
 
@@ -47,10 +49,25 @@ export default function useLightning({ latitude, longitude, enabled }) {
         .then((res) => {
           if (cancelledRef.current) return;
           const d = res.data || {};
+          const flashes = Array.isArray(d.flashes) ? d.flashes : [];
+          const fetchedAt = Date.now();
+          // How current the DATA is, for the frame-age stack: the newest
+          // flash's time when there are flashes, else the window's own
+          // generation time (no flashes is a current "nothing here", not
+          // a stale feed).
+          let newestAge = Infinity;
+          for (const [, , age] of flashes) {
+            if (Number.isFinite(age) && age < newestAge) newestAge = age;
+          }
+          const generated = Date.parse(d.generatedAt);
+          const dataEpoch = Number.isFinite(newestAge)
+            ? fetchedAt - newestAge * 1000
+            : (Number.isFinite(generated) ? generated : fetchedAt);
           setState({
-            flashes: Array.isArray(d.flashes) ? d.flashes : [],
+            flashes,
             count: Number.isFinite(d.count) ? d.count : null,
-            fetchedAt: Date.now(),
+            fetchedAt,
+            dataEpoch,
             stale: false,
           });
         })
@@ -68,7 +85,7 @@ export default function useLightning({ latitude, longitude, enabled }) {
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [enabled, latKey, lonKey]);
+  }, [enabled, paused, latKey, lonKey]);
 
   return state;
 }

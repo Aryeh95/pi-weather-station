@@ -22,10 +22,12 @@ const POLL_INTERVAL_MS = 60 * 1000;
  * @param {Object} params
  * @param {String|null} params.site 3-letter NEXRAD id
  * @param {Boolean} params.enabled false pauses polling and clears the image
- * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ
+ * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ (reflectivity only)
+ * @param {String} [params.product] "N0B" (reflectivity, default) or "N0G" (velocity)
+ * @param {Boolean} [params.paused] true suspends polling but keeps the current image
  * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean}}
  */
-export default function useRadarRadial({ site, enabled, noiseFilter }) {
+export default function useRadarRadial({ site, enabled, noiseFilter, product = "N0B", paused = false }) {
   const [state, setState] = useState({ url: null, bounds: null, scanTime: null, stale: false });
   const lastKeyRef = useRef(null);
   const urlRef = useRef(null);
@@ -49,9 +51,12 @@ export default function useRadarRadial({ site, enabled, noiseFilter }) {
       setState({ url: null, bounds: null, scanTime: null, stale: false });
       return () => { cancelledRef.current = true; };
     }
+    // Paused: keep the rendered image, stop asking for new scans. The
+    // effect re-runs on resume and fetches at once.
+    if (paused) return undefined;
 
     const fetchAndRender = () => {
-      axios.get("/api/radar/radial", { params: { site } })
+      axios.get("/api/radar/radial", { params: { site, product } })
         .then((res) => {
           if (cancelledRef.current) return;
           const d = res.data || {};
@@ -64,7 +69,7 @@ export default function useRadarRadial({ site, enabled, noiseFilter }) {
           // The render key carries the filter state too, so toggling the
           // noise filter re-renders the current scan instead of waiting
           // for the next one.
-          const renderKey = `${d.key}|nf:${Boolean(noiseFilter)}`;
+          const renderKey = `${d.key}|${d.kind}|nf:${Boolean(noiseFilter)}`;
           if (renderKey === lastKeyRef.current) {
             // Same volume scan — refresh only the staleness flag.
             setState((prev) => (prev.stale ? { ...prev, stale: false } : prev));
@@ -92,7 +97,7 @@ export default function useRadarRadial({ site, enabled, noiseFilter }) {
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [site, enabled, noiseFilter]);
+  }, [site, enabled, noiseFilter, product, paused]);
 
   // Revoke the final URL when the consumer unmounts.
   useEffect(() => () => {

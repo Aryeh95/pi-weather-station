@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useContext } from "react";
 import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
+import { SystemContext } from "~/AppContext";
 import styles from "./styles.css";
 
 // Poll cadence — 2 min. The endpoint itself is a pure in-memory
@@ -58,6 +59,8 @@ const DOT_COLORS = {
  */
 const HealthIndicator = ({ chip = false }) => {
   const { t } = useTranslation();
+  // Screensaver up / tab hidden: stop polling, keep the last verdict.
+  const { pollingPaused } = useContext(SystemContext);
   const [health, setHealth] = useState({
     status: "green",
     issues: [],
@@ -75,6 +78,7 @@ const HealthIndicator = ({ chip = false }) => {
   const dotRef = useRef(null);
 
   useEffect(() => {
+    if (pollingPaused) return undefined;
     let cancelled = false;
     const fetchHealth = () => {
       axios
@@ -126,7 +130,7 @@ const HealthIndicator = ({ chip = false }) => {
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` is stable across renders for our use, and re-creating the interval on locale change isn't worth the churn
-  }, []);
+  }, [pollingPaused]);
 
   // Dismiss popover on click outside.
   useEffect(() => {
