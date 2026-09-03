@@ -33,10 +33,12 @@ import { estimateArrival } from "./stormArrival";
  * bucket after 2021, so the flag comes from the NMD table — see
  * server/stormTracksCtrl.js.
  *
- * ARRIVAL LABELS: when `home` is given, every cell whose forecast motion
- * carries it within ~20 km of that point gets a permanent "≈ N min"
- * label — the answer to the kiosk's actual question, "is that coming
- * here, and when". Geometry in stormArrival.js.
+ * LABELS ARE PERMANENT — the kiosk is a touchscreen, nothing hovers. Each
+ * cell carries its id beside the dot, each forecast tick its minute mark
+ * (15 · 30 · 45 · 60) at single-site zoom, and a cell whose forecast
+ * motion carries it within ~20 km of `home` appends its arrival lead
+ * ("≈ N min" / "≈ H h MM min") — the answer to the kiosk's actual
+ * question, "is that coming here, and when". Geometry in stormArrival.js.
  */
 
 // Tick geometry in degrees of latitude: half-length of the regular
@@ -116,12 +118,15 @@ function buildAttrIcons(nightRed) {
  * @param {Array<object>} props.cells storm cells from /api/storm-tracks
  * @param {Array<object>} [props.mesos] mesocyclone features from the same payload
  * @param {{lat: Number, lon: Number}} [props.home] point to estimate arrival times for
+ * @param {Number} [props.zoom] current map zoom; tick time labels show from z ≥ 9
  * @param {Boolean} [props.dark] dark palette active
  * @param {Boolean} [props.nightRed] night-vision palette active
  * @returns {JSX.Element|null} overlay layers, or null when there are no cells
  */
-const StormTracks = ({ cells, mesos, home = null, dark = false, nightRed = false }) => {
+const StormTracks = ({ cells, mesos, home = null, zoom = null, dark = false, nightRed = false }) => {
   const { t } = useTranslation();
+  // Tick time labels need room: from the single-site band up (z ≥ 9).
+  const showTickLabels = !Number.isFinite(zoom) || zoom >= 9;
   // RadarScope draws tracks in plain white on its dark basemap. White
   // needs a dark counterpart in light mode; nightRed collapses to the
   // red family like the rest of the map chrome.
@@ -174,32 +179,57 @@ const StormTracks = ({ cells, mesos, home = null, dark = false, nightRed = false
               fillOpacity: cell.isNew ? 0 : 1,
             }}
           >
-            {arrival ? (
-              /* Permanent label: this cell is headed for home. Minutes
-                 to closest approach, plus the miss distance on hover. */
-              <Tooltip
-                direction="right"
-                offset={[8, 0]}
-                opacity={0.95}
-                permanent
-                className={styles.arrivalLabel}
-              >
-                {cell.id}
-                {" · "}
-                {arrival.minutes >= 90
-                  ? t("radar.stormArrivalHours", {
-                    hours: Math.floor(arrival.minutes / 60),
-                    minutes: String(arrival.minutes % 60).padStart(2, "0"),
-                  })
-                  : t("radar.stormArrival", { minutes: arrival.minutes })}
-              </Tooltip>
-            ) : (
-              <Tooltip direction="top" offset={[0, -6]} opacity={0.95}>
-                {cell.id}
-                {cell.speedKt != null ? ` · ${cell.speedKt} kt` : " · new"}
-              </Tooltip>
-            )}
+            {/* Always-on label, RadarScope style: the cell id beside the
+                dot, plus the arrival lead when this cell is headed for
+                home. Permanent because the kiosk is touch — there is no
+                hover. */}
+            <Tooltip
+              direction="right"
+              offset={[8, 0]}
+              opacity={1}
+              permanent
+              className={`${styles.trackLabel} ${arrival ? styles.trackLabelArrival : ""}`}
+            >
+              {cell.id}
+              {arrival ? (
+                <>
+                  {" · "}
+                  {arrival.minutes >= 90
+                    ? t("radar.stormArrivalHours", {
+                      hours: Math.floor(arrival.minutes / 60),
+                      minutes: String(arrival.minutes % 60).padStart(2, "0"),
+                    })
+                    : t("radar.stormArrival", { minutes: arrival.minutes })}
+                </>
+              ) : (cell.isNew ? " · new" : "")}
+            </Tooltip>
           </CircleMarker>
+          {/* Time labels on the forecast ticks ("15 30 45 60" minutes),
+              as RadarScope draws them. Only in the single-site zoom band —
+              at mosaic zoom the ticks are a few pixels apart and the
+              numbers would pile up. Each label rides an invisible
+              CircleMarker at the tick so it never intercepts a map tap. */}
+          {showTickLabels ? (cell.forecast || []).map((f, i) => (
+            Number.isFinite(f.lat) && Number.isFinite(f.lon) && Number.isFinite(f.minutes) ? (
+              <CircleMarker
+                key={`ticklabel-${i}`}
+                center={[f.lat, f.lon]}
+                radius={1}
+                pathOptions={{ opacity: 0, fillOpacity: 0 }}
+                interactive={false}
+              >
+                <Tooltip
+                  direction="top"
+                  offset={[0, -6]}
+                  opacity={1}
+                  permanent
+                  className={styles.trackTickLabel}
+                >
+                  {f.minutes}
+                </Tooltip>
+              </CircleMarker>
+            ) : null
+          )) : null}
         </React.Fragment>
       ))}
       {/* Mesocyclone / TVS markers sit on the marker pane, above the
@@ -238,6 +268,7 @@ StormTracks.propTypes = {
   // eslint-disable-next-line react/forbid-prop-types -- payload-shaped, not statically typed
   mesos: PropTypes.array,
   home: PropTypes.shape({ lat: PropTypes.number, lon: PropTypes.number }),
+  zoom: PropTypes.number,
   dark: PropTypes.bool,
   nightRed: PropTypes.bool,
 };

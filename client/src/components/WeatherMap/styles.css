@@ -1367,22 +1367,41 @@
   pointer-events: none;
 }
 
-/* Storm arrival label — a permanent Leaflet tooltip beside a cell that is
- * headed for home. Compact mono chip, no tooltip arrow (the leader would
- * read as part of the track vector). */
-.arrival-label {
-  padding: 1px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.2));
-  background: var(--c-surface, rgba(255, 250, 240, 0.94));
-  color: var(--c-text, #3a3938);
+/* Storm-track labels — permanent Leaflet tooltips beside each cell dot
+ * (id, plus the arrival lead when the cell is headed for home) and at
+ * each forecast tick (minute mark). No tooltip arrow: the leader would
+ * read as part of the track vector. Text with a paper-coloured halo
+ * instead of a box, so the label sits ON the radar like RadarScope's
+ * without covering echo. */
+.track-label,
+.track-tick-label {
+  padding: 0 2px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--c-text, #1a1a1a);
   font-family: "Geist Mono", monospace;
-  font-size: calc(11px * var(--c-font-scale, 1));
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.2;
   white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  text-shadow:
+    0 0 2px var(--c-surface, #fff), 0 0 2px var(--c-surface, #fff),
+    0 0 3px var(--c-surface, #fff), 0 0 4px var(--c-surface, #fff);
 }
-.arrival-label::before {
+.track-label {
+  font-size: calc(12px * var(--c-font-scale, 1));
+}
+.track-label-arrival {
+  color: var(--rc-alert-warn, #c81e1e);
+  font-size: calc(13px * var(--c-font-scale, 1));
+}
+.track-tick-label {
+  font-size: calc(10px * var(--c-font-scale, 1));
+  font-weight: 500;
+  opacity: 0.9;
+}
+.track-label::before,
+.track-tick-label::before {
   display: none;
 }

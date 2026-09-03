@@ -1521,7 +1521,14 @@ const WeatherMap = ({ zoom, dark }) => {
             on top, and a filled warning polygon would otherwise bury the
             thin dashed track running through it. */}
         {showStormTracks ? (
-          <StormTracks cells={stormCells} mesos={stormMesos} home={homePoint} dark={dark} nightRed={nightRed} />
+          <StormTracks
+            cells={stormCells}
+            mesos={stormMesos}
+            home={homePoint}
+            zoom={currentMapZoom}
+            dark={dark}
+            nightRed={nightRed}
+          />
         ) : null}
         {/* GLM lightning flashes -- age-faded dots, painted last so the
             freshest strikes read over every other overlay. */}
