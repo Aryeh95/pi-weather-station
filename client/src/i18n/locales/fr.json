@@ -397,7 +397,12 @@
     "ageTracks": "Cellules",
     "ageLightning": "GLM",
     "ageVelocity": "VIT",
-    "stormArrivalHours": "≈ {{hours}} h {{minutes}} min"
+    "stormArrivalHours": "≈ {{hours}} h {{minutes}} min",
+    "cellMoving": "Se déplace vers {{dir}} à {{speed}}",
+    "cellNew": "Nouvelle cellule — pas encore de mouvement",
+    "cellArrival": "Arrive ici dans {{lead}} · passe à {{km}} km",
+    "cellNotToward": "Ne se dirige pas vers ici",
+    "cellScan": "Balayage {{time}}"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",

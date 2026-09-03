@@ -1405,3 +1405,21 @@
 .track-tick-label::before {
   display: none;
 }
+
+/* Storm-cell tap popup rows (shares the survey-popup shell). */
+.cell-popup-row {
+  font-size: calc(12px * var(--c-font-scale, 1));
+  line-height: 1.35;
+  color: var(--c-text, #1a1a1a);
+  padding: 2px 0;
+}
+.cell-popup-arrival {
+  color: var(--rc-alert-warn, #c81e1e);
+  font-weight: 600;
+}
+.cell-popup-meta {
+  margin-top: 4px;
+  font-size: calc(10px * var(--c-font-scale, 1));
+  color: var(--c-text-dim, #8a8578);
+  font-family: "Geist Mono", monospace;
+}

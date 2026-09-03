@@ -1,6 +1,6 @@
-import React, { useMemo, useContext } from "react";
+import React, { useMemo, useContext, useState } from "react";
 import PropTypes from "prop-types";
-import { Polyline, CircleMarker, Marker, Tooltip } from "react-leaflet";
+import { Polyline, CircleMarker, Marker, Tooltip, Popup } from "react-leaflet";
 import L from "leaflet";
 import { useTranslation } from "react-i18next";
 import { UiPrefsContext } from "~/AppContext";
@@ -87,6 +87,33 @@ function tickSegment(at, travelBearing, halfDeg) {
   ];
 }
 
+const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+
+/**
+ * 16-point compass label for a heading.
+ *
+ * @param {Number} deg heading, degrees clockwise from north
+ * @returns {String} e.g. "ESE"
+ */
+function compass(deg) {
+  return COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+
+/**
+ * Speed in the user's unit, from knots.
+ *
+ * @param {Number} kt speed in knots
+ * @param {String} unit "mph" | "kmh" | "ms" (anything else → knots only)
+ * @returns {String|null} e.g. "49 mph", or null when the unit is knots
+ */
+function speedInUnit(kt, unit) {
+  if (unit === "mph") return `${Math.round(kt * 1.15078)} mph`;
+  if (unit === "kmh" || unit === "km/h") return `${Math.round(kt * 1.852)} km/h`;
+  if (unit === "ms" || unit === "m/s") return `${Math.round(kt * 0.514444)} m/s`;
+  return null;
+}
+
 /**
  * Build the shared meso / TVS divIcons for a palette. Two instances
  * total, reused by every marker.
@@ -130,7 +157,10 @@ const StormTracks = ({
   cells, mesos, home = null, zoom = null, scanTime = null, timezone = null, dark = false, nightRed = false,
 }) => {
   const { t } = useTranslation();
-  const { clockTime } = useContext(UiPrefsContext);
+  const { clockTime, speedUnit } = useContext(UiPrefsContext);
+  // Tap popup: id of the open cell, or null. Local state — nothing outside
+  // this overlay cares which cell is open.
+  const [openCellId, setOpenCellId] = useState(null);
   // Tick time labels need room: from the single-site band up (z ≥ 9).
   const showTickLabels = !Number.isFinite(zoom) || zoom >= 9;
   // RadarScope labels each forecast tick with the CLOCK TIME the cell gets
@@ -139,6 +169,12 @@ const StormTracks = ({
   // carries no scan time. Honours the 12 h / 24 h preference and the map's
   // timezone like the timeline does.
   const scanEpoch = scanTime ? Date.parse(scanTime) : NaN;
+  const leadLabel = (minutes) => (minutes >= 90
+    ? t("radar.stormArrivalHours", {
+      hours: Math.floor(minutes / 60),
+      minutes: String(minutes % 60).padStart(2, "0"),
+    })
+    : t("radar.stormArrival", { minutes }));
   const tickLabel = (minutes) => {
     if (!Number.isFinite(scanEpoch)) return String(minutes);
     return new Date(scanEpoch + minutes * 60 * 1000).toLocaleTimeString(undefined, {
@@ -215,16 +251,55 @@ const StormTracks = ({
               {arrival ? (
                 <>
                   {" · "}
-                  {arrival.minutes >= 90
-                    ? t("radar.stormArrivalHours", {
-                      hours: Math.floor(arrival.minutes / 60),
-                      minutes: String(arrival.minutes % 60).padStart(2, "0"),
-                    })
-                    : t("radar.stormArrival", { minutes: arrival.minutes })}
+                  {leadLabel(arrival.minutes)}
                 </>
               ) : (cell.isNew ? " · new" : "")}
             </Tooltip>
           </CircleMarker>
+          {/* Tap target: a wide invisible disc over the dot (a 5 px dot is
+              not a touch target). `bubblingMouseEvents: false` plus an
+              explicit stopPropagation keep the tap from reaching the map,
+              whose click handler would otherwise move the location pin —
+              the same trap the alert-survey popup already avoids. */}
+          <CircleMarker
+            center={[cell.lat, cell.lon]}
+            radius={18}
+            pathOptions={{ opacity: 0, fillOpacity: 0, bubblingMouseEvents: false }}
+            eventHandlers={{
+              click: (e) => {
+                L.DomEvent.stopPropagation(e.originalEvent);
+                setOpenCellId((cur) => (cur === cell.id ? null : cell.id));
+              },
+            }}
+          />
+          {openCellId === cell.id ? (
+            <Popup
+              position={[cell.lat, cell.lon]}
+              offset={[0, -8]}
+              className={styles.surveyPopupWrapper}
+              eventHandlers={{ remove: () => setOpenCellId((cur) => (cur === cell.id ? null : cur)) }}
+            >
+              <div className={styles.surveyPopup}>
+                <div className={styles.surveyHead}>{cell.id}</div>
+                <div className={styles.cellPopupRow}>
+                  {cell.isNew || !Number.isFinite(cell.speedKt) || !Number.isFinite(cell.movementFromDeg)
+                    ? t("radar.cellNew")
+                    : t("radar.cellMoving", {
+                      dir: compass(cell.movementFromDeg + 180),
+                      speed: `${cell.speedKt} kt${speedInUnit(cell.speedKt, speedUnit) ? ` (${speedInUnit(cell.speedKt, speedUnit)})` : ""}`,
+                    })}
+                </div>
+                <div className={`${styles.cellPopupRow} ${arrival ? styles.cellPopupArrival : ""}`}>
+                  {arrival
+                    ? t("radar.cellArrival", { lead: leadLabel(arrival.minutes), km: arrival.passKm })
+                    : t("radar.cellNotToward")}
+                </div>
+                {Number.isFinite(scanEpoch) ? (
+                  <div className={styles.cellPopupMeta}>{t("radar.cellScan", { time: tickLabel(0) })}</div>
+                ) : null}
+              </div>
+            </Popup>
+          ) : null}
           {/* Clock-time labels on the forecast ticks ("9:19 AM", "9:34 AM"
               …), as RadarScope draws them. Only in the single-site zoom band —
               at mosaic zoom the ticks are a few pixels apart and the
@@ -269,7 +344,7 @@ const StormTracks = ({
           <CircleMarker
             center={[m.lat, m.lon]}
             radius={9}
-            pathOptions={{ opacity: 0, fillOpacity: 0 }}
+            pathOptions={{ opacity: 0, fillOpacity: 0, bubblingMouseEvents: false }}
           >
             <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
               {m.tvs ? "TVS" : "MESO"}

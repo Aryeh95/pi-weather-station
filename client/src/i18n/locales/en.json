@@ -397,7 +397,12 @@
     "ageTracks": "Tracks",
     "ageLightning": "GLM",
     "ageVelocity": "VEL",
-    "stormArrivalHours": "≈ {{hours}} h {{minutes}} min"
+    "stormArrivalHours": "≈ {{hours}} h {{minutes}} min",
+    "cellMoving": "Moving {{dir}} at {{speed}}",
+    "cellNew": "Newly detected — no motion yet",
+    "cellArrival": "Reaches home in {{lead}} · passes {{km}} km away",
+    "cellNotToward": "Not heading toward home",
+    "cellScan": "Scan {{time}}"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",
