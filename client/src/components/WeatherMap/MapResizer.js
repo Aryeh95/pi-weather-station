@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { useMap } from "react-leaflet";
 
@@ -42,11 +42,23 @@ const MOBILE_INVALIDATE_FINAL_MS = 350;
  *
  * The mobileRadarMaximized effect is gated on `== null` (catches both
  * null and undefined): AppContext seeds the flag to `null`, LayoutMobile
- * flips it to false/true on mount and back to null on unmount. The
+ * flips it to true on mount and back to null on unmount. The
  * `=== undefined` check we used before v2.16.x didn't catch the `null`
  * sentinel, so on Pi/Desktop the effect fired on every lat/lng/zoom
  * change with a parasitic invalidate + setView during boot — the marker
  * ended up NE-offset on user-reported screens > 7".
+ *
+ * The same class of bug survived ON the phone until 2026-09-03: the
+ * effect listed `latitude` / `longitude` / `zoom` as dependencies, and
+ * on the phone layout the flag is never null, so every input change
+ * re-ran the setView. A pinch-zoom is persisted as the default zoom
+ * (AppContext, 2 s debounce) and comes back as the `zoom` prop, and a
+ * tap that moves the pin changes the coordinates — either one snapped
+ * the map back to the pin, so panning away from home was impossible
+ * ("keeps bouncing back to my pin location"). The recentre is a
+ * LAYOUT-CHANGE correction, so it now runs only when the flag itself
+ * changes; the coordinates and zoom are read through a ref at that
+ * moment, never subscribed to.
  *
  * @param {object} props
  * @param {boolean} props.mobileRadarMaximized null on non-mobile layouts
@@ -70,25 +82,28 @@ const MapResizer = ({ mobileRadarMaximized, desktopRadarMaximized, piRadarMaximi
     // eslint-disable-next-line react-hooks/exhaustive-deps -- desktopRadarMaximized + piRadarMaximized + piLayoutState purposely re-trigger the same handler
   }, [desktopRadarMaximized, piRadarMaximized, piLayoutState, map]);
 
+  // Latest target for the layout-change recentre, read (not subscribed
+  // to) by the effect below — see the doc block for why the coordinates
+  // and zoom must NOT be dependencies.
+  const targetRef = useRef({ latitude, longitude, zoom });
+  targetRef.current = { latitude, longitude, zoom };
+
   useEffect(() => {
     if (mobileRadarMaximized == null) return undefined;
-    const live = setTimeout(() => {
+    const recenter = () => {
       map.invalidateSize();
-      if (hasVal(latitude) && hasVal(longitude) && zoom) {
-        map.setView([latitude, longitude], zoom, { animate: false });
+      const { latitude: lat, longitude: lon, zoom: z } = targetRef.current;
+      if (hasVal(lat) && hasVal(lon) && z) {
+        map.setView([lat, lon], z, { animate: false });
       }
-    }, COLLAPSE_INVALIDATE_LIVE_MS);
-    const final = setTimeout(() => {
-      map.invalidateSize();
-      if (hasVal(latitude) && hasVal(longitude) && zoom) {
-        map.setView([latitude, longitude], zoom, { animate: false });
-      }
-    }, MOBILE_INVALIDATE_FINAL_MS);
+    };
+    const live = setTimeout(recenter, COLLAPSE_INVALIDATE_LIVE_MS);
+    const final = setTimeout(recenter, MOBILE_INVALIDATE_FINAL_MS);
     return () => {
       clearTimeout(live);
       clearTimeout(final);
     };
-  }, [mobileRadarMaximized, map, latitude, longitude, zoom]);
+  }, [mobileRadarMaximized, map]);
   return null;
 };
 
