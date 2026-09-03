@@ -25,11 +25,8 @@ const WARNING_KEY = [
  */
 const PrecipScale = () => (
   <span className={styles.precipScale} aria-hidden="true">
-    {DBZ_STOPS.map(({ dbz, rgb }) => (
-      <span
-        key={dbz}
-        style={{ backgroundColor: `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` }}
-      />
+    {DBZ_STOPS.map(([dbz, r, g, b]) => (
+      <span key={dbz} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />
     ))}
   </span>
 );
