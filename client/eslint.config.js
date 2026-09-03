@@ -40,10 +40,12 @@ module.exports = [
         SharedArrayBuffer: "readonly",
       },
     },
+    // `jsdoc` is already registered by jsdoc.configs["flat/recommended"] above;
+    // eslint-plugin-jsdoc >= 64 exports a distinct plugin object there, and
+    // ESLint refuses to register the same name twice with different objects.
     plugins: {
       react,
       "react-hooks": reactHooks,
-      jsdoc,
     },
     settings: {
       react: { version: "detect" },
