@@ -61,6 +61,7 @@ const SERVICE_NAME = "NEXRAD L3 (storm tracks)";
 // nexradBucket.js and is shared with the raw-radial controller. The
 // names are re-exported below so existing imports keep working.
 const { BUCKET_BASE, API_TIMEOUT_MS, newestKey, l3KeyEpoch } = require("./nexradBucket");
+const { attachHail } = require("./mrmsHailCtrl");
 
 // One volume scan per file (4-6 min). 60 s keeps the display close to the
 // radar's own cadence without re-listing the bucket for every client poll.
@@ -320,6 +321,10 @@ async function fetchTracks(site) {
   // are storm attributes, not a separate layer.
   const mesos = await fetchMesos(site, radarLat, radarLon);
 
+  // Hail: MRMS MESH sampled at each cell (the per-radar hail index is no
+  // longer archived). Never fatal — cells simply carry `hail: null`.
+  const hail = await attachHail(cells);
+
   // Scan time: the product prints its volume-scan date as a Julian day
   // (days since 1970-01-01, 1-based) plus seconds past midnight UTC.
   let scanTime = null;
@@ -335,6 +340,7 @@ async function fetchTracks(site) {
     radar: { lat: radarLat, lon: radarLon },
     cells,
     mesos,
+    hail,
     generatedAt: new Date().toISOString(),
   };
   tracksCache.set(site, { value, expires: Date.now() + TRACKS_TTL_MS });

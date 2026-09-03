@@ -444,7 +444,13 @@ composite's `valid` time (`{"meta":{"valid":"2026-09-03T02:55:00Z",…,
 position to its LAST forecast position (never from MOVEMENT), speed from
 `speedKt` (kt × 1.852 / 60 km/min) or the forecast span, home projected
 onto that ray in local km. Null when moving away, passing > 20 km wide, or
-> 120 min out. Label is permanent on the marker; miss distance on hover.
+> 180 min out (was 120 — measured live: a cell 195 km out, passing 7 km
+off, 147 min away was invisible under the shorter cap). Labels are all
+permanent (touch kiosk, nothing hovers): cell id beside the dot, clock
+times on the forecast ticks at z ≥ 9 like RadarScope, arrival lead in red.
+Tap opens a popup; the tap target is an 18 px invisible disc with
+`bubblingMouseEvents: false` so the map click that moves the pin never
+fires.
 
 ### Idle polling — DONE (2026-09-03)
 
@@ -463,3 +469,25 @@ a private-fork fetch with no credentials under systemd, both looked exactly
 like "up to date". Now compares against `@{u}` (fallback origin/master),
 logs failures, and reports `error` / `errorMessage` / `upstream`. Triage:
 `curl -sk https://localhost:8443/api/update-check`.
+
+### Hail — MRMS MESH, pure JS (2026-09-03)
+
+- The single-radar **NHI (hail index), NSS and NTV products stopped being
+  archived** in `unidata-nexrad-level3` after 2022 (probed LWX: years
+  2021–2022 only). No per-cell hail from the Level III feed any more.
+- **MRMS MESH** on `noaa-mrms-pds` (`CONUS/MESH_00.50/YYYYMMDD/`) is the
+  official replacement: 1 km CONUS grid, one ~54–120 KB gzipped GRIB2 every
+  2 min, keyless.
+- **No wgrib2 needed — and it is not in Ubuntu 24.04's repos anyway.** MRMS
+  uses GRIB2 **PNG packing (template 5.41)**: section 7 is a 16-bit
+  grayscale PNG, decoded with Node's zlib in `server/mrmsHailCtrl.js`.
+  Grid template 3.0 offsets (0-based from the section start): Ni +30,
+  Nj +34, La1 +46, Lo1 +50, Di +63, Dj +67, scan mode +71 — getting Di/Dj
+  wrong by one octet reads 2.56° instead of 0.01°, silently.
+  `value_mm = (−30 + X) / 10`; −3 no data, −1 no coverage.
+- Validated against eccodes on the same file: 5 570 points > 0, max 59.1 mm
+  at 40.595 N / 90.755 W — identical. Decode ≈ 1.3 s for 24.5 M samples,
+  then reduced to a sparse point list so nothing large stays resident.
+- Cells sample the max MESH within 10 km (`hail: {meshMm, meshIn}`), values
+  < 5 mm treated as none; ≥ 25 mm (NWS severe) also shows in the always-on
+  label. Attached inside `fetchTracks`, never fatal.

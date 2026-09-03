@@ -72,9 +72,12 @@ dock.
 
 **Storm tracks** (NEXRAD Level III STI, product 58): SCIT cell positions with
 15/30/45/60-minute forecast tracks, plus **mesocyclone / TVS markers** from
-the NMD product (141). Cells whose forecast motion carries them within
-~20 km of home get a permanent **"≈ N min" arrival label**. Off by default,
-dock toggle.
+the NMD product (141). Every cell carries its id, each forecast tick its
+clock time, and cells whose forecast motion carries them within ~20 km of
+home get an **arrival lead** ("≈ 2 h 27 min"). Tapping a cell opens a card
+with heading, speed, arrival and **hail size from NOAA's MRMS MESH**
+product, sampled at the cell; severe hail (≥ 1 in) also shows in the
+always-on label. Off by default, dock toggle.
 
 **Lightning** (GOES-19 GLM total lightning): age-faded flash markers over a
 rolling 5-minute window, with a count in the legend. In-cloud flashes are
@@ -111,6 +114,7 @@ RadarScope. ECCC (Canada) alerts are also polled for locations in Canada.
 | [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) | N0Q mosaic tiles + composite time, N0B single-site tiles, frame-list JSON API, N0Q colour table | none |
 | `unidata-nexrad-level3` (public S3 bucket) | Raw N0B reflectivity and N0G velocity radials, STI storm tracks, NMD mesocyclones | none |
 | `noaa-goes19` (public S3 bucket) | GLM lightning flashes | none |
+| `noaa-mrms-pds` (public S3 bucket) | MRMS MESH hail size at each storm cell | none |
 | [api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Nearest radar site, active alerts, zone geometry | none (User-Agent required) |
 | [Environment Canada](https://api.weather.gc.ca/) | Alerts for Canadian locations | none |
 | [Mapbox](https://www.mapbox.com/) | Basemap raster tiles | **required** |

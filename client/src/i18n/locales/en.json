@@ -402,7 +402,10 @@
     "cellNew": "Newly detected — no motion yet",
     "cellArrival": "Reaches home in {{lead}} · passes {{km}} km away",
     "cellNotToward": "Not heading toward home",
-    "cellScan": "Scan {{time}}"
+    "cellScan": "Scan {{time}}",
+    "cellHail": "Hail (MRMS MESH): {{size}}",
+    "cellHailNone": "Hail (MRMS MESH): none detected",
+    "cellHailShort": "hail {{size}}"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",

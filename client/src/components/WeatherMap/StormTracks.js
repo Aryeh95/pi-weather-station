@@ -157,7 +157,14 @@ const StormTracks = ({
   cells, mesos, home = null, zoom = null, scanTime = null, timezone = null, dark = false, nightRed = false,
 }) => {
   const { t } = useTranslation();
-  const { clockTime, speedUnit } = useContext(UiPrefsContext);
+  const { clockTime, speedUnit, lengthUnit } = useContext(UiPrefsContext);
+  // MRMS MESH hail size in the user's precipitation unit (inches / mm).
+  const hailLabel = (hail) => (lengthUnit === "mm"
+    ? `${Math.round(hail.meshMm)} mm`
+    : `${hail.meshIn.toFixed(2).replace(/0$/, "")} in`);
+  // Severe-hail threshold (1 in / 25 mm, the NWS severe criterion): cells
+  // at or above it carry the size in their always-on label too.
+  const severeHail = (hail) => Boolean(hail) && hail.meshMm >= 25;
   // Tap popup: id of the open cell, or null. Local state — nothing outside
   // this overlay cares which cell is open.
   const [openCellId, setOpenCellId] = useState(null);
@@ -254,6 +261,7 @@ const StormTracks = ({
                   {leadLabel(arrival.minutes)}
                 </>
               ) : (cell.isNew ? " · new" : "")}
+              {severeHail(cell.hail) ? ` · ${t("radar.cellHailShort", { size: hailLabel(cell.hail) })}` : ""}
             </Tooltip>
           </CircleMarker>
           {/* Tap target: a wide invisible disc over the dot (a 5 px dot is
@@ -293,6 +301,11 @@ const StormTracks = ({
                   {arrival
                     ? t("radar.cellArrival", { lead: leadLabel(arrival.minutes), km: arrival.passKm })
                     : t("radar.cellNotToward")}
+                </div>
+                <div className={`${styles.cellPopupRow} ${severeHail(cell.hail) ? styles.cellPopupArrival : ""}`}>
+                  {cell.hail
+                    ? t("radar.cellHail", { size: hailLabel(cell.hail) })
+                    : t("radar.cellHailNone")}
                 </div>
                 {Number.isFinite(scanEpoch) ? (
                   <div className={styles.cellPopupMeta}>{t("radar.cellScan", { time: tickLabel(0) })}</div>

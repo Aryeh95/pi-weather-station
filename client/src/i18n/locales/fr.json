@@ -402,7 +402,10 @@
     "cellNew": "Nouvelle cellule — pas encore de mouvement",
     "cellArrival": "Arrive ici dans {{lead}} · passe à {{km}} km",
     "cellNotToward": "Ne se dirige pas vers ici",
-    "cellScan": "Balayage {{time}}"
+    "cellScan": "Balayage {{time}}",
+    "cellHail": "Grêle (MRMS MESH) : {{size}}",
+    "cellHailNone": "Grêle (MRMS MESH) : aucune détectée",
+    "cellHailShort": "grêle {{size}}"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",

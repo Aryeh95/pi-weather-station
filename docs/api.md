@@ -304,6 +304,17 @@ a heading from it. A `NEW` cell has no motion: `track` is a single point.
 The client's arrival estimate (StormTracks overlay) projects the home point
 onto the track direction; the server does no arrival math.
 
+**Hail.** Each cell carries `hail: { meshMm, meshIn }` — the maximum
+**MRMS MESH** (NOAA's Multi-Radar Multi-Sensor Maximum Estimated Size of
+Hail) within 10 km of the cell centre, or `null` when the product shows
+none there (values under 5 mm are treated as none). The payload's top-level
+`hail` object gives `{ source: "MRMS MESH", validTime, available }`. The
+field comes from the public `noaa-mrms-pds` bucket (`CONUS/MESH_00.50/`,
+one ~54 KB gzipped GRIB2 every 2 min); its PNG packing (template 5.41) is
+decoded in-process with Node's zlib — no system dependency. Cached per file
+for 2 min. A MESH outage leaves `hail: null` on every cell and
+`hail.available: false`; it never fails the tracks.
+
 - **Errors:** HTTP 400 on a bad `site`; HTTP 503 when the bucket is
   unreachable — the client keeps its last cells flagged stale.
 
@@ -484,7 +495,7 @@ red dot.
 
 **Critical** services (red when down): Mapbox, IEM (radar), NEXRAD L3
 (radial), LocationIQ. Everything else (NWS / ECCC alerts, GLM lightning,
-sunrise-sunset.org, ipapi.co, GitHub) is yellow. A failure counts only after
+MRMS hail, sunrise-sunset.org, ipapi.co, GitHub) is yellow. A failure counts only after
 two consecutive failed calls with no success in the last 35 min; NWS and
 ECCC suppress each other (only one covers any given point).
 

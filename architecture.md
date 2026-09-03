@@ -95,6 +95,8 @@ server/
                         shims over nexrad-level-3-data, azimuth re-bucketing,
                         base64 level payload, latest + per-stamp caches
   stormTracksCtrl.js    /api/storm-tracks — STI (58) cells + NMD (141) mesos
+  mrmsHailCtrl.js       MRMS MESH hail sampled at each cell — pure-JS GRIB2/PNG
+                        decoder over the public noaa-mrms-pds bucket
   glmLightningCtrl.js   /api/lightning — GOES-19 GLM HDF5 via h5wasm, rolling window
   govAlertsCtrl.js      /api/weather-alerts + /api/nearby-alerts orchestration
   govAlertSources/      nws.js, eccc.js, nwsZones.js, _shared.js (geometry)
@@ -181,8 +183,10 @@ client/src/
   on-screen site frame, the mosaic (IEM's valid time, or "~" when derived),
   the storm-track scan time, and the newest GLM flash.
 - **Arrival labels.** `stormArrival.estimateArrival` projects the home
-  point onto each cell's forecast motion; cells passing within 20 km get a
-  permanent "≈ N min" label.
+  point onto each cell's forecast motion; cells passing within 20 km within
+  3 h get a permanent arrival label. Every cell shows its id, every
+  forecast tick its clock time; a tap opens a card with heading, speed,
+  arrival and MRMS MESH hail size, without moving the location pin.
 
 ### Polling and idle behaviour
 

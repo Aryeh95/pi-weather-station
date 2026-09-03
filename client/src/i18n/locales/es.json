@@ -402,7 +402,10 @@
     "cellNew": "Celda nueva — sin movimiento aún",
     "cellArrival": "Llega aquí en {{lead}} · pasa a {{km}} km",
     "cellNotToward": "No se dirige hacia aquí",
-    "cellScan": "Barrido {{time}}"
+    "cellScan": "Barrido {{time}}",
+    "cellHail": "Granizo (MRMS MESH): {{size}}",
+    "cellHailNone": "Granizo (MRMS MESH): no detectado",
+    "cellHailShort": "granizo {{size}}"
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",
