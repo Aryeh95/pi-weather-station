@@ -817,6 +817,18 @@ here; `isUsableMapboxToken` refuses `sk.` outright.
   style endpoint serves 512 px, so the app on a token uses the kiosk's
   `tileSize: 512` / `zoomOffset: -1` — verified live, map z7 requests tile
   z6.
+- **Scope: the raster tile endpoint needs `styles:tiles`**, not
+  `styles:read`. `styles:read` reads style JSON (what GL JS uses); the
+  `/styles/v1/{user}/{style}/tiles/{z}/{x}/{y}` path this build fetches
+  checks `styles:tiles`, and answers a token without it
+  `403 {"message":"This API requires a token with styles:tiles scope."}`.
+  Both are on by default for a public token created in the Mapbox UI — the
+  trap is advice (mine, 2026-09-04) to hand-scope one to styles:read.
+- **A new token is not usable immediately.** Observed 2026-09-04 on a
+  token minutes old: the same tile URL alternated 200 / 403 for a few
+  minutes, then went 20/20 200 on deep uncached tiles. A 403 tile renders
+  as nothing, so this presents as "the app shows no basemap" with no
+  visible error — check with curl before suspecting the client.
 - The Advanced style pickers are gated on a usable token rather than on
   `!__STANDALONE__`: without one they would name styles nothing fetches.
 - Only built-in `mapbox/*` styles are reachable. The kiosk's proxy also

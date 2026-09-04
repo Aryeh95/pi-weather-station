@@ -595,9 +595,9 @@ const SectionAppApi = ({ ctx, lang }) => {
               "Un jeton public Mapbox commence par « pk. ».",
               "Un token público de Mapbox empieza por « pk. ».")
             : lbl(lang,
-              "Empty = Esri's keyless basemap. With a public token (pk.) the app draws Mapbox instead, and the style pickers in Advanced apply. Use a token scoped to styles:read and fonts:read, separate from any the kiosk uses, so it can be revoked on its own.",
-              "Vide = fond de carte Esri sans clé. Avec un jeton public (pk.), l'application affiche Mapbox et les styles du volet Avancé s'appliquent. Utilisez un jeton limité à styles:read et fonts:read, distinct de celui du kiosque, pour pouvoir le révoquer seul.",
-              "Vacío = mapa base de Esri sin clave. Con un token público (pk.) la app dibuja Mapbox y se aplican los estilos de Avanzado. Usa un token limitado a styles:read y fonts:read, distinto del que use el quiosco, para poder revocarlo por separado.")}
+              "Empty = Esri's keyless basemap. With a public token (pk.) the app draws Mapbox instead, and the style pickers in Advanced apply. The token needs the styles:tiles scope — that is the one the raster tile endpoint checks, and it is on by default for a new public token. A freshly created token can take a few minutes to start working. Use one separate from any the kiosk uses, so it can be revoked on its own.",
+              "Vide = fond de carte Esri sans clé. Avec un jeton public (pk.), l'application affiche Mapbox et les styles du volet Avancé s'appliquent. Le jeton doit avoir la portée styles:tiles — c'est celle que vérifie le point d'accès des tuiles raster, active par défaut sur un nouveau jeton public. Un jeton tout juste créé peut mettre quelques minutes à fonctionner. Utilisez-en un distinct de celui du kiosque, pour pouvoir le révoquer seul.",
+              "Vacío = mapa base de Esri sin clave. Con un token público (pk.) la app dibuja Mapbox y se aplican los estilos de Avanzado. El token necesita el ámbito styles:tiles — es el que comprueba el endpoint de teselas ráster, activo por defecto en un token público nuevo. Un token recién creado puede tardar unos minutos en funcionar. Usa uno distinto del que use el quiosco, para poder revocarlo por separado.")}
       />
 
       <div className={styles.saveBar}>
