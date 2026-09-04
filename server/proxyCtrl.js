@@ -16,6 +16,7 @@
 const axios = require("axios").default;
 const { getSettingsData } = require("./settingsCtrl");
 const { recordServiceCall } = require("./serviceStatus");
+const { sunTimesFor, nextDate } = require("./solar");
 const { increment } = require("./requestCounter");
 
 const ALLOWED_STYLES = ["dark-v10", "dark-v11", "light-v10", "light-v11", "navigation-day-v1", "streets-v12"];
@@ -155,7 +156,7 @@ async function mapTile(req, res) {
 }
 
 /**
- * Proxy: sunrise-sunset.org, avoiding mixed-content issues and enabling service tracking.
+ * Sunrise / sunset, computed locally (see ./solar.js) rather than fetched.
  *
  * Response shape:
  *   - Default (no `tomorrow` param): pass-through of the upstream JSON
@@ -186,66 +187,22 @@ async function sunriseSunset(req, res) {
     return res.status(400).json("Invalid coordinates").end();
   }
 
-  // Optional `date` parameter (YYYY-MM-DD) is forwarded to the
-  // upstream API. The client passes its LOCAL date so the returned
-  // sunrise / sunset belong to the user's day. Without it the API
-  // defaults to "today UTC" — and for users west of UTC during
-  // evening hours that's already the next UTC day, which means
-  // the response skips over today's local sunset and the auto
-  // dark-mode toggle flips early. Strict regex match so a junk
-  // value can't reach the upstream URL.
+  // Optional `date` parameter (YYYY-MM-DD). The client passes its LOCAL date
+  // so the returned sunrise / sunset belong to the user's day: defaulting to
+  // "today UTC" means that for users west of UTC during evening hours the
+  // answer is already the next UTC day, which skips today's local sunset and
+  // flips auto dark-mode early. Strict regex so junk cannot reach the maths.
   const todayDate = typeof req.query.date === "string"
     && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
     ? req.query.date
-    : null;
-  const dateParam = todayDate ? `&date=${todayDate}` : "";
+    : new Date().toISOString().slice(0, 10);
 
-  // Compute tomorrow's YYYY-MM-DD from `date` (or from today UTC if
-  // none was supplied). Done locally via Date arithmetic so we don't
-  // round-trip a third upstream call just to learn the date.
-  const wantsTomorrow = Boolean(req.query.tomorrow);
-  let tomorrowParam = "";
-  if (wantsTomorrow) {
-    const base = todayDate ? new Date(`${todayDate}T12:00:00Z`) : new Date();
-    base.setUTCDate(base.getUTCDate() + 1);
-    const y = base.getUTCFullYear();
-    const m = String(base.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(base.getUTCDate()).padStart(2, "0");
-    tomorrowParam = `&date=${y}-${m}-${d}`;
+  const results = sunTimesFor(todayDate, lat, lon);
+  const payload = { results: results || null, status: results ? "OK" : "NO_CROSSING" };
+  if (req.query.tomorrow) {
+    payload.tomorrowResults = sunTimesFor(nextDate(todayDate), lat, lon) || null;
   }
-
-  try {
-    const todayPromise = axios.get(
-      `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}&formatted=0${dateParam}`,
-      { timeout: API_TIMEOUT_MS }
-    );
-    const tomorrowPromise = wantsTomorrow
-      ? axios.get(
-        `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}&formatted=0${tomorrowParam}`,
-        { timeout: API_TIMEOUT_MS }
-      ).catch((err) => {
-        // Tomorrow's failure is non-fatal — log and return null so the
-        // main response still ships today's data. `Promise.all` below
-        // would otherwise reject the whole thing for one bad call.
-        recordServiceCall("sunrise-sunset.org", err?.response?.status || 500,
-          `tomorrow: ${String(err?.message || "fail").slice(0, 80)}`);
-        return null;
-      })
-      : Promise.resolve(null);
-
-    const [todayRes, tomorrowRes] = await Promise.all([todayPromise, tomorrowPromise]);
-    recordServiceCall("sunrise-sunset.org", 200, wantsTomorrow ? "OK (+tomorrow)" : "OK");
-    const payload = { ...todayRes.data };
-    if (tomorrowRes && tomorrowRes.data && tomorrowRes.data.results) {
-      payload.tomorrowResults = tomorrowRes.data.results;
-    }
-    return res.status(200).json(payload).end();
-  } catch (err) {
-    const status = err?.response?.status || 500;
-    const message = err?.response?.data?.status || "Sunrise/sunset request failed";
-    recordServiceCall("sunrise-sunset.org", status, String(message).slice(0, 100));
-    return res.status(500).json("Sunrise/sunset request failed").end();
-  }
+  return res.status(200).json(payload).end();
 }
 
 module.exports = {

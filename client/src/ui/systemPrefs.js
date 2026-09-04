@@ -18,19 +18,14 @@
  * Falls back to en-US-style imperial defaults if any of the
  * `Intl` APIs throw (very old browsers / sandboxed contexts).
  *
- * - `tempUnit`     — "f" / "c"
  * - `speedUnit`    — "mph" / "kmh"  (m/s is rare enough that
  *                    nobody's phone says it; users who want it can
  *                    toggle in Settings)
  * - `lengthUnit`   — "in" / "mm"
  * - `distanceUnit` — "mi" / "km"
- * - `pressureUnit` — "hpa" / "inhg"  (kPa — the Environment Canada
- *                    reading convention — is offered in Settings but
- *                    never seeded: hPa is the international default
- *                    everywhere barometers aren't read in inHg)
  * - `clockTime`    — "12" / "24"
  *
- * @returns {{tempUnit: string, speedUnit: string, lengthUnit: string, distanceUnit: string, pressureUnit: string, clockTime: string}}
+ * @returns {{speedUnit: string, lengthUnit: string, distanceUnit: string, clockTime: string}}
  */
 export function detectSystemDefaults() {
   // Tri-state system: "us" / "uk" / "metric". The UK is a genuine
@@ -82,9 +77,9 @@ export function detectSystemDefaults() {
   // metrics in metric (°C, mm) but vehicular speed and distance in
   // imperial (mph, miles).
   const presets = {
-    us:     { tempUnit: "f", speedUnit: "mph", lengthUnit: "in", distanceUnit: "mi", pressureUnit: "inhg" },
-    uk:     { tempUnit: "c", speedUnit: "mph", lengthUnit: "mm", distanceUnit: "mi", pressureUnit: "hpa" },
-    metric: { tempUnit: "c", speedUnit: "kmh", lengthUnit: "mm", distanceUnit: "km", pressureUnit: "hpa" },
+    us:     { speedUnit: "mph", lengthUnit: "in", distanceUnit: "mi" },
+    uk:     { speedUnit: "mph", lengthUnit: "mm", distanceUnit: "mi" },
+    metric: { speedUnit: "kmh", lengthUnit: "mm", distanceUnit: "km" },
   };
   return {
     ...presets[system],

@@ -64,7 +64,6 @@ function registerKnownServices() {
     "Mapbox",
     "LocationIQ",
     "ipapi.co",
-    "sunrise-sunset.org",
     "IEM (radar)",
     "NEXRAD L3 (radial)",
     "NEXRAD L3 (storm tracks)",

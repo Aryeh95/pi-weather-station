@@ -16,7 +16,6 @@ CORS-open. Verified 2026-09-03, all answering `Access-Control-Allow-Origin: *`:
 | `noaa-mrms-pds.s3.amazonaws.com` | MRMS MESH hail |
 | `noaa-goes19.s3.amazonaws.com` | GLM lightning |
 | `server.arcgisonline.com` | basemap (Esri Canvas) |
-| `api.sunrise-sunset.org` | auto dark-mode switch |
 
 ## How the server runs inside the app
 
@@ -34,8 +33,10 @@ CORS-open. Verified 2026-09-03, all answering `Access-Control-Allow-Origin: *`:
   fall through to the real network adapter.
 - **`upstream.js`** replaces the three routes that existed only because the
   server held a key or a socket — reverse geocoding (now the city/state that
-  `api.weather.gov/points` already returns beside the radar station), sunrise/
-  sunset, and the IP-geolocation fallback — plus the keyless basemap URL.
+  `api.weather.gov/points` already returns beside the radar station) and the
+  IP-geolocation fallback — plus the keyless basemap URL. Sunrise / sunset
+  needs no replacement: `server/proxyCtrl.js` computes it locally, so the
+  app imports that handler and runs the same code the kiosk does.
 - **`settingsStore.js`** backs `GET /settings`, `PATCH /setting` and
   `POST /settings` with localStorage, so the Advanced controls and saved
   places persist on the device instead of appearing editable and losing every

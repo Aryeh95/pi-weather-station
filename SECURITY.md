@@ -14,7 +14,8 @@ The only keyed upstreams are **Mapbox** (basemap tiles) and **LocationIQ**
 (reverse geocoding). Both are called by the Express server; the keys live in
 `settings.json` on the host and never appear in client-side URLs.
 Everything radar-related (IEM, the NEXRAD Level III and GOES buckets,
-api.weather.gov, ECCC, sunrise-sunset.org, ipapi.co) is keyless.
+api.weather.gov, ECCC, ipapi.co) is keyless. Sunrise / sunset is not
+fetched at all — it is computed locally in `server/solar.js`.
 
 Remote clients receive booleans (`true` / `false`) for key fields from
 `GET /settings`; key values are returned only to `localhost`.

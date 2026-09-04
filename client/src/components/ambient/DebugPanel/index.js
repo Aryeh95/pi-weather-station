@@ -1228,7 +1228,6 @@ const SERVICE_LABELS = {
   "ipapi.co": "ipapi.co",
   "anthropic": "Anthropic",
   "rainviewer": "RainViewer",
-  "sunrise-sunset.org": "sunrise-sunset.org",
 };
 
 /**

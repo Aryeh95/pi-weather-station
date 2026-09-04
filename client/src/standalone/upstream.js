@@ -10,9 +10,6 @@
 //                    the radar station — one call, no key, and the app is
 //                    NEXRAD-only (US) anyway, which is exactly that field's
 //                    coverage.
-//   sunrise-sunset   The upstream is keyless and CORS-open; the server
-//                    proxied it only to avoid mixed content on the kiosk's
-//                    self-signed HTTPS and to log the call. Call it direct.
 //   map tiles        Mapbox needs a key. The app uses Esri's Canvas basemaps,
 //                    which are genuinely keyless (see MAP_MAX_NATIVE_ZOOM
 //                    below for the one thing to know about them).
@@ -94,30 +91,6 @@ function rememberPlace(key, value) {
     PLACE_CACHE.delete(PLACE_CACHE.keys().next().value);
   }
   PLACE_CACHE.set(key, value);
-}
-
-/**
- * Sunrise / sunset for the auto dark-mode switch, called direct.
- *
- * @param {object} req Express-shaped request; `query.lat` / `query.lon`
- * @param {object} res Express-shaped response collector
- * @returns {Promise<object>} the response collector
- */
-export async function sunriseSunset(req, res) {
-  const lat = parseFloat(req.query.lat);
-  const lon = parseFloat(req.query.lon);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    return res.status(400).json("Invalid coordinates").end();
-  }
-  try {
-    const { data } = await axios.get(
-      `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}&formatted=0`,
-      { timeout: API_TIMEOUT_MS }
-    );
-    return res.status(200).json(data).end();
-  } catch {
-    return res.status(503).json("Sunrise/sunset unavailable").end();
-  }
 }
 
 /**

@@ -355,9 +355,13 @@ LocationIQ reverse geocoding for the place name in the header.
 
 ### `GET /api/sunrise-sunset?lat=&lon=[&date=YYYY-MM-DD]`
 
-sunrise-sunset.org times, used by auto dark-mode. The client passes its
-local date so the returned times belong to the user's day. Strict regex on
-`date`.
+Sunrise / sunset, used by auto dark-mode. Computed locally in
+`server/solar.js` — the NOAA solar-position algorithm, no upstream call —
+but the response keeps the field names and ISO-with-offset format that
+api.sunrise-sunset.org used, because the client stores the payload as-is.
+The client passes its local date so the returned times belong to the user's
+day. Strict regex on `date`. `tomorrow=1` adds `tomorrowResults`.
+`results` is `null` with `status: "NO_CROSSING"` on a polar day or night.
 
 - **Access:** 🌐 Public — rate limited
 
@@ -500,7 +504,7 @@ red dot.
 
 **Critical** services (red when down): Mapbox, IEM (radar), NEXRAD L3
 (radial), LocationIQ. Everything else (NWS / ECCC alerts, GLM lightning,
-MRMS hail, sunrise-sunset.org, ipapi.co, GitHub) is yellow. A failure counts only after
+MRMS hail, ipapi.co, GitHub) is yellow. A failure counts only after
 two consecutive failed calls with no success in the last 35 min; NWS and
 ECCC suppress each other (only one covers any given point).
 

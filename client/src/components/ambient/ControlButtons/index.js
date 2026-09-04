@@ -634,7 +634,7 @@ const ControlButtons = ({ labelled = false }) => {
     </div>
   );
   // Auto dark/light toggle (v2.14.71). Flips darkMode at the
-  // local sunrise / sunset times pulled from sunrise-sunset.org.
+  // local sunrise / sunset times, computed by the server.
   // `.buttonDown` active state mirrors the timeline + legend
   // toggles: when ON, the button reads as "pressed in" via the
   // palette's accent-soft fill.

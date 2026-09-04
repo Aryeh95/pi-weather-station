@@ -7,7 +7,6 @@ const SERVICE_LABELS = {
   "mapbox":             "Mapbox",
   "locationiq":         "LocationIQ",
   "ipapi.co":           "ipapi.co",
-  "sunrise-sunset.org": "sunrise-sunset.org",
 };
 
 /**

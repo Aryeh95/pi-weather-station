@@ -35,7 +35,10 @@ import { getRadarRadial } from "../../../server/radarRadialCtrl";
 import { getStormTracks } from "../../../server/stormTracksCtrl";
 import { getLightning } from "../../../server/glmLightningCtrl";
 import { getWeatherAlerts, getNearbyAlerts } from "../../../server/govAlertsCtrl";
-import { reverseGeocode, sunriseSunset, ipGeolocation } from "./upstream";
+// Sunrise/sunset is computed, not fetched (server/solar.js), so the server's
+// own handler works unchanged here — one implementation for both builds.
+import { sunriseSunset } from "../../../server/proxyCtrl";
+import { reverseGeocode, ipGeolocation } from "./upstream";
 import { getSettings, setSetting, createSettings } from "./settingsStore";
 
 /**

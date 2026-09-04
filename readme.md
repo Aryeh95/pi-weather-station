@@ -127,7 +127,6 @@ RadarScope. ECCC (Canada) alerts are also polled for locations in Canada.
 | [Environment Canada](https://api.weather.gc.ca/) | Alerts for Canadian locations | none |
 | [Mapbox](https://www.mapbox.com/) | Basemap raster tiles | **required** |
 | [LocationIQ](https://locationiq.com/) | Reverse geocoding for the place name | optional |
-| [Sunrise-Sunset](https://sunrise-sunset.org/) | Auto dark-mode switching | none |
 | [ipapi.co](https://ipapi.co/) | Default location when none is configured | none |
 
 Radar tiles are fetched directly by the browser (they are public and keyless).
@@ -362,7 +361,7 @@ Available on the kiosk itself when `DEBUG=true` is set server-side. Shows:
   `/api/*` calls since page load
 - **Services** — last HTTP status and last success for each upstream (IEM,
   NEXRAD Level III bucket, GOES GLM, NWS, ECCC, Mapbox, LocationIQ,
-  sunrise-sunset.org, ipapi.co, GitHub). `GET /api/health` summarises these
+  ipapi.co, GitHub). `GET /api/health` summarises these
   into the green / yellow / red dot in the dock
 - **Quotas** — hourly / daily / monthly request counters per service
 - **Logs** — last 100 lines of the server log (see [docs/logs.md](docs/logs.md))

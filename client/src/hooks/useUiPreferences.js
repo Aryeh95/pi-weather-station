@@ -2,11 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 
 import { detectSystemDefaults } from "~/ui/systemPrefs";
 
-const TEMP_UNIT_STORAGE_KEY = "tempUnit";
 const SPEED_UNIT_STORAGE_KEY = "speedUnit";
 const LENGTH_UNIT_STORAGE_KEY = "lengthUnit";
 const DISTANCE_UNIT_STORAGE_KEY = "distanceUnit";
-const PRESSURE_UNIT_STORAGE_KEY = "pressureUnit";
 const CLOCK_UNIT_STORAGE_KEY = "clockTime";
 const FONT_SIZE_STORAGE_KEY = "fontSize";
 
@@ -19,8 +17,8 @@ const SYSTEM_PREFS_SEEDED_KEY = "systemPrefsSeeded_v1";
 
 /**
  * Self-contained state for the user's display preferences — the units
- * the dashboard renders weather data in (temperature, wind speed,
- * precipitation length, radius distance, surface pressure), the clock
+ * the radar view renders measurements in (storm speed, hail size,
+ * radius distance), the clock
  * format (12 vs 24 h), and the global font-size zoom.
  *
  * All seven values are persisted to localStorage so they survive reloads
@@ -39,11 +37,9 @@ const SYSTEM_PREFS_SEEDED_KEY = "systemPrefsSeeded_v1";
  *   updates React state AND writes the localStorage key in one step)
  */
 export function useUiPreferences() {
-  const [tempUnit, setTempUnit] = useState("f");
   const [speedUnit, setSpeedUnit] = useState("mph");
   const [lengthUnit, setLengthUnit] = useState("in");
   const [distanceUnit, setDistanceUnit] = useState("mi");
-  const [pressureUnit, setPressureUnit] = useState("hpa");
   const [clockTime, setClockTime] = useState("12");
   const [fontSize, setFontSize] = useState("m");
 
@@ -51,14 +47,13 @@ export function useUiPreferences() {
   // seeding. Runs on mount only (deps `[]`); subsequent updates flow
   // through the save* helpers.
   useEffect(() => {
-    const temp = window.localStorage.getItem(TEMP_UNIT_STORAGE_KEY);
     const speed = window.localStorage.getItem(SPEED_UNIT_STORAGE_KEY);
     const length = window.localStorage.getItem(LENGTH_UNIT_STORAGE_KEY);
     const distance = window.localStorage.getItem(DISTANCE_UNIT_STORAGE_KEY);
     const clock = window.localStorage.getItem(CLOCK_UNIT_STORAGE_KEY);
 
     const alreadySeeded = window.localStorage.getItem(SYSTEM_PREFS_SEEDED_KEY) === "true";
-    const noUnitKeysSet = !temp && !speed && !length && !distance && !clock;
+    const noUnitKeysSet = !speed && !length && !distance && !clock;
     const sys = (!alreadySeeded && noUnitKeysSet) ? detectSystemDefaults() : null;
     if (sys || !alreadySeeded) {
       // Either we actively seeded, or this is an existing install where
@@ -67,12 +62,6 @@ export function useUiPreferences() {
       window.localStorage.setItem(SYSTEM_PREFS_SEEDED_KEY, "true");
     }
 
-    if (temp) {
-      setTempUnit(temp);
-    } else if (sys) {
-      setTempUnit(sys.tempUnit);
-      window.localStorage.setItem(TEMP_UNIT_STORAGE_KEY, sys.tempUnit);
-    }
     if (speed) {
       setSpeedUnit(speed);
     } else if (sys) {
@@ -91,21 +80,6 @@ export function useUiPreferences() {
       setDistanceUnit(sys.distanceUnit);
       window.localStorage.setItem(DISTANCE_UNIT_STORAGE_KEY, sys.distanceUnit);
     }
-    // Pressure (v3.1 Phase 2). Three paths: stored value wins; fresh
-    // installs seed from the locale like the other units; existing
-    // installs (seeded long before this key existed) derive a one-time
-    // default from their stored length unit — an imperial-precip user
-    // expects inHg on the barometer tile, everyone else gets hPa.
-    const pressure = window.localStorage.getItem(PRESSURE_UNIT_STORAGE_KEY);
-    if (pressure === "hpa" || pressure === "inhg" || pressure === "kpa") {
-      setPressureUnit(pressure);
-    } else if (sys) {
-      setPressureUnit(sys.pressureUnit);
-      window.localStorage.setItem(PRESSURE_UNIT_STORAGE_KEY, sys.pressureUnit);
-    } else if (length === "in") {
-      setPressureUnit("inhg");
-      window.localStorage.setItem(PRESSURE_UNIT_STORAGE_KEY, "inhg");
-    }
     if (clock) {
       setClockTime(clock);
     } else if (sys) {
@@ -116,10 +90,6 @@ export function useUiPreferences() {
     if (fs) setFontSize(fs);
   }, []);
 
-  const saveTempUnit = useCallback((val) => {
-    setTempUnit(val);
-    window.localStorage.setItem(TEMP_UNIT_STORAGE_KEY, val);
-  }, []);
   const saveSpeedUnit = useCallback((val) => {
     setSpeedUnit(val);
     window.localStorage.setItem(SPEED_UNIT_STORAGE_KEY, val);
@@ -132,10 +102,6 @@ export function useUiPreferences() {
     setDistanceUnit(val);
     window.localStorage.setItem(DISTANCE_UNIT_STORAGE_KEY, val);
   }, []);
-  const savePressureUnit = useCallback((val) => {
-    setPressureUnit(val);
-    window.localStorage.setItem(PRESSURE_UNIT_STORAGE_KEY, val);
-  }, []);
   const saveClockTime = useCallback((val) => {
     setClockTime(val);
     window.localStorage.setItem(CLOCK_UNIT_STORAGE_KEY, val);
@@ -146,11 +112,9 @@ export function useUiPreferences() {
   }, []);
 
   return {
-    tempUnit, saveTempUnit,
     speedUnit, saveSpeedUnit,
     lengthUnit, saveLengthUnit,
     distanceUnit, saveDistanceUnit,
-    pressureUnit, savePressureUnit,
     clockTime, saveClockTime,
     fontSize, saveFontSize,
   };

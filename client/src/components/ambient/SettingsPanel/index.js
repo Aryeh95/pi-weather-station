@@ -57,22 +57,19 @@ const SECTIONS = [
 /**
  * Map the five individual unit selections back to a single
  * "Metric" / "Imperial" preset, or "custom" when the user has
- * mixed them (e.g. °C + mph, or metric units with the kPa
- * barometer reading). Used by the unit-system Seg to highlight
+ * mixed them (e.g. km with mph). Used by the unit-system Seg to highlight
  * the active preset; "custom" results in neither button reading
  * as active, which is the right signal for "your individual
  * selectors below are the source of truth".
  *
- * @param {string} t tempUnit ("c" / "f" / "k")
- * @param {string} s speedUnit ("kmh" / "ms" / "mph")
- * @param {string} l lengthUnit ("mm" / "in")
- * @param {string} d distanceUnit ("km" / "mi")
- * @param {string} p pressureUnit ("hpa" / "inhg" / "kpa")
+ * @param {string} s speedUnit ("kmh" / "ms" / "mph") — storm cell speed
+ * @param {string} l lengthUnit ("mm" / "in") — hail size
+ * @param {string} d distanceUnit ("km" / "mi") — alert radius, miss distance
  * @returns {"metric"|"imperial"|"custom"}
  */
-function unitSystemPreset(t, s, l, d, p) {
-  if (t === "c" && s === "kmh" && l === "mm" && d === "km" && p === "hpa") return "metric";
-  if (t === "f" && s === "mph" && l === "in" && d === "mi" && p === "inhg") return "imperial";
+function unitSystemPreset(s, l, d) {
+  if (s === "kmh" && l === "mm" && d === "km") return "metric";
+  if (s === "mph" && l === "in" && d === "mi") return "imperial";
   return "custom";
 }
 
@@ -242,11 +239,9 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
   const {
     fontSize, saveFontSize,
     clockTime, saveClockTime,
-    tempUnit, saveTempUnit,
     speedUnit, saveSpeedUnit,
     lengthUnit, saveLengthUnit,
     distanceUnit, saveDistanceUnit,
-    pressureUnit, savePressureUnit,
     mouseHide, saveMouseHide,
     showAdvisoryAlerts, saveShowAdvisoryAlerts,
     showTestAlerts, saveShowTestAlerts,
@@ -319,29 +314,24 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
             { v: "metric", l: lbl(lang, "Metric", "Métrique", "Métrico") },
             { v: "imperial", l: lbl(lang, "Imperial", "Impérial", "Imperial") },
           ]}
-          value={unitSystemPreset(tempUnit, speedUnit, lengthUnit, distanceUnit, pressureUnit)}
+          value={unitSystemPreset(speedUnit, lengthUnit, distanceUnit)}
           onChange={(preset) => {
             if (preset === "metric") {
-              saveTempUnit("c");
               saveSpeedUnit("kmh");
               saveLengthUnit("mm");
               saveDistanceUnit("km");
-              savePressureUnit("hpa");
             } else if (preset === "imperial") {
-              saveTempUnit("f");
               saveSpeedUnit("mph");
               saveLengthUnit("in");
               saveDistanceUnit("mi");
-              savePressureUnit("inhg");
             }
           }}
         />
-        <Seg
-          label="Temp"
-          options={[{ v: "f", l: "°F" }, { v: "c", l: "°C" }, { v: "k", l: "K" }]}
-          value={tempUnit}
-          onChange={saveTempUnit}
-        />
+        {/* Temperature and pressure were removed with the forecast panels:
+          * a radar viewer displays neither, and both selectors sat here
+          * changing nothing. The three that remain each have a readout —
+          * storm cell speed, hail size, and the alert radius / miss
+          * distance. */}
         <Seg
           label={lbl(lang, "Speed", "Vent", "Viento")}
           options={[{ v: "mph", l: "mph" }, { v: "ms", l: "m/s" }, { v: "kmh", l: "kph" }]}
@@ -349,7 +339,7 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
           onChange={saveSpeedUnit}
         />
         <Seg
-          label={lbl(lang, "Length", "Précip.", "Precip.")}
+          label={lbl(lang, "Hail", "Grêle", "Granizo")}
           options={[{ v: "in", l: "in" }, { v: "mm", l: "mm" }]}
           value={lengthUnit}
           onChange={saveLengthUnit}
@@ -359,16 +349,6 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
           options={[{ v: "mi", l: "mi" }, { v: "km", l: "km" }]}
           value={distanceUnit}
           onChange={saveDistanceUnit}
-        />
-        {/* Pressure (v3.1 Phase 2 — the 4th metric tile). kPa is the
-          * Environment Canada / MétéoMédia reading convention, offered
-          * for Canadian kiosks even though no preset selects it (manual
-          * choice → the preset Seg correctly reads "custom"). */}
-        <Seg
-          label={lbl(lang, "Pressure", "Pression", "Presión")}
-          options={[{ v: "hpa", l: "hPa" }, { v: "inhg", l: "inHg" }, { v: "kpa", l: "kPa" }]}
-          value={pressureUnit}
-          onChange={savePressureUnit}
         />
       </div>
 

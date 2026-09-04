@@ -106,6 +106,33 @@ export const RadarStateContext = createContext(null);
 
 const DEFAULT_MAP_ZOOM_STORAGE_KEY = "defaultMapZoom";
 const DEFAULT_MAP_ZOOM_FALLBACK = 7; // historical hard-coded value before the slider
+
+/**
+ * The stored map zoom, read synchronously.
+ *
+ * `loadStoredData` also restores this, but it runs in an effect — a render
+ * later. `MapContainer` takes `zoom` as an INITIAL value only, so whatever
+ * the first render passes is the zoom the map keeps, and nothing re-applies
+ * it. That was unreachable while the map could not render until coordinates
+ * arrived asynchronously; seeding the position synchronously from
+ * `lastPosition` moved WeatherMap's mount to the first render, which puts it
+ * in a race with the effect. Reading the same value here removes the race
+ * rather than leaving it to render ordering. (Measured in a scripted launch,
+ * both orderings currently reach the stored zoom before the first tile
+ * request — this is a guard on the invariant, not a fix for an observed
+ * failure.)
+ *
+ * @returns {number|null} the stored zoom, or null when absent or unparseable
+ */
+function readStoredZoom() {
+  if (typeof window === "undefined") return null;
+  try {
+    const parsed = parseInt(window.localStorage.getItem(DEFAULT_MAP_ZOOM_STORAGE_KEY), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 const DARK_MODE_STORAGE_KEY = "darkMode";
 // v2.15.5: sleepNightMode is *also* mirrored to localStorage so remote
 // clients can persist their own palette preference across reloads. The
@@ -497,12 +524,10 @@ export function AppContextProvider({ children }) {
   // AND write localStorage in one step (the same pattern AppContext used
   // inline before the extraction).
   const {
-    tempUnit, saveTempUnit,
-    speedUnit, saveSpeedUnit,
+        speedUnit, saveSpeedUnit,
     lengthUnit, saveLengthUnit,
     distanceUnit, saveDistanceUnit,
-    pressureUnit, savePressureUnit,
-    clockTime, saveClockTime,
+        clockTime, saveClockTime,
     fontSize, saveFontSize,
   } = useUiPreferences();
 
@@ -517,8 +542,8 @@ export function AppContextProvider({ children }) {
   //   - zoomToLevel    : transient signal sent when the user moves the
   //                      Settings slider, picked up by WeatherMap's
   //                      ZoomLevelHandler to call map.setZoom for live preview.
-  const [defaultMapZoom, setDefaultMapZoom] = useState(DEFAULT_MAP_ZOOM_FALLBACK);
-  const [currentMapZoom, setCurrentMapZoom] = useState(DEFAULT_MAP_ZOOM_FALLBACK);
+  const [defaultMapZoom, setDefaultMapZoom] = useState(() => readStoredZoom() ?? DEFAULT_MAP_ZOOM_FALLBACK);
+  const [currentMapZoom, setCurrentMapZoom] = useState(() => readStoredZoom() ?? DEFAULT_MAP_ZOOM_FALLBACK);
   const [zoomToLevel, setZoomToLevel] = useState(null);
   // Freshness signal for the radar-anchored NowcastLine calm copy: the UNIX
   // timestamp (ms) of the newest frame, pushed up by WeatherMap when the
@@ -783,8 +808,9 @@ export function AppContextProvider({ children }) {
   const [hideRadarLegend, setHideRadarLegend] = useState(false);
   const [sunriseTime, setSunriseTime] = useState(null);
   const [sunsetTime, setSunsetTime] = useState(null);
-  // Full sunrise-sunset.org payloads for today AND tomorrow, used by
-  // SunDetailsPopover. Keys mirror the upstream API ('sunrise', 'sunset',
+  // Full /api/sunrise-sunset payloads for today AND tomorrow, used by
+  // SunDetailsPopover. Keys are the ones api.sunrise-sunset.org used
+  // before the calculation moved in-process ('sunrise', 'sunset',
   // 'civil_twilight_begin', 'civil_twilight_end', 'day_length') so the
   // popover can read fields directly without renaming. Each side is
   // `null` until the first fetch resolves, or if the upstream call for
@@ -2052,7 +2078,7 @@ export function AppContextProvider({ children }) {
   // (current / hourly / daily on staggered intervals against Tomorrow.io)
   // is now a single hourly solar pull — the only piece the radar viewer
   // still needs, because auto dark-mode switches the kiosk palette on it.
-  // No API key gate any more: sunrise-sunset.org is keyless.
+  // Nothing leaves the box: the server computes it (server/solar.js).
   useEffect(() => {
     if (!mapGeo || pollingPaused) return undefined;
     const SOLAR_INTERVAL = 60 * 60 * 1000;
@@ -2076,7 +2102,7 @@ export function AppContextProvider({ children }) {
       const now = Date.now();
       const sunrise = new Date(sunriseTime).getTime();
       const sunset = new Date(sunsetTime).getTime();
-      // sunrise-sunset.org returns today's times; if we're past sunset
+      // The endpoint returns today's times; if we're past sunset
       // it's "night" until midnight (and beyond, until tomorrow's
       // sunrise — but the next /api/sunrise-sunset poll refreshes the
       // window). Daytime = sunrise ≤ now < sunset.
@@ -2130,11 +2156,9 @@ export function AppContextProvider({ children }) {
     toggleRailHidden,
     setPanToCoords,
     toggleMarker,
-    saveTempUnit,
     saveSpeedUnit,
     saveLengthUnit,
     saveDistanceUnit,
-    savePressureUnit,
     saveDefaultMapZoom,
     setCurrentMapZoom,
     setZoomToLevel,
@@ -2200,11 +2224,9 @@ export function AppContextProvider({ children }) {
     toggleRailHidden,
     setPanToCoords,
     toggleMarker,
-    saveTempUnit,
     saveSpeedUnit,
     saveLengthUnit,
     saveDistanceUnit,
-    savePressureUnit,
     saveDefaultMapZoom,
     setCurrentMapZoom,
     setZoomToLevel,
@@ -2381,11 +2403,9 @@ export function AppContextProvider({ children }) {
   const uiPrefsSlice = useMemo(() => ({
     darkMode,
     darkModeAuto,
-    tempUnit,
     speedUnit,
     lengthUnit,
     distanceUnit,
-    pressureUnit,
     clockTime,
     fontSize,
     lightModeStyle,
@@ -2407,11 +2427,9 @@ export function AppContextProvider({ children }) {
   }), [
     darkMode,
     darkModeAuto,
-    tempUnit,
     speedUnit,
     lengthUnit,
     distanceUnit,
-    pressureUnit,
     clockTime,
     fontSize,
     lightModeStyle,

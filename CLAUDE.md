@@ -662,3 +662,51 @@ which lets the client run without `server/index.js` at all. Full write-up in
   `DEFAULT_APP_POSITION` (centre of the lower 48). The placeholder that used
   to fill this gap was the kiosk's missing-Mapbox-key message, which blamed
   the user for a key the app does not use.
+- **Anything the map mounts on the FIRST render must be seeded in the same
+  `useState` initialiser.** Leaflet's `MapContainer` captures `zoom` once and
+  nothing re-applies it, while `loadStoredData` restores it from an effect a
+  render later; seeding the position synchronously moved the mount into that
+  race, so `readStoredZoom()` now seeds `defaultMapZoom`/`currentMapZoom` the
+  same way.
+- **The user's "high-res radar took ~30 s after opening" is NOT reproduced
+  and NOT explained.** The stale-initial-zoom theory above was tested and
+  disproved: with the seeding reverted, a scripted launch still requests
+  `ridge::` site tiles at the stored z10 within 4 s. Measured in the app
+  bundle, upstreams served locally: first raw-radial blob overlay on the map
+  **1.9 s** after `goto` (bucket listing → 160 KB N0B → product-153 decode →
+  2560 px render), and the cold JSON chain 439 ms / 411 ms / 1 095 ms serial.
+  Whatever costs 30 s on the device is not in this path at container speed —
+  do not re-file it as a zoom bug without evidence from the phone.
+
+### Local sunrise / sunset (2026-09-03)
+
+`server/solar.js` computes it — no upstream call. Ported from the sibling
+e-paper project's `platformio/src/sun.cpp`, so the two stay a readable diff
+apart.
+
+- The response shape is api.sunrise-sunset.org's, deliberately: field names
+  (`sunrise`, `sunset`, `civil_twilight_begin`, `civil_twilight_end`,
+  `day_length`) and the `+00:00` ISO suffix, because the client stores the
+  payload as-is. A polar day/night gives `results: null`, `status:
+  "NO_CROSSING"` — never a fabricated time, or auto dark-mode flips on
+  nonsense.
+- Accuracy checked against the **US Naval Observatory** (`aa.usno.navy.mil/
+  api/rstt/oneday?date=&coords=&tz=0`, whole-minute UT), not against
+  sunrise-sunset.org, which was down (HTTP 521) at the time and is the reason
+  this moved in-process. Worst |delta| over 8 places x 5 dates: **2.0 min**
+  below 62°N, **3.3 min** at 71°N. That split is the NOAA approximation, not
+  a port bug — the sun's position is anchored at 00:00 UT and never iterated,
+  so error grows as the horizon crossing slows. `test/solar.test.js` embeds
+  the USNO table with tolerances just above the measured worst case.
+- The Android app imports the SERVER's handler (`standalone/api.js` →
+  `server/proxyCtrl.js`'s `sunriseSunset`) rather than keeping its own copy,
+  now that the route needs no key and no socket. `upstream.js` lost its
+  version.
+
+### Units in Settings (2026-09-03)
+
+Only three remain — `speedUnit` (storm speed), `lengthUnit` (hail size) and
+`distanceUnit` (radius) — because those are the only measurements the radar
+view renders. `tempUnit` and `pressureUnit` were forecast-era leftovers that
+reached nothing; the us/uk/metric presets in `ui/systemPrefs.js` set three
+values now, and `unitSystemPreset()` takes three arguments.

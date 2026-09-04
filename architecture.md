@@ -84,7 +84,8 @@ flow. Controllers are single-purpose modules:
 server/
   index.js              routes, TLS, rate limits, update flow, timestamped console
   settingsCtrl.js       settings.json: allow-list, masking, atomic 0600 writes
-  proxyCtrl.js          Mapbox tiles, LocationIQ, sunrise-sunset.org
+  proxyCtrl.js          Mapbox tiles, LocationIQ, sunrise / sunset
+  solar.js              NOAA solar position: sunrise, sunset, civil twilight
   geolocationCtrl.js    ipapi.co default location, 30-day disk cache
   iemRadarCtrl.js       /api/radar/site + /api/radar/frames (IEM JSON API,
                         NWS points lookup, mosaic valid-time metadata)
