@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getSettings } from "~/settings";
 import PropTypes from "prop-types";
-import { getCoordsFromApi } from "~/services/geolocation";
+import { getCoordsFromApi, getCoordsFromBrowser } from "~/services/geolocation";
 import useFollowLocation from "~/hooks/useFollowLocation";
 import useWakeLock from "~/hooks/useWakeLock";
 import reverseGeocode from "~/services/reverseGeocode";
@@ -1523,6 +1523,35 @@ export function AppContextProvider({ children }) {
     });
   }, [browserGeo, setMapPosition]);
 
+  /**
+   * One-shot "where am I": a single GPS fix, then done.
+   *
+   * The counterpart to follow mode, not a lesser version of it. Follow opens
+   * a `watchPosition` and holds the map on the device — the right thing while
+   * driving, and the most expensive thing this app can do to a battery. Most
+   * of the time the user just wants the map put back on themselves once,
+   * which is one fix and no ongoing cost, so it gets its own control that
+   * stays on screen with the rail hidden (see `LocateButton`).
+   *
+   * Deliberately does NOT touch `followLocation`: if follow is running this
+   * is a no-op the map was about to do anyway, and silently cancelling a mode
+   * the user turned on is worse than a redundant recentre.
+   *
+   * Moves the PIN as well as the view, for the same reason a committed follow
+   * fix does — see the note below.
+   *
+   * @returns {Promise<{latitude: Number, longitude: Number}>} the fix; rejects
+   *   on a denied permission or a timeout, which the caller surfaces
+   */
+  const locateOnce = useCallback(() => (
+    getCoordsFromBrowser().then(({ latitude, longitude }) => {
+      const coords = { latitude, longitude };
+      setBrowserGeo(coords);
+      setMapPosition(coords);
+      return coords;
+    })
+  ), [setMapPosition]);
+
   // Each committed fix moves the PIN, not just the view: the pin is what the
   // alert, lightning and storm-arrival layers key on, and at mosaic zoom it
   // is what picks the radar site. `setMapPosition` pans the map with it.
@@ -2166,6 +2195,7 @@ export function AppContextProvider({ children }) {
     setMapPosition,
     resetMapPosition,
     toggleFollowLocation,
+    locateOnce,
     saveKeepScreenAwake,
     toggleRailHidden,
     setPanToCoords,
@@ -2234,6 +2264,7 @@ export function AppContextProvider({ children }) {
     setMapPosition,
     resetMapPosition,
     toggleFollowLocation,
+    locateOnce,
     saveKeepScreenAwake,
     toggleRailHidden,
     setPanToCoords,

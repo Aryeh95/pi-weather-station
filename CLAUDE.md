@@ -737,3 +737,32 @@ user's complaint.
 - Verified with CDP `Input.dispatchTouchEvent` (React ignores hand-rolled
   touch events): a 1.2x pinch, the exact case that used to spring back,
   now rests at 10.26; "+" then gives 11 and "−" gives 10.
+
+### One-shot locate (2026-09-04)
+
+`LocateButton` (app only) sits in `LayoutMobile`'s header row beside the
+hamburger, so it is on screen with the rail hidden and the drawer closed —
+the state it exists for. `AppActionsContext.locateOnce` is the action: one
+`getCoordsFromBrowser()`, then `setBrowserGeo` + `setMapPosition`, so the
+PIN moves and every layer keyed on it (radar site at mosaic zoom, alerts,
+lightning, storm arrival) follows.
+
+- It is NOT a replacement for follow mode and does not touch
+  `followLocation`. Follow opens a `watchPosition` and is the expensive
+  option for driving; this is the cheap one for the other 95 % of taps.
+  Silently cancelling a mode the user turned on would be worse than a
+  redundant recentre.
+- Placed at the TOP of the map on purpose. The conventional bottom-right
+  corner already carries the timeline, the legend strip and the basemap
+  attribution, and their combined height moves with what is toggled on
+  (`.with-legend .radar-timeline` alone shifts 62 px) — a floating button
+  there collides eventually.
+- `.headerSlot > :last-child { flex: 1 }` used to make the place/clock
+  strip fill the row. The locate button is the last child now, so the strip
+  is targeted through its own `.headerStrip` wrapper; restoring the
+  positional selector would stretch the button to fill the row.
+- Verified with a real geolocation grant in Playwright: rail hidden, one
+  click moves the pin Sterling VA → Philadelphia, fires exactly ONE new
+  `api.weather.gov/points/` lookup (a watch would keep firing), and updates
+  the header. With the permission denied the button reads "Could not get
+  your location" for 4 s and nothing moves.

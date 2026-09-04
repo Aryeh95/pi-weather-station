@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { InlineIcon } from "@iconify/react";
 import menuIcon from "@iconify/icons-carbon/menu";
 import AppDrawer from "~/components/ambient/AppDrawer";
+import LocateButton from "~/components/ambient/LocateButton";
 import WeatherMap from "~/components/WeatherMap";
 import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
@@ -27,7 +28,8 @@ import styles from "./styles.css";
  * Structure now (everything overlays the map; nothing scrolls):
  *
  *   ┌──────────────────────────────┐
- *   │ [place · clock]        strip │  ◀ RadarHeader `strip` variant
+ *   │ [≡] [place · clock]  [locate] │  ◀ RadarHeader `strip` variant,
+ *   │                              │    app-shell buttons either side
  *   │ [LWX ● 3 min  Tracks ● …]    │  ◀ RadarFrameAge, laid out as a row
  *   │ AlertBanner / detail / cards │  ◀ overlay column, scrolls if long
  *   │                              │
@@ -99,7 +101,16 @@ const LayoutMobile = () => {
             <InlineIcon icon={menuIcon} />
           </button>
           )}
-          <RadarHeader strip />
+          <div className={styles.headerStrip}>
+            <RadarHeader strip />
+          </div>
+          {/* App shell only, like the hamburger: mobile web keeps its
+            * always-visible dock, whose recentre button is right there.
+            * In the app the rail can be hidden and the drawer is closed by
+            * default, so this is the one location control that is always on
+            * screen. One fix, not a watch — the rail's button is the follow
+            * toggle, and the two do not cancel each other. */}
+          {__STANDALONE__ && <LocateButton />}
         </div>
         {/* Alert stack overlays the map below the header and frame-age
           * strip. Every child returns null with no active alert, so on a

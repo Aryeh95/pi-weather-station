@@ -59,8 +59,17 @@
   gap: 8px;
 }
 
-/* The place/clock strip takes the rest of the row beside the menu button. */
-.headerSlot > :last-child {
+/* The place/clock strip takes the rest of the row between the menu button
+ * and the locate button. Targeted through its own wrapper rather than as
+ * `:last-child`: the locate button is the last child now, and it must keep
+ * the fixed 40 px width it shares with the menu button. */
+.headerStrip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.headerStrip > * {
   flex: 1;
   min-width: 0;
 }
@@ -171,8 +180,9 @@
 
 /* Rail hidden: the map takes the whole width. The dock keeps its place in the
  * DOM (its stacking-context and toast rules stay intact) and is simply not
- * laid out — the left-edge swipe opens the drawer, which is how it comes
- * back. */
+ * laid out — the hamburger opens the drawer, which is how it comes back, and
+ * the locate button beside it stays on the map so the commonest reason to
+ * want the toolbar back never arises. */
 :global(html[data-shell="app"]) .layout.railHidden > :last-child {
   display: none;
 }

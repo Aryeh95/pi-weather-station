@@ -1,0 +1,77 @@
+/* LocateButton — the one map control that survives a hidden rail.
+ *
+ * Deliberately matches LayoutMobile's `.menuButton`: same 40 px square,
+ * surface, radius and shadow, so the header row reads as one piece of
+ * chrome with the place/clock strip between the two buttons. It sits at the
+ * TOP of the map rather than the conventional bottom-right corner because
+ * that corner already holds the timeline, the legend strip and the basemap
+ * attribution, whose combined height changes with what is toggled on — a
+ * floating button there would collide with one of them sooner or later.
+ *
+ * Doubled selector: the global `.ambientRoot button` reset strips
+ * background, border and colour from single-class button rules.
+ */
+.locateButton.locateButton {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--c-surface, rgba(255, 250, 240, 0.94));
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  color: var(--c-text);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.locateButton.locateButton:active {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+
+/* Failure is carried by the icon as well as the colour: the nightRed
+ * palette collapses hue distinctions, and the same rule the frame-age chip
+ * follows applies here. */
+.locateButton.error.error {
+  color: var(--c-danger, #b3261e);
+  border-color: var(--c-danger, #b3261e);
+}
+
+.locateButton svg {
+  width: 22px;
+  height: 22px;
+}
+
+.spin {
+  animation: locate-spin 0.9s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes locate-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation-duration: 2.4s; }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
