@@ -17,6 +17,13 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      # test/standaloneShims.test.js compares the app's zlib shim against
+      # Node's own, and that shim's pako lives in the client tree. Without
+      # this the file cannot even load and its two library-drift guards —
+      # which need only the root tree — never run.
+      - name: Install client deps (the app-shim guards compare against them)
+        run: npm ci
+        working-directory: client
       - run: npm test
 
   client:

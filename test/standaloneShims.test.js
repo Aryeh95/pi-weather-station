@@ -10,7 +10,24 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
-const pako = require("../client/node_modules/pako");
+
+// pako lives in the CLIENT dependency tree — it is the app bundle's zlib, not
+// the server's — so these comparisons need `npm ci` to have been run in
+// client/ as well as at the root. Requiring it at module scope took the whole
+// file down with it when only the root tree was installed, which is how CI ran
+// for eight commits: the two table guards below need nothing but the root
+// tree, and they were being skipped for want of a module they never touch.
+// CI installs both trees now (.github/workflows/ci.yml); this keeps a
+// root-only checkout useful rather than red.
+let pako = null;
+try {
+  pako = require("../client/node_modules/pako");
+} catch {
+  pako = null;
+}
+const noPako = pako
+  ? false
+  : "client/node_modules/pako is not installed — run `npm ci` in client/";
 
 const SHIM_DIR = path.join(__dirname, "..", "client", "src", "standalone", "shims");
 const PKG_SRC = path.join(__dirname, "..", "node_modules", "nexrad-level-3-data", "src");
@@ -48,7 +65,7 @@ test("the static packet table lists every packet the library ships", () => {
   assert.deepEqual(requiredNames("nexradPackets.js").sort(), onDisk.sort());
 });
 
-test("the pako zlib shim decodes MRMS gzip byte-for-byte like Node's zlib", () => {
+test("the pako zlib shim decodes MRMS gzip byte-for-byte like Node's zlib", { skip: noPako }, () => {
   // The hail decoder needs SYNCHRONOUS inflate, which the platform's
   // DecompressionStream cannot provide, so the app swaps in pako. A silent
   // difference here would reproduce the 2026-09-03 incident where a decode
@@ -66,7 +83,7 @@ test("the pako zlib shim decodes MRMS gzip byte-for-byte like Node's zlib", () =
   }
 });
 
-test("the pako zlib shim inflates a deflate stream like Node's zlib", () => {
+test("the pako zlib shim inflates a deflate stream like Node's zlib", { skip: noPako }, () => {
   // The GRIB2 payload's inner PNG is inflated through the same shim; a
   // round-trip pins that path too.
   const payload = Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 251));
