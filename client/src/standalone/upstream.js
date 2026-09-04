@@ -134,20 +134,86 @@ const ESRI_SERVICE = { dark: "World_Dark_Gray_Base", light: "World_Light_Gray_Ba
 // layers already use.
 export const MAP_MAX_NATIVE_ZOOM = 16;
 
+// Mapbox, when the user has supplied their own PUBLIC token in Settings.
+// Optional throughout: no token ships in the APK, and an empty token leaves
+// every function below on the keyless Esri path.
+//
+// Only built-in `mapbox/*` styles are reachable here. The kiosk's proxy also
+// resolves a Studio style through its CUSTOM_STYLES table, which needs the
+// account that owns the style — not something a shared token can carry.
+const MAPBOX_STYLE_BASE = "https://api.mapbox.com/styles/v1/mapbox";
+const MAPBOX_STYLE_RE = /^[\w-]+$/;
+
+/**
+ * Whether a string looks like a usable Mapbox token.
+ *
+ * Public tokens start `pk.`; secret (`sk.`) tokens must never be shipped to a
+ * client, so they are refused here rather than sent to Mapbox and rejected —
+ * a 401 in the tile layer looks like a broken basemap, not a bad key.
+ *
+ * @param {string} [token] candidate token
+ * @returns {boolean} true when the token should be used
+ */
+export function isUsableMapboxToken(token) {
+  return typeof token === "string" && token.trim().startsWith("pk.");
+}
+
 /**
  * Basemap tile URL template for the app.
  *
- * Note the `{z}/{y}/{x}` order: Esri's REST tile endpoint takes row before
- * column, the reverse of the XYZ convention Leaflet defaults to. Swapping
- * them yields tiles of the wrong place rather than an error.
+ * With a token, Mapbox's raster tiles for the chosen style. Without one,
+ * Esri Canvas — note its `{z}/{y}/{x}` order: Esri's REST tile endpoint takes
+ * row before column, the reverse of the XYZ convention Leaflet defaults to,
+ * and swapping them yields tiles of the wrong place rather than an error.
  *
  * @param {boolean} dark whether the dark palette is active
+ * @param {object} [opts] Mapbox options
+ * @param {string} [opts.token] the user's public Mapbox token
+ * @param {string} [opts.style] Mapbox style id for the active palette
  * @returns {string} Leaflet URL template
  */
-export function mapTileUrl(dark) {
+export function mapTileUrl(dark, opts = {}) {
+  const { token, style } = opts;
+  if (isUsableMapboxToken(token)) {
+    // Guard the style too: it lands in a URL path, and a stray value would
+    // silently 404 every tile. Falls back to Mapbox's own defaults.
+    const id = MAPBOX_STYLE_RE.test(style || "")
+      ? style
+      : (dark ? "dark-v10" : "streets-v12");
+    return `${MAPBOX_STYLE_BASE}/${id}/tiles/{z}/{x}/{y}?access_token=${encodeURIComponent(token.trim())}`;
+  }
   return `${ESRI_BASE}/${dark ? ESRI_SERVICE.dark : ESRI_SERVICE.light}/MapServer/tile/{z}/{y}/{x}`;
 }
 
 /** Attribution text the Esri service's own metadata specifies. */
 export const MAP_ATTRIBUTION =
   "Esri, HERE, Garmin, © OpenStreetMap contributors";
+
+/** Mapbox's required attribution, per its terms of service. */
+export const MAPBOX_TILE_ATTRIBUTION =
+  '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> '
+  + '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+/**
+ * Attribution for whichever basemap is in use.
+ *
+ * @param {string} [token] the user's Mapbox token, if any
+ * @returns {string} attribution HTML
+ */
+export function mapAttribution(token) {
+  return isUsableMapboxToken(token) ? MAPBOX_TILE_ATTRIBUTION : MAP_ATTRIBUTION;
+}
+
+/**
+ * Deepest zoom to request real tiles for.
+ *
+ * Esri's ceiling is a data limit (see MAP_MAX_NATIVE_ZOOM); Mapbox serves
+ * genuine detail past it, so the cap must not be applied there — undefined
+ * lets Leaflet ask for every level.
+ *
+ * @param {string} [token] the user's Mapbox token, if any
+ * @returns {number|undefined} maxNativeZoom for the basemap layer
+ */
+export function mapMaxNativeZoom(token) {
+  return isUsableMapboxToken(token) ? undefined : MAP_MAX_NATIVE_ZOOM;
+}

@@ -41,12 +41,16 @@ function mosaicLayerName(minutesAgo) {
 const BAND_LOW_ZOOM = 7;
 const BAND_HIGH_ZOOM = 9;
 
-function layerOpacities(zoom, baseOpacity = 1) {
+function layerOpacities(zoom, baseOpacity = 1, siteDrawn = true) {
   if (!Number.isFinite(zoom)) return { mosaic: baseOpacity, site: 0 };
   if (zoom <= BAND_LOW_ZOOM) return { mosaic: baseOpacity, site: 0 };
   if (zoom >= BAND_HIGH_ZOOM) return { mosaic: 0, site: baseOpacity };
-  const t = (zoom - BAND_LOW_ZOOM) / (BAND_HIGH_ZOOM - BAND_LOW_ZOOM);
-  return { mosaic: baseOpacity * (1 - t), site: baseOpacity * t };
+
+  const half = (BAND_HIGH_ZOOM - BAND_LOW_ZOOM) / 2;
+  const mid = BAND_LOW_ZOOM + half;
+  const site = zoom >= mid ? 1 : (zoom - BAND_LOW_ZOOM) / half;
+  const mosaic = (!siteDrawn || zoom <= mid) ? 1 : (BAND_HIGH_ZOOM - zoom) / half;
+  return { mosaic: baseOpacity * mosaic, site: baseOpacity * site };
 }
 
 function layerVisibility(zoom) {
@@ -120,14 +124,47 @@ test("mount gating agrees with opacity at every integer zoom", () => {
 });
 
 test("total radar opacity never drops through the band", () => {
-  // The two layers ramp in opposite directions, so their sum must stay
-  // at the user's chosen opacity — otherwise the radar visibly dims as
-  // the user zooms across the handover.
+  // The property that matters is a FLOOR, not equality. Ramping the two
+  // layers in exact opposition keeps the sum constant but leaves both at
+  // half strength in the middle of the band, which is the dimming this
+  // guards against — at the default 0.7 preference the mosaic sat at 0.35
+  // with the site not yet up to cover it. Overlap is free (the site paints
+  // over the mosaic where it has data, and is transparent where it does
+  // not); a dip is not.
   for (let z = 0; z <= 18; z++) {
     const { mosaic, site } = layerOpacities(z, 0.8);
     assert.ok(
-      Math.abs((mosaic + site) - 0.8) < 1e-9,
-      `total ink ${mosaic + site} at z=${z}, expected 0.8`
+      (mosaic + site) >= 0.8 - 1e-9,
+      `total ink ${mosaic + site} at z=${z}, below the 0.8 preference`
+    );
+  }
+});
+
+test("the mosaic holds full strength until the site can replace it", () => {
+  // The site fades in over the lower half of the band; the mosaic may not
+  // start fading until the site is at full opacity. Anywhere the site is
+  // still ramping, the mosaic must be untouched.
+  for (let z = 70; z <= 90; z += 1) {
+    const zoom = z / 10;
+    const { mosaic, site } = layerOpacities(zoom, 0.8);
+    if (site < 0.8 - 1e-9) {
+      assert.ok(
+        Math.abs(mosaic - 0.8) < 1e-9,
+        `mosaic faded to ${mosaic} at z=${zoom} while the site was only at ${site}`
+      );
+    }
+  }
+});
+
+test("the mosaic does not fade for a site layer that is not drawing", () => {
+  // Velocity mode mounts no site tiles, and a frame whose radial has not
+  // rendered paints nothing — the band would otherwise dim the only layer
+  // on screen. Every zoom inside the band keeps the full preference.
+  for (let z = 70; z < 90; z += 1) {
+    const { mosaic } = layerOpacities(z / 10, 0.8, false);
+    assert.ok(
+      Math.abs(mosaic - 0.8) < 1e-9,
+      `mosaic at ${mosaic} at z=${z / 10} with nothing drawn over it`
     );
   }
 });
@@ -136,9 +173,11 @@ test("layer opacity respects the user's radar-opacity preference", () => {
   // The crossfade scales the preference, never overrides it.
   assert.deepEqual(layerOpacities(3, 0.5), { mosaic: 0.5, site: 0 });
   assert.deepEqual(layerOpacities(14, 0.5), { mosaic: 0, site: 0.5 });
+  // Mid-band both layers are at the full preference: the site has finished
+  // fading in and the mosaic has not started fading out.
   const mid = layerOpacities(8, 0.5);
-  assert.ok(mid.mosaic > 0 && mid.site > 0);
-  assert.ok(Math.abs(mid.mosaic + mid.site - 0.5) < 1e-9);
+  assert.ok(Math.abs(mid.mosaic - 0.5) < 1e-9);
+  assert.ok(Math.abs(mid.site - 0.5) < 1e-9);
 });
 
 test("layer helpers tolerate a missing zoom", () => {

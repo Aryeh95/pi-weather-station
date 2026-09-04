@@ -149,6 +149,7 @@ const MARKER_VISIBLE_STORAGE_KEY = "markerIsVisible";
 const MOUSE_HIDE_STORAGE_KEY = "mouseHide";
 const KEEP_SCREEN_AWAKE_STORAGE_KEY = "keepScreenAwake";
 const RAIL_HIDDEN_STORAGE_KEY = "appRailHidden";
+const APP_MAPBOX_TOKEN_STORAGE_KEY = "appMapboxToken";
 const LAST_POSITION_STORAGE_KEY = "lastPosition";
 
 // Where the app opens when it has nothing else to go on: no stored position
@@ -390,6 +391,36 @@ export function AppContextProvider({ children }) {
       } catch { /* localStorage may be unavailable */ }
       return next;
     });
+  }, []);
+
+  // The app's own Mapbox token (app build only), for anyone who prefers
+  // Mapbox's cartography to the keyless Esri basemap the app ships with.
+  //
+  // Per-device localStorage rather than the settings store, and deliberately
+  // NOT baked into the APK: a key compiled into the app is extractable by
+  // anyone with the file, and Mapbox's URL restrictions do not apply to a
+  // WebView's requests. A PUBLIC token (`pk.`, scoped to styles:read and
+  // fonts:read) is the one Mapbox designs to be exposed in client apps, and
+  // it can be revoked without touching the kiosk's own key.
+  //
+  // Empty is the normal state: the app falls back to Esri Canvas, which needs
+  // nothing, so a fresh install still has a map.
+  const [appMapboxToken, setAppMapboxToken] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return window.localStorage.getItem(APP_MAPBOX_TOKEN_STORAGE_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+
+  const saveAppMapboxToken = useCallback((next) => {
+    const token = typeof next === "string" ? next.trim() : "";
+    setAppMapboxToken(token);
+    try {
+      if (token) window.localStorage.setItem(APP_MAPBOX_TOKEN_STORAGE_KEY, token);
+      else window.localStorage.removeItem(APP_MAPBOX_TOKEN_STORAGE_KEY);
+    } catch { /* localStorage may be unavailable */ }
   }, []);
 
   const saveKeepScreenAwake = useCallback((next) => {
@@ -2197,6 +2228,7 @@ export function AppContextProvider({ children }) {
     toggleFollowLocation,
     locateOnce,
     saveKeepScreenAwake,
+    saveAppMapboxToken,
     toggleRailHidden,
     setPanToCoords,
     toggleMarker,
@@ -2266,6 +2298,7 @@ export function AppContextProvider({ children }) {
     toggleFollowLocation,
     locateOnce,
     saveKeepScreenAwake,
+    saveAppMapboxToken,
     toggleRailHidden,
     setPanToCoords,
     toggleMarker,
@@ -2459,6 +2492,7 @@ export function AppContextProvider({ children }) {
     radarOpacityDark,
     mouseHide,
     keepScreenAwake,
+    appMapboxToken,
     railHidden,
     hideRadarLegend,
     markerIsVisible,
@@ -2483,6 +2517,7 @@ export function AppContextProvider({ children }) {
     radarOpacityDark,
     mouseHide,
     keepScreenAwake,
+    appMapboxToken,
     railHidden,
     hideRadarLegend,
     markerIsVisible,

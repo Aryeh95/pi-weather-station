@@ -766,3 +766,59 @@ lightning, storm arrival) follows.
   `api.weather.gov/points/` lookup (a watch would keep firing), and updates
   the header. With the permission denied the button reads "Could not get
   your location" for 4 s and nothing moves.
+
+### Frame-age rows describe what is DRAWN (2026-09-04)
+
+A row per layer, but only for layers with something on the map. Storm
+tracks are the case that forced this: SCIT writes a product only when it
+has cells, so a quiet radar's newest file can be up to the poller's
+3-hour lookback old, and the chip rendered "Tracks · 100+ min ago" over an
+empty map — indistinguishable from a broken feed. Measured live on
+2026-09-04: several sites returned 0 cells with 6-12 min products, two
+returned nothing within 3 h at all.
+
+- Gate is `cells.length || mesos.length` for tracks, `flashes.length` for
+  lightning, **OR** that layer's `stale` flag — a failing refresh is a real
+  fault and must stay visible, and the hooks keep the last good data behind
+  it.
+- Do not "fix" this by widening the bucket lookback. The age is honest; it
+  is the pairing with an empty map that lies.
+
+### Crossfade: the mosaic must not step aside for nothing (2026-09-04)
+
+`layerOpacities(zoom, baseOpacity, siteDrawn)`. The two ramps are
+deliberately NOT mirrored: mirroring keeps the sum constant but leaves both
+layers at half strength mid-band (0.35 at the default 0.7), which is what
+"the mosaic is very low opacity and hard to see" meant. Site fades in over
+7→8; the mosaic holds full to 8 and fades 8→9, once something is at full
+strength to replace it. Overlap is free — the site paints over the mosaic
+where it has data and is transparent where it does not.
+
+- `siteDrawn` is the other half: velocity mode mounts NO site tiles, and a
+  frame whose radial has not rendered paints nothing. Passing false holds
+  the mosaic at full opacity across the whole band. Computed in
+  `WeatherMap/index.js` as `mountedSiteFrames.length || radialShown ||
+  currentLoopRadial`, which is why `iemOpacity` is computed *after* those.
+- The verbatim-copy test in `test/iemRadarLayers.test.js` guards the ramp;
+  its total-ink assertion is now a FLOOR, not equality (equality is what
+  encoded the dip). Verified on the live layers at 0.3 base: z7.5 mosaic
+  0.30 / site 0.15, z8 both 0.30, z8.5 mosaic 0.15 / site 0.30.
+
+### App Mapbox token (2026-09-04)
+
+Optional, per-device, `appMapboxToken` in localStorage — never in the APK.
+A key compiled into an app is extractable, and Mapbox's URL restrictions do
+not apply to a WebView's requests, so only a PUBLIC `pk.` token belongs
+here; `isUsableMapboxToken` refuses `sk.` outright.
+
+- `mapTileUrl(dark, {token, style})`, `mapAttribution(token)` and
+  `mapMaxNativeZoom(token)` in `standalone/upstream.js` switch together.
+  Esri is 256 px tiles with no offset and a z16 data ceiling; Mapbox's
+  style endpoint serves 512 px, so the app on a token uses the kiosk's
+  `tileSize: 512` / `zoomOffset: -1` — verified live, map z7 requests tile
+  z6.
+- The Advanced style pickers are gated on a usable token rather than on
+  `!__STANDALONE__`: without one they would name styles nothing fetches.
+- Only built-in `mapbox/*` styles are reachable. The kiosk's proxy also
+  resolves a Studio style via CUSTOM_STYLES, which needs the owning
+  account — not something a shared public token carries.

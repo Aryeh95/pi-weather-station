@@ -62,7 +62,12 @@ import { isPiMaxView, priorityViewsEnabled } from "~/ui/piLayout";
 import { useTranslation } from "react-i18next";
 import debounce from "debounce";
 import styles from "./styles.css";
-import { mapTileUrl, MAP_ATTRIBUTION, MAP_MAX_NATIVE_ZOOM } from "~/standalone/upstream";
+import {
+  mapTileUrl,
+  mapAttribution,
+  mapMaxNativeZoom,
+  isUsableMapboxToken,
+} from "~/standalone/upstream";
 import RadarLegend from "./RadarLegend";
 import RadarTimeline from "./RadarTimeline";
 import RadarFrameAge from "./RadarFrameAge";
@@ -788,6 +793,7 @@ const WeatherMap = ({ zoom, dark }) => {
     hideRadarLegend,
     lightModeStyle,
     darkModeStyle,
+    appMapboxToken,
     radarOpacityLight,
     radarOpacityDark,
   } = useContext(UiPrefsContext);
@@ -1017,8 +1023,9 @@ const WeatherMap = ({ zoom, dark }) => {
 
   // Per-layer opacity for the zoom crossfade, scaled by the user's
   // radar-opacity preference so the fade never overrides their setting.
+  // The ramp itself is computed further down, once it is known whether the
+  // single-site layer is actually painting anything.
   const iemBaseOpacity = dark ? radarOpacityDark : radarOpacityLight;
-  const iemOpacity = layerOpacities(currentMapZoom, iemBaseOpacity);
 
   // Mount gating comes from the same module as the opacity ramp, so a
   // layer is never mounted at opacity 0 (wasted tile fetches) nor
@@ -1142,6 +1149,13 @@ const WeatherMap = ({ zoom, dark }) => {
     ? (loopActive ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
+  // Is the single-site layer PAINTING, as opposed to merely being in its
+  // zoom band? Velocity mode mounts no site tiles, and a frame whose radial
+  // has not rendered yet paints nothing — in both cases the mosaic has to
+  // hold its opacity rather than fade for a layer that will not replace it.
+  const siteLayerDrawn = mountedSiteFrames.length > 0 || radialShown || currentLoopRadial;
+  const iemOpacity = layerOpacities(currentMapZoom, iemBaseOpacity, siteLayerDrawn);
+
   // Storm tracks reuse the NEXRAD site the frame poller already resolved,
   // so enabling the overlay costs no extra site lookup.
   const {
@@ -1189,7 +1203,17 @@ const WeatherMap = ({ zoom, dark }) => {
       sourceStale: iemStale,
     });
   }
-  if (showStormTracks && Number.isFinite(stormScanEpoch)) {
+  // A row describes what is ON THE MAP, so an empty overlay gets none.
+  //
+  // SCIT only writes a storm-track product when it has cells to report, so a
+  // quiet radar's newest file can be up to the poller's 3-hour lookback old
+  // (measured: a site with no storms served a 100+ min scan time alongside
+  // zero cells). Aged like that beside an empty map it reads as a broken
+  // feed, which is the opposite of what this indicator is for. A FAILING
+  // refresh still shows — that one is a real fault worth surfacing, and the
+  // hook keeps the last good cells behind it.
+  const stormsDrawn = stormCells.length > 0 || stormMesos.length > 0;
+  if (showStormTracks && Number.isFinite(stormScanEpoch) && (stormsDrawn || stormStale)) {
     ageRows.push({
       key: "tracks",
       label: t("radar.ageTracks"),
@@ -1198,7 +1222,12 @@ const WeatherMap = ({ zoom, dark }) => {
       sourceStale: stormStale,
     });
   }
-  if (showLightning && Number.isFinite(lightning.dataEpoch)) {
+  // Same rule for lightning: with no flashes in the window there is nothing
+  // on the map whose age this could describe. (Its epoch does not go stale
+  // the way the tracks one does — an empty window reports its own generation
+  // time — but a row reading "now" next to an empty sky is still noise.)
+  if (showLightning && Number.isFinite(lightning.dataEpoch)
+      && (lightning.flashes.length > 0 || lightning.stale)) {
     ageRows.push({
       key: "lightning",
       label: t("radar.ageLightning"),
@@ -1340,6 +1369,10 @@ const WeatherMap = ({ zoom, dark }) => {
   const releaseFollow = useCallback(() => {
     if (followLocation) toggleFollowLocation();
   }, [followLocation, toggleFollowLocation]);
+  // Which basemap the app is on. Esri unless the user supplied a Mapbox
+  // token; the two differ in tile size, so this decides the layer geometry.
+  const appBasemapIsEsri = __STANDALONE__ && !isUsableMapboxToken(appMapboxToken);
+
   // `mapApiKey` gates the Mapbox tile proxy, which the app build does not use
   // — its basemap is keyless (see the TileLayer below). Requiring a key there
   // would leave the app permanently on this placeholder with nowhere to enter
@@ -1491,23 +1524,35 @@ const WeatherMap = ({ zoom, dark }) => {
          * including the mobile mini-card. */}
         <AttributionControl position="bottomright" />
         <TileLayer
-          attribution={__STANDALONE__ ? MAP_ATTRIBUTION : MAPBOX_ATTRIBUTION}
-          /* The kiosk fetches the basemap through the server, which holds
-           * the Mapbox key. The app has no server and cannot ship a key
-           * inside an APK, so it goes direct to Esri's keyless Canvas
-           * tiles (see standalone/upstream.js). Those are a 256 px grid
-           * with no @2x variant, so the 512/-1 pair Mapbox needs must NOT
-           * be applied to them — it would render every tile at the wrong
-           * scale and offset, the same trap the IEM layers documented. */
+          attribution={__STANDALONE__ ? mapAttribution(appMapboxToken) : MAPBOX_ATTRIBUTION}
+          /* Three basemap paths, and the geometry differs between them.
+           *
+           * The kiosk fetches Mapbox through the server, which holds the
+           * key. The app ships no key — one baked into an APK is
+           * extractable, and Mapbox's URL restrictions do not apply to a
+           * WebView — so by default it goes direct to Esri's keyless
+           * Canvas tiles, and optionally direct to Mapbox when the user
+           * has pasted their own PUBLIC token in Settings.
+           *
+           * Esri's Canvas is a 256 px grid with no @2x variant, so the
+           * 512/-1 pair Mapbox needs must NOT be applied to it — that
+           * would render every tile at the wrong scale and offset, the
+           * same trap the IEM layers documented. Mapbox's style endpoint
+           * serves 512 px tiles whether it is reached through the proxy
+           * or directly, so the app on a token uses the kiosk's geometry. */
           url={__STANDALONE__
-            ? mapTileUrl(dark)
+            ? mapTileUrl(dark, {
+              token: appMapboxToken,
+              style: dark ? darkModeStyle : lightModeStyle,
+            })
             : `/api/tiles/${dark ? darkModeStyle : lightModeStyle}/{z}/{x}/{y}`}
-          tileSize={__STANDALONE__ ? 256 : 512}
-          zoomOffset={__STANDALONE__ ? 0 : -1}
+          tileSize={appBasemapIsEsri ? 256 : 512}
+          zoomOffset={appBasemapIsEsri ? 0 : -1}
           maxZoom={18}
           /* Esri serves a "Map data not yet available" placeholder above
-           * z16; upscale from z16 instead of requesting it. */
-          maxNativeZoom={__STANDALONE__ ? MAP_MAX_NATIVE_ZOOM : undefined}
+           * z16; upscale from z16 instead of requesting it. Mapbox has
+           * real detail past it, so the cap must not apply there. */
+          maxNativeZoom={__STANDALONE__ ? mapMaxNativeZoom(appMapboxToken) : undefined}
           /* `keepBuffer: 2` (Leaflet default, was 4 in v2.15.4) —
            * the wider buffer made zoom-out seamless on desktop but
            * doubled the resident tile count, which combined with

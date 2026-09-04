@@ -13,6 +13,7 @@ import constructIcon from "@iconify/icons-ion/construct-outline";
 import i18n from "~/i18n";
 import { AppContext } from "~/AppContext";
 import { getPalette } from "~/ui/tokens";
+import { isUsableMapboxToken } from "~/standalone/upstream";
 import { useTimeOfDay } from "~/ui/hybrid";
 import { resolvePanelFontSizeZoom } from "~/ui/fontSize";
 import styles from "./styles.css";
@@ -42,15 +43,15 @@ const lbl = (lang, en, fr, es) => (lang === "fr" ? fr : lang === "es" ? es : en)
 // config next, advanced last. The panel always opens on the
 // first entry (`local`) — a settings panel reads better when it's
 // predictable, so unlike DebugPanel we do NOT persist the last tab.
-// The API section holds the Mapbox / LocationIQ keys and the starting
-// coordinates, all of which live in the server's settings.json. The app has
-// no server and needs no keys — its basemap and place names are keyless — so
-// in standalone builds that section is not merely disabled, it is absent.
+// The API section means different things in the two builds. On the kiosk it
+// edits the server's settings.json — Mapbox and LocationIQ keys plus the
+// starting coordinates. The app needs no keys to work (its basemap and place
+// names are keyless), but it can OPTIONALLY take a Mapbox token of the user's
+// own, stored per-device, so that section exists there too with just that one
+// field. See SectionAppApi.
 const SECTIONS = [
   { id: "local", icon: settingsAdjustIcon, label: (lang) => lbl(lang, "Local", "Préf.", "Local") },
-  ...(__STANDALONE__
-    ? []
-    : [{ id: "api", icon: passwordIcon, label: () => "API" }]),
+  { id: "api", icon: passwordIcon, label: () => "API" },
   { id: "avance", icon: constructIcon, label: (lang) => lbl(lang, "Advanced", "Avancé", "Avanzado") },
 ];
 
@@ -203,8 +204,9 @@ const SettingsPanel = () => {
         <main className={styles.pane}>
           <div className={styles.paneInner}>
             {activeSection === "local" && <SectionLocalPrefs ctx={ctx} lang={lang} />}
-            {!__STANDALONE__ && activeSection === "api"
-              && <SectionConfig ctx={ctx} lang={lang} remote={remote} />}
+            {activeSection === "api" && (__STANDALONE__
+              ? <SectionAppApi ctx={ctx} lang={lang} />
+              : <SectionConfig ctx={ctx} lang={lang} remote={remote} />)}
             {activeSection === "avance" && <SectionAdvanced ctx={ctx} lang={lang} remote={remote} />}
           </div>
           <PaneFooter lang={lang} section={activeSection} />
@@ -504,6 +506,115 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
 function i18nChangeLanguage(lang) {
   i18n.changeLanguage(lang);
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Section 2 (app) · Basemap token
+// ───────────────────────────────────────────────────────────────────
+
+/**
+ * The app's one optional key: a Mapbox token for the basemap.
+ *
+ * The app works with no key at all — it draws Esri's keyless Canvas tiles —
+ * so this is an upgrade, not a requirement, and the field is empty on a fresh
+ * install. It exists because the kiosk's Mapbox cartography reads better
+ * under radar than the fallback does, and someone who already has a Mapbox
+ * account may as well use it here too.
+ *
+ * Stored per-device in localStorage, NOT compiled into the APK. A key baked
+ * into an app is extractable by anyone with the file, and Mapbox's URL
+ * restrictions do not apply to a WebView's requests — so the only token that
+ * is safe to put here is a PUBLIC one (`pk.`), which Mapbox designs to be
+ * exposed in clients and which carries no account access. `sk.` tokens are
+ * refused outright rather than sent and rejected: a 401 in a tile layer looks
+ * like a broken basemap, not a bad key.
+ *
+ * @param {object} props
+ * @param {object} props.ctx — AppContext value
+ * @param {string} props.lang — short locale
+ * @returns {JSX.Element}
+ */
+const SectionAppApi = ({ ctx, lang }) => {
+  const { appMapboxToken, saveAppMapboxToken } = ctx;
+  const [draft, setDraft] = useState(appMapboxToken || "");
+  const [saved, setSaved] = useState(false);
+
+  // Re-sync when the stored value changes underneath an untouched field.
+  useEffect(() => {
+    setDraft((prev) => (prev === "" ? (appMapboxToken || "") : prev));
+  }, [appMapboxToken]);
+
+  const trimmed = draft.trim();
+  const active = isUsableMapboxToken(appMapboxToken);
+  // Flagged as you type, so a pasted secret key is caught before it is saved.
+  const looksSecret = trimmed.startsWith("sk.");
+  const looksWrong = trimmed !== "" && !trimmed.startsWith("pk.");
+
+  const onSave = () => {
+    if (looksWrong) return;
+    saveAppMapboxToken(trimmed);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        index="2"
+        title={lbl(lang, "Basemap", "Fond de carte", "Mapa base")}
+        subtitle={lbl(lang,
+          "Optional. Stored on this device only.",
+          "Facultatif. Stocké sur cet appareil uniquement.",
+          "Opcional. Almacenado solo en este dispositivo.")}
+        right={(
+          <Pill kind={active ? "ok" : "optional"}>
+            {active ? "MAPBOX" : lbl(lang, "KEYLESS", "SANS CLÉ", "SIN CLAVE")}
+          </Pill>
+        )}
+      />
+
+      <div className={styles.subhead}>
+        {lbl(lang, "Mapbox token", "Jeton Mapbox", "Token de Mapbox")}
+      </div>
+      <EditableField
+        label={lbl(lang, "Public access token", "Jeton d'accès public", "Token de acceso público")}
+        pill={active ? lbl(lang, "In use", "Actif", "En uso") : undefined}
+        value={draft}
+        mono
+        placeholder="pk.eyJ1Ijoi…"
+        onChange={setDraft}
+        onClear={() => { setDraft(""); saveAppMapboxToken(""); }}
+        clearLabel={lbl(lang, "Remove", "Retirer", "Quitar")}
+        helper={looksSecret
+          ? lbl(lang,
+            "That is a SECRET token (sk.). Never put one in an app — anyone with the APK can read it. Create a public token instead.",
+            "Ceci est un jeton SECRET (sk.). N'en placez jamais dans une application — quiconque possède l'APK peut le lire. Créez plutôt un jeton public.",
+            "Ese es un token SECRETO (sk.). Nunca lo pongas en una app — cualquiera con el APK puede leerlo. Crea un token público.")
+          : looksWrong
+            ? lbl(lang,
+              "A Mapbox public token starts with « pk. ».",
+              "Un jeton public Mapbox commence par « pk. ».",
+              "Un token público de Mapbox empieza por « pk. ».")
+            : lbl(lang,
+              "Empty = Esri's keyless basemap. With a public token (pk.) the app draws Mapbox instead, and the style pickers in Advanced apply. Use a token scoped to styles:read and fonts:read, separate from any the kiosk uses, so it can be revoked on its own.",
+              "Vide = fond de carte Esri sans clé. Avec un jeton public (pk.), l'application affiche Mapbox et les styles du volet Avancé s'appliquent. Utilisez un jeton limité à styles:read et fonts:read, distinct de celui du kiosque, pour pouvoir le révoquer seul.",
+              "Vacío = mapa base de Esri sin clave. Con un token público (pk.) la app dibuja Mapbox y se aplican los estilos de Avanzado. Usa un token limitado a styles:read y fonts:read, distinto del que use el quiosco, para poder revocarlo por separado.")}
+      />
+
+      <div className={styles.saveBar}>
+        <button
+          type="button"
+          className={styles.saveButton}
+          onClick={onSave}
+          disabled={looksWrong}
+        >
+          {saved
+            ? lbl(lang, "✓ Saved", "✓ Enregistré", "✓ Guardado")
+            : lbl(lang, "Save token", "Enregistrer le jeton", "Guardar token")}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // ───────────────────────────────────────────────────────────────────
 // Section 2 · Configuration & clés API
@@ -826,6 +937,7 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
     // Display group (Phase 8b — ported in 2.14.22)
     lightModeStyle,
     darkModeStyle,
+    appMapboxToken,
     radarOpacityLight,
     radarOpacityDark,
     saveAdvancedDisplayFlag,
@@ -870,11 +982,12 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
             {lbl(lang, "Display", "Affichage", "Pantalla")}
           </div>
           <div className={styles.grid4}>
-            {/* Basemap style pickers name Mapbox styles, fetched through the
-              * server's keyed tile proxy. The app's basemap is Esri's keyless
-              * Canvas pair, chosen by the light/dark palette rather than by
-              * style name, so there is nothing here for it to switch. */}
-            {!__STANDALONE__ && (
+            {/* Basemap style pickers name Mapbox styles — fetched through the
+              * server's keyed tile proxy on the kiosk, or directly with the
+              * user's own token in the app. Without a token the app is on
+              * Esri's keyless Canvas pair, chosen by the light/dark palette
+              * rather than by style name, so there is nothing to switch. */}
+            {(!__STANDALONE__ || isUsableMapboxToken(appMapboxToken)) && (
               <>
             <Seg
               label={lbl(lang, "Map · light", "Carte · clair", "Mapa · claro")}
@@ -1376,10 +1489,17 @@ const PaneFooter = ({ lang, section }) => {
       "Applied live · stored on this device",
       "Appliqué en direct · stocké sur cet appareil",
       "Aplicado en vivo · guardado en este dispositivo"),
-    api: lbl(lang,
-      "Keys & coordinates saved together via Save",
-      "Clés et coordonnées enregistrées ensemble via Enregistrer",
-      "Claves y coordenadas guardadas juntas con Guardar"),
+    // The kiosk's API section batches keys and coordinates into one write;
+    // the app's holds a single optional token kept on the device.
+    api: __STANDALONE__
+      ? lbl(lang,
+        "Optional · stored on this device, never in the app",
+        "Facultatif · stocké sur cet appareil, jamais dans l'application",
+        "Opcional · guardado en este dispositivo, nunca en la app")
+      : lbl(lang,
+        "Keys & coordinates saved together via Save",
+        "Clés et coordonnées enregistrées ensemble via Enregistrer",
+        "Claves y coordenadas guardadas juntas con Guardar"),
     // settings.json is the kiosk's store; the app keeps the same values in
     // this device's own storage (client/src/standalone/settingsStore.js).
     avance: __STANDALONE__

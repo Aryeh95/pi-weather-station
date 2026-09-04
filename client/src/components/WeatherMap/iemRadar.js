@@ -184,17 +184,38 @@ export const SITE_MAX_NATIVE_ZOOM = 12;
  * Both are scaled by `baseOpacity` (the user's radar-opacity pref) so
  * the crossfade never overrides their setting.
  *
+ * The two ramps do NOT mirror each other, and that is the point. Fading
+ * one out while the other fades in leaves a trough in the middle of the
+ * band where NEITHER layer is at full strength — at the default 0.7
+ * opacity the mosaic sat at 0.35 through the middle of the band, which
+ * reads as radar that has gone faint rather than radar that is handing
+ * over. So the site fades IN over the lower half, and the mosaic only
+ * begins to fade OUT over the upper half, once the site is at full
+ * strength to replace it. Total ink never dips.
+ *
+ * `siteDrawn` is the other half of that: the site layer can be eligible
+ * for the band and still be painting nothing — velocity mode mounts no
+ * site tiles at all, and a frame whose radial has not rendered yet draws
+ * nothing either. Stepping aside for an absent layer is how the mosaic
+ * ends up faint with nothing over it, so when nothing is drawn the
+ * mosaic holds full opacity across the whole band.
+ *
  * @param {Number} zoom current Leaflet zoom
  * @param {Number} baseOpacity user's radar opacity preference (0-1)
+ * @param {Boolean} [siteDrawn] whether the single-site layer is actually
+ *   painting (tiles mounted, or a rendered radial on screen)
  * @returns {{mosaic: Number, site: Number}} per-layer opacity
  */
-export function layerOpacities(zoom, baseOpacity = 1) {
+export function layerOpacities(zoom, baseOpacity = 1, siteDrawn = true) {
   if (!Number.isFinite(zoom)) return { mosaic: baseOpacity, site: 0 };
   if (zoom <= BAND_LOW_ZOOM) return { mosaic: baseOpacity, site: 0 };
   if (zoom >= BAND_HIGH_ZOOM) return { mosaic: 0, site: baseOpacity };
-  // Inside the band: linear ramp on the position across it.
-  const t = (zoom - BAND_LOW_ZOOM) / (BAND_HIGH_ZOOM - BAND_LOW_ZOOM);
-  return { mosaic: baseOpacity * (1 - t), site: baseOpacity * t };
+
+  const half = (BAND_HIGH_ZOOM - BAND_LOW_ZOOM) / 2;
+  const mid = BAND_LOW_ZOOM + half;
+  const site = zoom >= mid ? 1 : (zoom - BAND_LOW_ZOOM) / half;
+  const mosaic = (!siteDrawn || zoom <= mid) ? 1 : (BAND_HIGH_ZOOM - zoom) / half;
+  return { mosaic: baseOpacity * mosaic, site: baseOpacity * site };
 }
 
 /**
