@@ -127,7 +127,10 @@ const DEFAULT_MAP_ZOOM_FALLBACK = 7; // historical hard-coded value before the s
 function readStoredZoom() {
   if (typeof window === "undefined") return null;
   try {
-    const parsed = parseInt(window.localStorage.getItem(DEFAULT_MAP_ZOOM_STORAGE_KEY), 10);
+    // parseFloat, not parseInt: the map runs with `zoomSnap: 0` so a pinch
+    // leaves it on a fractional zoom, and truncating "10.6" to 10 would
+    // reopen the app a visible step wider than the user left it.
+    const parsed = parseFloat(window.localStorage.getItem(DEFAULT_MAP_ZOOM_STORAGE_KEY));
     return Number.isFinite(parsed) ? parsed : null;
   } catch {
     return null;
@@ -1212,7 +1215,11 @@ export function AppContextProvider({ children }) {
               // the map at. Wins over the localStorage copy: settings.json
               // is the shared source of truth and survives a cache clear.
               if (Number.isFinite(advancedDisplay.defaultMapZoom)) {
-                setDefaultMapZoom(Math.round(advancedDisplay.defaultMapZoom));
+                // Not rounded: with `zoomSnap: 0` this is wherever the pinch
+                // came to rest. Rounding here would also disagree with the
+                // localStorage copy and leave the persist effect below
+                // seeing a difference it can never settle.
+                setDefaultMapZoom(advancedDisplay.defaultMapZoom);
               }
               if (typeof advancedDisplay.radarOpacityDark === "number") {
                 setRadarOpacityDark(advancedDisplay.radarOpacityDark);
@@ -1884,19 +1891,26 @@ export function AppContextProvider({ children }) {
   // that. The result is the intended semantics — the kiosk owns the
   // remembered zoom, a phone browsing from the couch doesn't move it.
   //
-  // The `!== defaultMapZoom` guard is what stops a feedback loop: hydrating
-  // the stored zoom on boot sets currentMapZoom to the same value, which
-  // would otherwise immediately re-save it.
+  // The equality guard is what stops a feedback loop: hydrating the stored
+  // zoom on boot sets currentMapZoom to the same value, which would
+  // otherwise immediately re-save it. It compares the ROUNDED values —
+  // `zoomSnap: 0` means a pinch leaves a zoom like 10.372639…, and writing
+  // that verbatim would put a dozen meaningless digits in settings.json and
+  // make the guard miss a value it had just written.
   useEffect(() => {
     if (!Number.isFinite(currentMapZoom)) return undefined;
-    if (currentMapZoom === defaultMapZoom) return undefined;
+    // Two decimals: finer than any zoom difference the eye can find, and
+    // still exact enough to reopen the map where the user left it.
+    const round = (z) => Math.round(z * 100) / 100;
+    const next = round(currentMapZoom);
+    if (next === round(defaultMapZoom)) return undefined;
     const ZOOM_PERSIST_DEBOUNCE_MS = 2000;
     const id = setTimeout(() => {
-      setDefaultMapZoom(currentMapZoom);
+      setDefaultMapZoom(next);
       try {
-        window.localStorage.setItem(DEFAULT_MAP_ZOOM_STORAGE_KEY, String(currentMapZoom));
+        window.localStorage.setItem(DEFAULT_MAP_ZOOM_STORAGE_KEY, String(next));
       } catch { /* localStorage may be unavailable */ }
-      saveAdvancedDisplayFlagRef.current?.("defaultMapZoom", currentMapZoom);
+      saveAdvancedDisplayFlagRef.current?.("defaultMapZoom", next);
     }, ZOOM_PERSIST_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [currentMapZoom, defaultMapZoom]);

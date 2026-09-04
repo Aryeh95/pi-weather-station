@@ -9,14 +9,16 @@
 //
 // What's locked here:
 //
-//   1. The zoom crossfade band. This is the subtle one. Leaflet's
-//      default `zoomSnap` is 1, so the map only ever sits on INTEGER
-//      zooms — a band one level wide (mosaic < 8, site > 7) is
-//      satisfied by no integer zoom at all, making the "crossfade" a
-//      hard cutover. The band must stay at least two levels wide, and
-//      mount gating must agree with opacity at every step, or a layer
-//      is either mounted invisibly (wasted tile fetches) or missing
-//      while the fade still wants to draw it (a gap in the radar).
+//   1. The zoom crossfade band. This is the subtle one. A band one
+//      level wide (mosaic < 8, site > 7) is satisfied by no INTEGER
+//      zoom at all, making the "crossfade" a hard cutover. The map now
+//      runs with `zoomSnap: 0` so a pinch can rest between levels, but
+//      whole levels are still where it lands from the +/- buttons,
+//      double-click, and any programmatic `setZoom` — so the band must
+//      stay at least two levels wide. Mount gating must also agree with
+//      opacity at every step, or a layer is either mounted invisibly
+//      (wasted tile fetches) or missing while the fade still wants to
+//      draw it (a gap in the radar).
 //
 //   2. Frame-age classification, which is the whole point of the
 //      freshness work — the thresholds encode NEXRAD's irreducible
@@ -89,10 +91,11 @@ test("every mosaic offset produces a distinct layer name", () => {
 });
 
 test("the crossfade band spans at least two integer zoom levels", () => {
-  // The regression this file exists for. Leaflet's default zoomSnap is
-  // 1, so a band narrower than two levels contains no integer zoom at
-  // which both layers are drawn — the crossfade silently degrades to
-  // the hard cutover it was written to avoid.
+  // The regression this file exists for. A band narrower than two levels
+  // contains no integer zoom at which both layers are drawn, and integer
+  // zooms are where every button, double-click and programmatic setZoom
+  // puts the map — so the crossfade silently degrades to the hard
+  // cutover it was written to avoid, for everyone not pinching.
   const bothDrawn = [];
   for (let z = 0; z <= 18; z++) {
     const { mosaic, site } = layerOpacities(z);

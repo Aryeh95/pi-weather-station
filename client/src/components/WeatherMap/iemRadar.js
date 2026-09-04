@@ -122,11 +122,14 @@ export function siteTileUrl(site, stamp = "0", product = "N0B") {
 // Where each layer is authoritative, and where they overlap.
 //
 // The overlap band must be at least TWO zoom levels wide to exist at
-// all. Leaflet's default `zoomSnap` is 1, so the map only ever sits on
-// integer zooms — with a one-level band (say mosaic < 8, site > 7) no
-// integer zoom satisfies both conditions and the "crossfade" is really
-// a hard cutover, which is exactly the abruptness it was meant to
-// avoid. Spanning 7→9 puts a genuine 50/50 blend at z=8:
+// all. The map runs with `zoomSnap: 0`, so a pinch can leave it on any
+// fractional zoom and the ramp below is genuinely continuous there —
+// but every other route to a zoom (the +/- buttons, double-click, a
+// programmatic `setZoom`) lands on a whole level. With a one-level band
+// (say mosaic < 8, site > 7) no integer zoom satisfies both conditions,
+// so for anyone not pinching the "crossfade" is really a hard cutover,
+// which is exactly the abruptness it was meant to avoid. Spanning 7→9
+// puts a genuine 50/50 blend at z=8:
 //
 //   z ≤ 7   mosaic only        (wide-area situational awareness)
 //   z = 8   50 / 50 crossfade  (both layers mounted)

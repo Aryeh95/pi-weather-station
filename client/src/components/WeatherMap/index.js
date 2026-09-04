@@ -479,11 +479,18 @@ ZoomLevelHandler.propTypes = {
  * a centred marker sits — so that point stays pinned across zoom steps.
  * The original methods are restored on unmount.
  *
- * No-op when `railOffset` is zero (LayoutPi / LayoutMobile / focus
- * mode): the override falls straight through to Leaflet's centre-anchored
- * default, so center-anchored zoom is preserved everywhere the rail does
- * not overlay the map. Scroll-wheel / double-click / box zoom are
- * untouched — they already anchor on the cursor via their own handlers.
+ * With `railOffset` zero (LayoutPi / LayoutMobile / focus mode) the zoom
+ * is centre-anchored as Leaflet does it. Scroll-wheel / double-click /
+ * box zoom are untouched — they already anchor on the cursor via their
+ * own handlers.
+ *
+ * The same override also keeps the +/- buttons on WHOLE zoom levels. The
+ * map runs with `zoomSnap: 0` so a pinch can rest anywhere (see the
+ * MapContainer props), which means a plain `zoom + 1` from 10.37 would
+ * land on 11.37 and the buttons would never see a round number again.
+ * They step to the next whole level in the direction pressed instead —
+ * 10.37 goes to 11 on +, to 10 on −, and a map already sitting on a whole
+ * level steps exactly as it always did.
  *
  * @param {object} props
  * @param {{x: Number, y: Number}} props.railOffset pixels covered by rail / HeroBand
@@ -498,27 +505,37 @@ const ZoomAnchorOffset = ({ railOffset }) => {
   useEffect(() => {
     const origZoomIn = map.zoomIn;
     const origZoomOut = map.zoomOut;
-    const zoomAroundNonRailCentre = (delta) => {
+    // Guards the case where the map is already a hair under or over a whole
+    // level after a fractional pinch, so "+" from 10.9999999 still means 11
+    // rather than a step the user cannot see.
+    const EPS = 1e-6;
+    const wholeLevelTarget = (delta) => {
+      const zoom = map.getZoom();
+      if (delta > 0) return Math.floor(zoom + EPS) + delta;
+      if (delta < 0) return Math.ceil(zoom - EPS) + delta;
+      return zoom;
+    };
+    const zoomTo = (target, options) => {
       const offset = offsetRef.current;
       const offsetX = (offset && offset.x) || 0;
       const offsetY = (offset && offset.y) || 0;
+      if (!offsetX && !offsetY) {
+        map.setZoom(target, options);
+        return;
+      }
       const size = map.getSize();
       const anchor = L.point(size.x / 2 - offsetX / 2, size.y / 2 + offsetY / 2);
-      map.setZoomAround(map.containerPointToLatLng(anchor), map.getZoom() + delta);
+      map.setZoomAround(map.containerPointToLatLng(anchor), target, options);
     };
     // ZoomControl always passes an explicit delta; default to zoomDelta
     // for any caller that omits it (mirrors Leaflet's own fallback).
     const resolveDelta = (delta) => (delta == null ? map.options.zoomDelta : delta);
     map.zoomIn = function patchedZoomIn(delta, options) {
-      const offset = offsetRef.current;
-      if (!offset || (!offset.x && !offset.y)) return origZoomIn.call(map, delta, options);
-      zoomAroundNonRailCentre(resolveDelta(delta));
+      zoomTo(wholeLevelTarget(resolveDelta(delta)), options);
       return map;
     };
     map.zoomOut = function patchedZoomOut(delta, options) {
-      const offset = offsetRef.current;
-      if (!offset || (!offset.x && !offset.y)) return origZoomOut.call(map, delta, options);
-      zoomAroundNonRailCentre(-resolveDelta(delta));
+      zoomTo(wholeLevelTarget(-resolveDelta(delta)), options);
       return map;
     };
     return () => {
@@ -1410,6 +1427,19 @@ const WeatherMap = ({ zoom, dark }) => {
          * below so the +/- titles go through i18n (v3.1 Phase 3 —
          * the 40 px restyle itself lives in ui/reset.css). */
         zoomControl={false}
+        /* Free (fractional) zoom. Leaflet's default `zoomSnap: 1` rounds
+         * to the nearest whole level when a gesture ends, which on a touch
+         * screen reads as the map elastically springing back to where it
+         * started unless the pinch crossed half a level. With 0 the map
+         * rests wherever the fingers left it, and the mosaic/single-site
+         * crossfade becomes the continuous ramp `layerOpacities` always
+         * described instead of one 50/50 step at z=8. `zoomDelta` stays 1
+         * so the +/- buttons and double-click keep their fixed one-level
+         * step, which ZoomAnchorOffset re-aligns to whole levels; the
+         * scroll wheel goes continuous along with the pinch, which is what
+         * a trackpad wants anyway. */
+        zoomSnap={0}
+        zoomDelta={1}
         touchZoom={true}
         dragging={true}
         fadeAnimation={false}

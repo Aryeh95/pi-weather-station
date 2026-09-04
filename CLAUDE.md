@@ -710,3 +710,30 @@ Only three remain — `speedUnit` (storm speed), `lengthUnit` (hail size) and
 view renders. `tempUnit` and `pressureUnit` were forecast-era leftovers that
 reached nothing; the us/uk/metric presets in `ui/systemPrefs.js` set three
 values now, and `unitSystemPreset()` takes three arguments.
+
+### Free zoom (2026-09-04)
+
+The map runs `zoomSnap: 0`. Leaflet's default of 1 rounds to the nearest
+whole level when a gesture ends, which on a touch screen reads as the map
+elastically springing back unless the pinch crossed half a level — the
+user's complaint.
+
+- `zoomDelta` stays **1**, and `ZoomAnchorOffset` patches `map.zoomIn` /
+  `zoomOut` to step to the next WHOLE level in the pressed direction
+  (10.26 → 11 on +, → 10 on −). Without that, `zoom + 1` from a pinched
+  10.26 lands on 11.26 and the buttons never see a round number again.
+  That patch is now unconditional; it used to fall through to Leaflet's
+  own methods when the rail offset was zero.
+- Everything that reads zoom was already continuous (`layerOpacities`,
+  `layerVisibility`, the storm-track label gate, `RING_HIDE_ZOOM`), so the
+  crossfade is now a real ramp rather than one 50/50 step at z=8. The
+  two-level band still matters: buttons, double-click and `setZoom` all
+  land on whole levels.
+- Persistence had to stop assuming integers: `readStoredZoom` uses
+  `parseFloat` (parseInt truncated 10.6 to 10), hydration from
+  `advanced.display.defaultMapZoom` no longer rounds, and the debounced
+  save rounds to **2 dp** — comparing the rounded values, or the guard
+  misses a value it just wrote and re-saves forever.
+- Verified with CDP `Input.dispatchTouchEvent` (React ignores hand-rolled
+  touch events): a 1.2x pinch, the exact case that used to spring back,
+  now rests at 10.26; "+" then gives 11 and "−" gives 10.

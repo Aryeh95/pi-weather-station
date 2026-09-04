@@ -1083,7 +1083,7 @@ const BucketClient = ({ data, lang, gridTwoWide }) => {
           k="lon"
           v={mapGeo ? mapGeo.longitude.toFixed(6) : "—"}
         />
-        <KV k="zoom" v={currentMapZoom != null ? currentMapZoom : "—"} />
+        <KV k="zoom" v={Number.isFinite(currentMapZoom) ? Number(currentMapZoom.toFixed(2)) : "—"} />
       </div>
       {coordsString ? (
         <div className={styles.copyCoordRow}>
