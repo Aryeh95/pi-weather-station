@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getSettings } from "~/settings";
 import PropTypes from "prop-types";
-import { getCoordsFromApi, getCoordsFromBrowser } from "~/services/geolocation";
+import { getCoordsFromApi } from "~/services/geolocation";
 import useFollowLocation from "~/hooks/useFollowLocation";
 import useWakeLock from "~/hooks/useWakeLock";
 import reverseGeocode from "~/services/reverseGeocode";
@@ -119,6 +119,39 @@ const MARKER_VISIBLE_STORAGE_KEY = "markerIsVisible";
 const MOUSE_HIDE_STORAGE_KEY = "mouseHide";
 const KEEP_SCREEN_AWAKE_STORAGE_KEY = "keepScreenAwake";
 const RAIL_HIDDEN_STORAGE_KEY = "appRailHidden";
+const LAST_POSITION_STORAGE_KEY = "lastPosition";
+
+// Where the app opens when it has nothing else to go on: no stored position
+// (first ever launch) and no answer from the IP lookup either. The geographic
+// centre of the lower 48 shows the national mosaic, which is a real view of
+// the product rather than an error screen — and one tap of follow, or a tap
+// on the map, replaces it. Chosen over leaving the placeholder up because an
+// app that opens on "Finding your location…" forever is indistinguishable
+// from one that is broken.
+const DEFAULT_APP_POSITION = { latitude: 39.5, longitude: -98.35 };
+
+/**
+ * The map position this device was last looking at (app builds only).
+ *
+ * Seeding from it is what lets the app open straight onto a usable map: the
+ * alternative — waiting on a fix before rendering anything — showed a
+ * placeholder for several seconds on every cold start, and asked for the
+ * location permission before the user had done anything to warrant it.
+ *
+ * @returns {{latitude: number, longitude: number}|null} stored position, or null
+ */
+function readLastPosition() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LAST_POSITION_STORAGE_KEY);
+    if (!raw) return null;
+    const { latitude, longitude } = JSON.parse(raw) || {};
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { latitude, longitude };
+  } catch {
+    return null;
+  }
+}
 const SHOW_ADVISORY_ALERTS_STORAGE_KEY = "showAdvisoryAlerts";
 const SHOW_TEST_ALERTS_STORAGE_KEY = "showTestAlerts";
 const AUTO_SELECT_TAB_STORAGE_KEY = "autoSelectTab";
@@ -161,8 +194,10 @@ export function AppContextProvider({ children }) {
   // skip-when-unset semantics as airNowApiKey; only material for
   // kiosks outside the AirNow + Canadian-MELCC + ECCC footprint
   // (i.e. anywhere outside US + Canada).
-  const [browserGeo, setBrowserGeo] = useState(null);
-  const [mapGeo, setMapGeo] = useState(null);
+  // Seeded from the last position on app builds, so the very first render
+  // already has coordinates and the map draws immediately.
+  const [browserGeo, setBrowserGeo] = useState(() => (__STANDALONE__ ? readLastPosition() : null));
+  const [mapGeo, setMapGeo] = useState(() => (__STANDALONE__ ? readLastPosition() : null));
   // IANA timezone derived from mapGeo via tz-lookup. Used by Clock to
   // display the wall-clock time at the marker's location instead of the
   // Pi's host timezone — so a kiosk in Quebec showing a marker on Hong
@@ -1243,18 +1278,17 @@ export function AppContextProvider({ children }) {
             setBrowserGeo(latLon);
             setMapGeo(latLon); //Set initial map coords to custom lat/lon
             resolve(latLon);
+          } else if (__STANDALONE__ && readLastPosition()) {
+            // Already seeded from the last position at init, and the app does
+            // NOT ask for a fix on launch: acquiring one is what the follow
+            // button is for. Opening the app should not cost a permission
+            // prompt, a GPS lock, or a map that waits.
+            resolve(readLastPosition());
           } else {
-            // The kiosk has no GPS (and Raspbian Chromium never supported the
-            // API), so it has always resolved its position from the server's
-            // IP lookup. A phone does have GPS, and its own position is both
-            // more accurate and available offline — so the app asks the device
-            // first and keeps the IP lookup as the fallback for a denied
-            // permission. Without this the app depended on ipapi.co for a
-            // position it was carrying in its pocket.
-            const seed = __STANDALONE__
-              ? getCoordsFromBrowser().catch(() => getCoordsFromApi())
-              : getCoordsFromApi();
-            seed
+            // First run (or the kiosk, which has no GPS at all): the IP lookup
+            // is enough to frame a map and costs no permission. A real fix
+            // arrives if and when the user asks for one.
+            getCoordsFromApi()
               .then((res) => {
                 if (!res) {
                   return reject("Could not get browser geolocation data");
@@ -1265,7 +1299,15 @@ export function AppContextProvider({ children }) {
                 resolve(res);
               })
               .catch((err) => {
-                reject(err);
+                // The app must always end up with a map. Offline on a first
+                // launch, or a rate-limited IP lookup, would otherwise leave
+                // it on the locating placeholder indefinitely.
+                if (__STANDALONE__) {
+                  setBrowserGeo(DEFAULT_APP_POSITION);
+                  setMapGeo(DEFAULT_APP_POSITION);
+                  return resolve(DEFAULT_APP_POSITION);
+                }
+                return reject(err);
               });
           }
         })
@@ -1463,6 +1505,19 @@ export function AppContextProvider({ children }) {
   // A refused permission or absent provider would otherwise leave the button
   // pressed with nothing happening behind it.
   const handleFollowError = useCallback(() => setFollowLocation(false), []);
+
+  // Remember where the map is, for the next launch. Written on every settled
+  // pin move (they are user actions or committed follow fixes, not a stream),
+  // and only in the app: the kiosk has settings.json and a fixed position.
+  useEffect(() => {
+    if (!__STANDALONE__ || !mapGeo) return;
+    try {
+      window.localStorage.setItem(LAST_POSITION_STORAGE_KEY, JSON.stringify({
+        latitude: mapGeo.latitude,
+        longitude: mapGeo.longitude,
+      }));
+    } catch { /* localStorage may be unavailable */ }
+  }, [mapGeo]);
 
   // Released whenever the app is backgrounded (the platform drops the lock
   // itself) and while the kiosk screensaver is up — `pollingPaused` covers

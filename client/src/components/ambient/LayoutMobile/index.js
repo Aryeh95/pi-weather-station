@@ -1,5 +1,8 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { UiPrefsContext, AppActionsContext } from "~/AppContext";
+import { useTranslation } from "react-i18next";
+import { InlineIcon } from "@iconify/react";
+import menuIcon from "@iconify/icons-carbon/menu";
 import AppDrawer from "~/components/ambient/AppDrawer";
 import WeatherMap from "~/components/WeatherMap";
 import RadarHeader from "~/components/ambient/RadarHeader";
@@ -49,6 +52,7 @@ import styles from "./styles.css";
  * @returns {JSX.Element} Mobile layout
  */
 const LayoutMobile = () => {
+  const { t } = useTranslation();
   const { darkMode, defaultMapZoom, mouseHide, railHidden } = useContext(UiPrefsContext);
   const { setMobileRadarMaximized } = useContext(AppActionsContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -58,57 +62,9 @@ const LayoutMobile = () => {
     return () => setMobileRadarMaximized(null);
   }, [setMobileRadarMaximized]);
 
-  // Left-edge swipe opens the labelled drawer.
-  //
-  // Bound on the layout rather than on a dedicated edge strip: a strip wide
-  // enough to catch a thumb would also sit over the rail's buttons and eat
-  // their taps. Starting inside EDGE_PX of the left edge is the whole gate —
-  // that region is the rail when it is showing and the map when it is not,
-  // and neither reads a horizontal drag from the very edge as its own
-  // gesture. Listeners are passive: this never cancels the map's panning,
-  // it only notices.
-  const swipeRef = useRef({ x: 0, y: 0, armed: false });
-  // Set when a swipe has just opened the drawer, so the click the browser
-  // synthesises afterwards can be swallowed. Without it the gesture ALSO
-  // presses whatever rail button it started on — the edge region is the rail
-  // when the rail is showing, and a swipe that began over Refresh reloaded
-  // the app instead of opening the drawer.
-  const swipeConsumedRef = useRef(false);
-  const EDGE_PX = 28;
-  const OPEN_PX = 70;
-
-  const onTouchStart = (e) => {
-    const t = e.touches[0];
-    swipeRef.current = { x: t.clientX, y: t.clientY, armed: t.clientX <= EDGE_PX };
-  };
-  const onTouchEnd = (e) => {
-    const st = swipeRef.current;
-    swipeRef.current = { x: 0, y: 0, armed: false };
-    if (!st.armed || drawerOpen) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - st.x;
-    const dy = t.clientY - st.y;
-    // Rightward and mostly horizontal, so a vertical scrub down the rail or a
-    // diagonal map pan does not spring the drawer open.
-    if (dx > OPEN_PX && Math.abs(dx) > Math.abs(dy)) {
-      swipeConsumedRef.current = true;
-      setDrawerOpen(true);
-    }
-  };
-  // Capture phase, so the click is stopped before it reaches the button.
-  const onClickCapture = (e) => {
-    if (!swipeConsumedRef.current) return;
-    swipeConsumedRef.current = false;
-    e.stopPropagation();
-    e.preventDefault();
-  };
-
   return (
     <div
       className={`${styles.layout} ${railHidden ? styles.railHidden : ""}`}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      onClickCapture={onClickCapture}
     >
       <div className={styles.stage}>
         <div className={`${styles.mapArea} map-container ${darkMode ? "map-dark-mode" : ""} ${mouseHide ? "map-mouse-hide" : ""}`}>
@@ -118,6 +74,31 @@ const LayoutMobile = () => {
           * shift the map centre down by the header height, which only
           * makes sense for the desktop's tall slab. The strip is 40 px. */}
         <div className={styles.headerSlot}>
+          {/* Opens the labelled control drawer.
+            *
+            * This replaced a left-edge swipe, which could not work: under
+            * gesture navigation Android owns both screen edges for the Back
+            * gesture, and with the rail hidden the map runs to the edge, so
+            * the swipe was swallowed before the WebView saw it. An app can
+            * reserve a strip back with `setSystemGestureExclusionRects`, but
+            * that is capped, invisible, and would take Back away from the
+            * user — a button is the honest answer, and it is discoverable
+            * with the rail hidden, which the gesture never was. */}
+          {/* App shell only. In mobile WEB the dock stays along the bottom
+            * where it is always visible, and `railHidden` has no styling
+            * there — so the drawer's "Hide toolbar" row would be a control
+            * that does nothing. */}
+          {__STANDALONE__ && (
+          <button
+            type="button"
+            className={styles.menuButton}
+            onClick={() => setDrawerOpen(true)}
+            aria-label={t("controls.drawerTitle", { defaultValue: "Controls" })}
+            title={t("controls.drawerTitle", { defaultValue: "Controls" })}
+          >
+            <InlineIcon icon={menuIcon} />
+          </button>
+          )}
           <RadarHeader strip />
         </div>
         {/* Alert stack overlays the map below the header and frame-age
@@ -135,7 +116,9 @@ const LayoutMobile = () => {
         * would override the drawer's own fixed positioning and drop it below
         * the map's overlays. The drawer is `position: fixed`, so its DOM
         * order costs it nothing. */}
-      <AppDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      {__STANDALONE__ && (
+        <AppDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      )}
       <BottomDock />
     </div>
   );

@@ -546,5 +546,9 @@
     "sw": "SO",
     "w": "O",
     "nw": "NO"
+  },
+  "map": {
+    "locating": "Buscando tu ubicación…",
+    "locatingHint": "Permite el acceso a la ubicación para centrar el radar"
   }
 }

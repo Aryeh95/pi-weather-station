@@ -1328,11 +1328,28 @@ const WeatherMap = ({ zoom, dark }) => {
   // would leave the app permanently on this placeholder with nowhere to enter
   // one. Coordinates and zoom are still required in both builds.
   const needsMapKey = !__STANDALONE__ && !mapApiKey;
-  if (!hasVal(latitude) || !hasVal(longitude) || !zoom || needsMapKey) {
+  const awaitingPosition = !hasVal(latitude) || !hasVal(longitude) || !zoom;
+  if (awaitingPosition || needsMapKey) {
+    // Two different states share this slot, and conflating them was a bug the
+    // app made visible: on the kiosk the only reason to be here is a missing
+    // Mapbox key, but the app has no key AND now waits on a real GPS fix
+    // (enableHighAccuracy, up to 20 s from cold). Every cold start therefore
+    // opened on "Did you enter an API key?" — blaming the user for a key the
+    // app does not use, while it was simply still locating.
+    const stillLocating = __STANDALONE__ && awaitingPosition;
     return (
       <div className={`${styles.noMap} ${dark ? styles.dark : styles.light}`}>
-        <div>Cannot retrieve map data.</div>
-        <div>Did you enter an API key?</div>
+        {stillLocating ? (
+          <>
+            <div>{t("map.locating", { defaultValue: "Finding your location…" })}</div>
+            <div>{t("map.locatingHint", { defaultValue: "Allow location access to centre the radar" })}</div>
+          </>
+        ) : (
+          <>
+            <div>Cannot retrieve map data.</div>
+            <div>Did you enter an API key?</div>
+          </>
+        )}
       </div>
     );
   }

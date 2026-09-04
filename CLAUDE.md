@@ -643,16 +643,22 @@ which lets the client run without `server/index.js` at all. Full write-up in
   a wake lock on every visibility change and does not restore it, so the hook
   re-acquires on `visibilitychange` or the setting silently stops working after
   the first trip to another app.
-- **The app rail hides (`railHidden`) and expands (`AppDrawer`).** The drawer
-  renders `ControlButtons labelled`, which clones each button and appends its
-  own `aria-label` — one definition per control, no parallel list to drift.
-  Two ordering traps: render `<AppDrawer>` BEFORE `<BottomDock>`, because
-  `.layout > :last-child` carries the dock's stacking rule and would override
-  the drawer's fixed positioning; and the left-edge swipe starts ON the rail,
-  so without a capture-phase click swallow the gesture also presses the button
-  underneath (a swipe from over Refresh reloaded the app).
-- **Testing gestures:** React ignores hand-rolled `dispatchEvent` touch
-  payloads — use CDP `Input.dispatchTouchEvent` for genuine touches. Even then
-  the harness page ended at `about:blank` after a swipe, so the drawer's
-  rendering was verified by building with `drawerOpen` defaulted true and
-  screenshotting, while the gesture gate was verified from its own logging.
+- **The app rail hides (`railHidden`) and expands (`AppDrawer`), opened by a
+  HAMBURGER, not a swipe.** A left-edge swipe was built first and had to go:
+  under gesture navigation Android owns both edges for Back, so with the rail
+  hidden — the exact case the gesture existed for — it never reached the
+  WebView. `setSystemGestureExclusionRects` can claim a strip back, but it is
+  capped, invisible, and steals Back from the user. Do not revive the swipe.
+- The drawer renders `ControlButtons labelled`, which clones each button and
+  appends its own `aria-label` — one definition per control, no parallel list
+  to drift. Render `<AppDrawer>` BEFORE `<BottomDock>`: `.layout > :last-child`
+  carries the dock's stacking rule and would otherwise override the drawer's
+  fixed positioning. The menu is `__STANDALONE__`-only, because mobile web
+  keeps its always-visible bottom dock and "Hide toolbar" would be inert there.
+- **The app never requests a GPS fix at launch.** It seeds `browserGeo`/
+  `mapGeo` from `lastPosition` in localStorage at useState-init time (so the
+  first render already has a map), and only the follow button opens a watch.
+  Launch fallbacks, in order: stored position, keyless IP lookup,
+  `DEFAULT_APP_POSITION` (centre of the lower 48). The placeholder that used
+  to fill this gap was the kiosk's missing-Mapbox-key message, which blamed
+  the user for a key the app does not use.

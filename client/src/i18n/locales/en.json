@@ -546,5 +546,9 @@
     "sw": "SW",
     "w": "W",
     "nw": "NW"
+  },
+  "map": {
+    "locating": "Finding your location…",
+    "locatingHint": "Allow location access to centre the radar"
   }
 }

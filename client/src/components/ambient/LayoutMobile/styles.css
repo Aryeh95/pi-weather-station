@@ -54,6 +54,50 @@
   left: var(--c-edge-gap);
   right: var(--c-edge-gap);
   z-index: 10;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The place/clock strip takes the rest of the row beside the menu button. */
+.headerSlot > :last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Menu button — opens the labelled control drawer. Same surface and height as
+ * the header strip beside it so the two read as one row of chrome.
+ *
+ * Doubled selector: the global `.ambientRoot button` reset strips background,
+ * border and colour from single-class button rules. */
+.menuButton.menuButton {
+  appearance: none;
+  flex: none;
+  width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--c-surface, rgba(255, 250, 240, 0.94));
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  color: var(--c-text);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.menuButton.menuButton:active {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+
+.menuButton svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* Alert stack: below the header strip (40 px) and the frame-age row

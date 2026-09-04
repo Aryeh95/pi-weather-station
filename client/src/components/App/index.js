@@ -145,7 +145,9 @@ const App = () => {
 
   useEffect(() => {
     getCustomLatLon();
-    getBrowserGeo();
+    // Rejects only on the kiosk, where a failed IP lookup means the map
+    // stays on its placeholder; the app substitutes a default position.
+    getBrowserGeo().catch(() => undefined);
     loadStoredData();
     checkIsLocal();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initialization, runs once on mount
