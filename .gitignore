@@ -57,3 +57,8 @@ app/android/local.properties
 app/android/app/src/main/assets/public/
 app/android/app/src/main/assets/capacitor.config.json
 app/android/app/src/main/assets/capacitor.plugins.json
+
+# Android release signing — the app's identity. Never commit either file;
+# see app/android/app/build.gradle for why the keystore must be kept.
+app/android/app/*.jks
+app/android/app/keystore.properties

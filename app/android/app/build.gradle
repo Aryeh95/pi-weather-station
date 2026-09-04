@@ -1,5 +1,26 @@
 apply plugin: 'com.android.application'
 
+// Release signing. A debug-signed APK carries the universal `CN=Android Debug`
+// certificate that every debug build on earth shares, and `assembleDebug` also
+// marks the app debuggable — both of which Play Protect treats as suspicious
+// on a sideloaded install. A release build signed with this project's own key
+// is the mildest install path available outside a store.
+//
+// The key itself is NOT in the repository (see .gitignore): `keystore.properties`
+// and the .jks beside it are local files. Without them `assembleRelease` still
+// builds — it just falls back to an unsigned output, rather than failing the
+// whole build for anyone who only wants the debug APK.
+//
+// The signing key is the app's identity: Android will only upgrade an installed
+// app in place when the new APK carries the SAME key. Keep this keystore
+// backed up; replacing it means uninstalling before the next install.
+def keystorePropertiesFile = rootProject.file("app/keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.aryeh95.sweep"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +37,32 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                // v1 (JAR signing) is only needed below API 24, and minSdk is
+                // 24. v3 is what Android 9+ verifies with and is what carries
+                // the key-rotation record, so enable it explicitly rather than
+                // shipping a v2-only APK.
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
+            // R8 is left off, as in the Capacitor template: the app is almost
+            // entirely web assets, so there is little Java to shrink, and the
+            // bridge's reflection-based plugin lookup is exactly what a
+            // misconfigured shrinker breaks.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

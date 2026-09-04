@@ -106,15 +106,56 @@ separate from the committed kiosk `client/dist/`).
 Requires a JDK and the Android SDK; point `ANDROID_HOME` at the SDK and write
 `sdk.dir=` into `app/android/local.properties`.
 
-### Signing
+### Signing, and the sideload warnings
 
-`assembleDebug` signs with the standard Android debug key, which is fine for
-sideloading onto your own device (enable "install unknown apps" for the
-browser or file manager you open it from). A build for anyone else needs a
-release keystore and `assembleRelease`.
+```bash
+npm run apk:release   # signed, non-debuggable, ~4.8 MB
+```
+
+Android shows a sideloaded app several warnings, and they have different
+causes — only some are fixable:
+
+| Warning | Cause | Fixable |
+| --- | --- | --- |
+| "Install unknown apps" permission | Sideloading at all; granted per source app | No — one grant per source |
+| Play Protect "unknown developer" | Google has never seen this signing certificate | Not outside a store |
+| Extra scan / "unsafe app" friction | Debug certificate + `android:debuggable` | **Yes — build release** |
+| "Built for an older version of Android" | Low `targetSdkVersion` | Already current (36) |
+
+`assembleDebug` signs with `CN=Android Debug` — the certificate every debug
+build on earth shares — and marks the app debuggable, which is the
+combination Play Protect treats most suspiciously. A release build carries
+the project's own certificate and drops the debuggable flag, which is the
+mildest install path available without publishing. The prompt does not
+disappear entirely: "unknown developer" is about Google not recognising the
+certificate, and only distribution through a store (a Play internal-testing
+track is enough) removes it.
+
+**The keystore is the app's identity.** Android upgrades an installed app in
+place only when the new APK carries the *same* key, so keep
+`app/android/app/sweep-release.jks` backed up. Both it and
+`keystore.properties` are gitignored — a signing key never belongs in a
+repository. To make your own instead:
+
+```bash
+keytool -genkeypair -v -keystore app/android/app/sweep-release.jks \
+  -alias sweep -keyalg RSA -keysize 4096 -validity 10950
+cat > app/android/app/keystore.properties <<EOF
+storeFile=sweep-release.jks
+storePassword=<the store password>
+keyAlias=sweep
+keyPassword=<the key password>
+EOF
+```
+
+Switching to a different key means uninstalling the old app first — the
+install will otherwise fail with a signature mismatch. `assembleRelease`
+without these files still builds; it just produces an unsigned APK rather
+than failing the build.
 
 ## Updating the app
 
 The app has no self-updater — the kiosk's update button is stubbed out, since
 there is no checkout to pull. Rebuild the APK and reinstall over the top; the
-package name is unchanged so it upgrades in place and keeps its preferences.
+package name is unchanged so it upgrades in place and keeps its preferences,
+**provided the new APK is signed with the same key**.

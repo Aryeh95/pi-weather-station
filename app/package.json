@@ -6,7 +6,8 @@
   "scripts": {
     "build:web": "npm --prefix ../client run app:build",
     "sync": "npm run build:web && cap sync android",
-    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+    "apk": "npm run sync && cd android && ./gradlew assembleDebug",
+    "apk:release": "npm run sync && cd android && ./gradlew assembleRelease"
   },
   "keywords": [],
   "author": "",
