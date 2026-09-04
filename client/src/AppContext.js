@@ -2,6 +2,8 @@ import React, { createContext, useState, useEffect, useRef, useCallback, useMemo
 import { getSettings } from "~/settings";
 import PropTypes from "prop-types";
 import { getCoordsFromApi, getCoordsFromBrowser } from "~/services/geolocation";
+import useFollowLocation from "~/hooks/useFollowLocation";
+import useWakeLock from "~/hooks/useWakeLock";
 import reverseGeocode from "~/services/reverseGeocode";
 import { useUpdateChecker } from "~/hooks/useUpdateChecker";
 import { useScreenSaver } from "~/hooks/useScreenSaver";
@@ -115,6 +117,8 @@ const NIGHT_MODE_STORAGE_KEY = "sleepNightMode";
 const DARK_MODE_AUTO_STORAGE_KEY = "darkModeAuto";
 const MARKER_VISIBLE_STORAGE_KEY = "markerIsVisible";
 const MOUSE_HIDE_STORAGE_KEY = "mouseHide";
+const KEEP_SCREEN_AWAKE_STORAGE_KEY = "keepScreenAwake";
+const RAIL_HIDDEN_STORAGE_KEY = "appRailHidden";
 const SHOW_ADVISORY_ALERTS_STORAGE_KEY = "showAdvisoryAlerts";
 const SHOW_TEST_ALERTS_STORAGE_KEY = "showTestAlerts";
 const AUTO_SELECT_TAB_STORAGE_KEY = "autoSelectTab";
@@ -280,6 +284,57 @@ export function AppContextProvider({ children }) {
   //   `null`  — not on LayoutMobile (Pi / Desktop).
   //   `true`  — on LayoutMobile.
   // Session-only state; never persisted.
+  // Follow-me mode (app only): hold a GPS watch open and keep the pin on the
+  // device as it moves. Session-only and never persisted — booting into a
+  // mode that holds the GPS radio open would be a poor default, and the
+  // button is one tap away.
+  const [followLocation, setFollowLocation] = useState(false);
+
+  // Keep-screen-on (app only). Per-device and PERSISTED, unlike follow mode:
+  // it is a standing preference about this phone, and the case for it —
+  // watching radar on a dashboard mount — is one where re-arming it on every
+  // launch would be the annoyance. Default OFF: an app that silently stops a
+  // phone sleeping is not a default anyone opts into knowingly.
+  const [keepScreenAwake, setKeepScreenAwake] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(KEEP_SCREEN_AWAKE_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  // Toolbar rail hidden (app only). Persisted: someone who wants the map
+  // edge-to-edge wants it that way every launch. Hiding is never a dead end —
+  // the swipe-out drawer opens regardless, and carries the row that brings the
+  // rail back.
+  const [railHidden, setRailHidden] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(RAIL_HIDDEN_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleRailHidden = useCallback(() => {
+    setRailHidden((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(RAIL_HIDDEN_STORAGE_KEY, String(next));
+      } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
+
+  const saveKeepScreenAwake = useCallback((next) => {
+    const on = Boolean(next);
+    setKeepScreenAwake(on);
+    try {
+      window.localStorage.setItem(KEEP_SCREEN_AWAKE_STORAGE_KEY, String(on));
+    } catch { /* localStorage may be unavailable */ }
+  }, []);
+
   const [mobileRadarMaximized, setMobileRadarMaximized] = useState(null);
   // Same sentinel pattern as mobileRadarMaximized — `null` means
   // LayoutDesktop is not the active layout (so the focus control
@@ -1377,6 +1432,53 @@ export function AppContextProvider({ children }) {
     setMapPosition(browserGeo);
   }, [setMapPosition, browserGeo]);
 
+  /**
+   * Follow-me: start or stop tracking the device's position.
+   *
+   * Turning it ON also recentres immediately from the last known position, so
+   * the map responds to the tap without waiting for the first GPS fix (which
+   * can take several seconds from cold).
+   *
+   * @returns {void}
+   */
+  const toggleFollowLocation = useCallback(() => {
+    setFollowLocation((wasOn) => {
+      if (!wasOn && browserGeo) setMapPosition(browserGeo);
+      return !wasOn;
+    });
+  }, [browserGeo, setMapPosition]);
+
+  // Each committed fix moves the PIN, not just the view: the pin is what the
+  // alert, lightning and storm-arrival layers key on, and at mosaic zoom it
+  // is what picks the radar site. `setMapPosition` pans the map with it.
+  //
+  // `browserGeo` is updated too so that leaving follow mode and later tapping
+  // recentre returns to where the user actually is, rather than to wherever
+  // they launched the app.
+  const handleFollowMove = useCallback((coords) => {
+    setBrowserGeo(coords);
+    setMapPosition(coords);
+  }, [setMapPosition]);
+
+  // A refused permission or absent provider would otherwise leave the button
+  // pressed with nothing happening behind it.
+  const handleFollowError = useCallback(() => setFollowLocation(false), []);
+
+  // Released whenever the app is backgrounded (the platform drops the lock
+  // itself) and while the kiosk screensaver is up — `pollingPaused` covers
+  // both, and re-acquiring is handled inside the hook.
+  useWakeLock(keepScreenAwake && !pollingPaused);
+
+  useFollowLocation({
+    // Suspended rather than cancelled while the app is backgrounded or the
+    // kiosk has dimmed: a high-accuracy watch is the most expensive thing
+    // this app can do to a battery, and a phone in a pocket has no map to
+    // update. The button stays lit, and the watch reopens on resume.
+    enabled: followLocation && !pollingPaused,
+    onMove: handleFollowMove,
+    onError: handleFollowError,
+  });
+
   // Mirror ref for markerIsVisible (same convention as the menu-open
   // refs above). The toggle persists to localStorage, and a side effect
   // is not allowed inside a functional setState updater (updaters must
@@ -1968,6 +2070,9 @@ export function AppContextProvider({ children }) {
     setPiScrubberOpen,
     setMapPosition,
     resetMapPosition,
+    toggleFollowLocation,
+    saveKeepScreenAwake,
+    toggleRailHidden,
     setPanToCoords,
     toggleMarker,
     saveTempUnit,
@@ -2035,6 +2140,9 @@ export function AppContextProvider({ children }) {
     setPiScrubberOpen,
     setMapPosition,
     resetMapPosition,
+    toggleFollowLocation,
+    saveKeepScreenAwake,
+    toggleRailHidden,
     setPanToCoords,
     toggleMarker,
     saveTempUnit,
@@ -2121,6 +2229,7 @@ export function AppContextProvider({ children }) {
     updateErrorMessage,
     settingsMenuOpen,
     debugMenuOpen,
+    followLocation,
     mobileRadarMaximized,
     desktopRadarMaximized,
     piRadarMaximized,
@@ -2163,6 +2272,7 @@ export function AppContextProvider({ children }) {
     updateErrorMessage,
     settingsMenuOpen,
     debugMenuOpen,
+    followLocation,
     mobileRadarMaximized,
     desktopRadarMaximized,
     piRadarMaximized,
@@ -2228,6 +2338,8 @@ export function AppContextProvider({ children }) {
     radarOpacityLight,
     radarOpacityDark,
     mouseHide,
+    keepScreenAwake,
+    railHidden,
     hideRadarLegend,
     markerIsVisible,
     defaultMapZoom,
@@ -2252,6 +2364,8 @@ export function AppContextProvider({ children }) {
     radarOpacityLight,
     radarOpacityDark,
     mouseHide,
+    keepScreenAwake,
+    railHidden,
     hideRadarLegend,
     markerIsVisible,
     defaultMapZoom,

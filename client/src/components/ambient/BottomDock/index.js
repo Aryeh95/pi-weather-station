@@ -1,4 +1,8 @@
-import React from "react";
+import React, { useContext } from "react";
+import { useTranslation } from "react-i18next";
+import { InlineIcon } from "@iconify/react";
+import sidePanelCloseIcon from "@iconify/icons-carbon/side-panel-close";
+import { AppActionsContext } from "~/AppContext";
 import ControlButtons from "~/components/ambient/ControlButtons";
 import HealthIndicator from "~/components/ambient/HealthIndicator";
 import styles from "./styles.css";
@@ -20,11 +24,31 @@ import styles from "./styles.css";
  *
  * @returns {JSX.Element} bottom-dock slab
  */
-const BottomDock = () => (
-  <div className={styles.dock}>
-    <ControlButtons />
-    <HealthIndicator chip />
-  </div>
-);
+const BottomDock = () => {
+  const { t } = useTranslation();
+  const { toggleRailHidden } = useContext(AppActionsContext);
+
+  return (
+    <div className={styles.dock}>
+      <ControlButtons />
+      {/* Collapse the rail (app only). The map is the point of this screen and
+        * the rail costs ~60 px of it; hiding is never a trap, because the
+        * left-edge swipe still opens the labelled drawer, which carries the
+        * row that brings the rail back. */}
+      {__STANDALONE__ && (
+        <button
+          type="button"
+          className={styles.hideRail}
+          onClick={toggleRailHidden}
+          title={t("controls.hideRail", { defaultValue: "Hide toolbar" })}
+          aria-label={t("controls.hideRail", { defaultValue: "Hide toolbar" })}
+        >
+          <InlineIcon icon={sidePanelCloseIcon} />
+        </button>
+      )}
+      <HealthIndicator chip />
+    </div>
+  );
+};
 
 export default BottomDock;

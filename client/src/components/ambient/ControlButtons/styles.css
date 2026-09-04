@@ -536,3 +536,72 @@
   width: auto;
   height: 1px;
 }
+
+/* ── Labelled variant (the app's swipe-out drawer) ──────────────────
+ *
+ * The same buttons, rendered as full-width rows with the name each one
+ * already carries in its `aria-label`. Used when the icon rail is not
+ * enough — a first look at the app, or reaching a control whose glyph
+ * has not been learned yet.
+ */
+.container.grouped.labelled {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  height: auto;
+  overflow-y: auto;
+  row-gap: 2px;
+}
+
+.container.grouped.labelled .group {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  padding: 4px 0;
+  gap: 2px;
+}
+
+/* Rows, not cells: the icon keeps its 40 px box and the label takes the
+ * rest, so the glyphs line up in a column the eye can scan. */
+.container.grouped.labelled .group > div {
+  width: 100%;
+  height: 44px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+.buttonLabel {
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: calc(14px * var(--c-font-scale, 1));
+  font-weight: 500;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The group separators are hairlines drawn between ROW-adjacent groups;
+ * stacked full-width groups want a horizontal rule instead. */
+.container.grouped.labelled .group + .group::before {
+  display: block;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  bottom: auto;
+  width: auto;
+  height: 1px;
+}
+
+/* Group labels are hidden on narrow viewports for the icon rail; in the
+ * drawer there is room, and they are the drawer's section headings. */
+.container.grouped.labelled .groupLabel {
+  display: block;
+  padding: 6px 12px 2px;
+  font-family: "Geist Mono", monospace;
+  font-size: calc(10px * var(--c-font-scale, 1));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}

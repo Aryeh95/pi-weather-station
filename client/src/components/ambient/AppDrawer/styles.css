@@ -1,0 +1,125 @@
+/* Swipe-out control drawer (app shell). Sits above everything the map owns —
+ * Leaflet's panes and controls top out at 1000, the dock's toast layer at
+ * 1500 — so the drawer takes 1600 and the scrim 1590. */
+
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  animation: drawer-fade 140ms ease-out;
+}
+
+.panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  /* Wide enough for the longest control name at font-size L, capped so the
+   * map stays visible behind it — the drawer is a lookup, not a screen. */
+  width: min(300px, 82vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+  border-right: 1px solid var(--c-border);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+  padding:
+    max(10px, env(safe-area-inset-top))
+    10px
+    max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
+  animation: drawer-in 160ms ease-out;
+}
+
+@keyframes drawer-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 8px;
+  flex: none;
+}
+
+.title {
+  font-family: "Geist Mono", monospace;
+  font-size: calc(12px * var(--c-font-scale, 1));
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+
+/* Doubled selector: the global `.ambientRoot button` reset strips background,
+ * border and colour from single-class button rules. */
+.close.close,
+.railToggle.railToggle {
+  appearance: none;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.close.close {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 18px;
+}
+
+/* The button column scrolls; the header and the rail toggle do not, so the
+ * way out stays put however long the list grows. */
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.body::-webkit-scrollbar {
+  display: none;
+}
+
+.railToggle.railToggle {
+  flex: none;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: calc(14px * var(--c-font-scale, 1));
+  font-weight: 500;
+}
+
+.railToggle.railToggle:active {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+
+.railToggle svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}

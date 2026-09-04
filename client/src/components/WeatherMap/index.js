@@ -260,6 +260,36 @@ function useRailOffset() {
   return offset;
 }
 
+/**
+ * Releases follow-me when the user drags the map.
+ *
+ * Without this, follow mode fights the user: every pan is undone by the next
+ * committed fix, which reads as a broken map rather than as a mode that is
+ * on. Leaflet's `dragstart` fires only for user gestures — the programmatic
+ * `setView` that follow mode itself performs does not raise it — so this
+ * cannot switch the mode off by reacting to its own recentres.
+ *
+ * @param {object} props
+ * @param {boolean} props.active whether follow mode is currently on
+ * @param {Function} props.onRelease called on the first user drag
+ * @returns {null} renders nothing
+ */
+const FollowReleaseOnDrag = ({ active, onRelease }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (!active) return undefined;
+    const handler = () => onRelease();
+    map.on("dragstart", handler);
+    return () => map.off("dragstart", handler);
+  }, [active, map, onRelease]);
+  return null;
+};
+
+FollowReleaseOnDrag.propTypes = {
+  active: PropTypes.bool,
+  onRelease: PropTypes.func.isRequired,
+};
+
 const PanHandler = ({ panToCoords, setPanToCoords, railOffset }) => {
   const map = useMap();
   useEffect(() => {
@@ -713,9 +743,11 @@ const WeatherMap = ({ zoom, dark }) => {
     setDesktopRadarMaximized,
     setPiRadarMaximized,
     setHighlightedAlertId,
+    toggleFollowLocation,
   } = useContext(AppActionsContext);
   const {
     mapApiKey,
+    followLocation,
     mobileRadarMaximized,
     desktopRadarMaximized,
     piRadarMaximized,
@@ -1285,6 +1317,12 @@ const WeatherMap = ({ zoom, dark }) => {
     () => buildRadiusRingOptions(dark, nightRed),
     [dark, nightRed]
   );
+
+  // Identity-stable so FollowReleaseOnDrag binds its map listener once per
+  // mode change rather than on every render of this component.
+  const releaseFollow = useCallback(() => {
+    if (followLocation) toggleFollowLocation();
+  }, [followLocation, toggleFollowLocation]);
   // `mapApiKey` gates the Mapbox tile proxy, which the app build does not use
   // — its basemap is keyless (see the TileLayer below). Requiring a key there
   // would leave the app permanently on this placeholder with nowhere to enter
@@ -1369,6 +1407,7 @@ const WeatherMap = ({ zoom, dark }) => {
         )}
         <MapClickHandler onClick={mapClickHandler} />
         <PanHandler panToCoords={panToCoords} setPanToCoords={setPanToCoords} railOffset={railOffset} />
+        <FollowReleaseOnDrag active={followLocation} onRelease={releaseFollow} />
         <InitialOffsetCentering railOffset={railOffset} markerPosition={markerPosition} />
         <RailOffsetTracker railOffset={railOffset} markerPosition={markerPosition} />
         <MapZoomTracker onZoomChange={setCurrentMapZoom} />

@@ -457,7 +457,13 @@
     "noiseFilterEnable": "Filtrar ruido de aire claro",
     "noiseFilterDisable": "Mostrar ecos de aire claro",
     "velocityOn": "Mostrar velocidad radial",
-    "velocityOff": "Mostrar reflectividad"
+    "velocityOff": "Mostrar reflectividad",
+    "startFollow": "Seguir mi ubicación",
+    "stopFollow": "Dejar de seguir mi ubicación",
+    "hideRail": "Ocultar la barra",
+    "showRail": "Mostrar la barra",
+    "drawerTitle": "Controles",
+    "drawerClose": "Cerrar los controles"
   },
   "toasts": {
     "mapRecentered": "Mapa recentrado",
@@ -497,7 +503,9 @@
     "noiseFilterOn": "Filtro de ruido activado",
     "noiseFilterOff": "Filtro de ruido desactivado",
     "velocityOn": "Modo velocidad activado",
-    "velocityOff": "Modo velocidad desactivado"
+    "velocityOff": "Modo velocidad desactivado",
+    "followStarted": "Siguiendo tu ubicación",
+    "followStopped": "Seguimiento detenido"
   },
   "health": {
     "title": "Estado de los servicios",

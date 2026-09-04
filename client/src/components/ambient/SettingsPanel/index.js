@@ -255,6 +255,7 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
     // section renders for remote clients too, so the row is wrapped in
     // {isLocal} to keep it (and the feature) invisible to them.
     isLocal,
+    keepScreenAwake, saveKeepScreenAwake,
   } = ctx;
 
   // The MouseHide / HideRadarLegend save helpers take a JSON-encoded
@@ -370,6 +371,23 @@ const SectionLocalPrefs = ({ ctx, lang }) => {
           onChange={savePressureUnit}
         />
       </div>
+
+      {/* Keep-screen-on: app only. The kiosk has the Sleep group in Advanced
+        * for the same territory (it dims and blanks an always-on panel), and
+        * a phone has neither that hardware path nor a reason to want it. */}
+      {__STANDALONE__ && (
+        <div className={styles.toggleRow}>
+          <Toggle
+            label={lbl(lang, "Keep screen on", "Garder l'écran allumé", "Mantener la pantalla encendida")}
+            sub={lbl(lang,
+              "Stops the display sleeping while Sweep is open. For watching radar on a mount — it does keep the screen lit, so it costs battery. Off by default.",
+              "Empêche l'écran de s'éteindre pendant que Sweep est ouvert. Pour suivre le radar sur un support — l'écran reste allumé, ce qui consomme de la batterie. Désactivé par défaut.",
+              "Evita que la pantalla se apague mientras Sweep está abierto. Para seguir el radar en un soporte — la pantalla permanece encendida, lo que consume batería. Desactivado por defecto.")}
+            value={Boolean(keepScreenAwake)}
+            onChange={(v) => saveKeepScreenAwake(v)}
+          />
+        </div>
+      )}
 
       {/* No pointer to hide on a touch-only device. */}
       <div className={styles.toggleRow}>

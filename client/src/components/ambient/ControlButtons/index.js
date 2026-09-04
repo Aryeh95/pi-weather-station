@@ -1,4 +1,5 @@
 import React, { useContext, useState, useRef, useEffect, useLayoutEffect } from "react";
+import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 import {
   AppActionsContext,
@@ -100,13 +101,14 @@ const TOAST_TIMEOUT = 2500;
  *
  * @returns {JSX.Element} Control buttons
  */
-const ControlButtons = () => {
+const ControlButtons = ({ labelled = false }) => {
   const { t } = useTranslation();
   const {
     setDarkMode,
     saveDarkModeAuto,
     saveAdvancedSleepFlag,
     resetMapPosition,
+    toggleFollowLocation,
     toggleMarker,
     toggleRadarTimelineVisible,
     toggleWeatherAlerts,
@@ -131,6 +133,7 @@ const ControlButtons = () => {
     updateModalOpen,
     mobileRadarMaximized,
     piLayoutState,
+    followLocation,
   } = useContext(SystemContext);
   const {
     darkMode,
@@ -316,7 +319,29 @@ const ControlButtons = () => {
   // for every button.
   // Conditional buttons collapse to `null` when their gate is off,
   // and React skips rendering them without disturbing siblings.
-  const btnRecenter = (
+  // In the app this button is a FOLLOW toggle, not a one-shot recentre.
+  //
+  // On the kiosk "recentre" means "put the map back on the configured home
+  // position" — a stationary screen has nothing to follow. On a phone the
+  // same gesture means "show me where I am", and the useful version of that
+  // while driving is continuous: tapping once recentres AND holds the pin on
+  // the device until tapped again (see hooks/useFollowLocation.js). Dragging
+  // the map also releases it, the way every maps app behaves.
+  const btnRecenter = __STANDALONE__ ? (
+    <div
+      key="recenter"
+      onClick={(e) => {
+        toggleFollowLocation();
+        notify(followLocation ? "toasts.followStopped" : "toasts.followStarted", e);
+      }}
+      className={`${followLocation ? styles.buttonDown : ""}`}
+      aria-pressed={followLocation}
+      title={t(followLocation ? "controls.stopFollow" : "controls.startFollow")}
+      aria-label={t(followLocation ? "controls.stopFollow" : "controls.startFollow")}
+    >
+      <InlineIcon icon={centerCircleIcon} />
+    </div>
+  ) : (
     <div
       key="recenter"
       onClick={(e) => { resetMapPosition(); notify("toasts.mapRecentered", e); }}
@@ -765,7 +790,30 @@ const ControlButtons = () => {
 
   const containerClass = `${styles.container} ${styles.grouped} ${
     darkMode ? styles.dark : styles.light
-  } ${!mouseHide ? styles.showMouse : ""}`;
+  } ${!mouseHide ? styles.showMouse : ""} ${labelled ? styles.labelled : ""}`;
+
+  /**
+   * In the drawer, render a button as an icon + its own name.
+   *
+   * The name is read from the button's `aria-label`, which every button
+   * already carries and already keeps in sync with its state ("Show base
+   * velocity" / "Show reflectivity"). Cloning here rather than threading a
+   * label through fifteen button definitions keeps one source of truth for
+   * what each control is called — and the phrasing is what the control DOES,
+   * which is what a labelled drawer is for.
+   *
+   * @param {object} node one of the button elements built above, or null
+   * @returns {object} the node, labelled when the drawer is rendering it
+   */
+  const withLabel = (node) => {
+    if (!labelled || !node) return node;
+    return React.cloneElement(node, {}, (
+      <>
+        {node.props.children}
+        <span className={styles.buttonLabel}>{node.props["aria-label"]}</span>
+      </>
+    ));
+  };
 
   // Labelled groups with hairline separators in CSS; group labels
   // CSS-hide on the 7" Pi kiosk and on mobile (see styles.css).
@@ -775,16 +823,16 @@ const ControlButtons = () => {
     <div ref={containerRef} className={containerClass}>
       <div className={styles.group}>
         <span className={styles.groupLabel}>{t("controls.groupMap")}</span>
-        {btnRecenter}
-        {btnPlaces}
-        {btnMarker}
-        {btnTimeline}
-        {btnLegend}
-        {btnWeatherAlerts}
-        {btnStormTracks}
-        {btnLightning}
-        {btnNoiseFilter}
-        {btnVelocity}
+        {withLabel(btnRecenter)}
+        {withLabel(btnPlaces)}
+        {withLabel(btnMarker)}
+        {withLabel(btnTimeline)}
+        {withLabel(btnLegend)}
+        {withLabel(btnWeatherAlerts)}
+        {withLabel(btnStormTracks)}
+        {withLabel(btnLightning)}
+        {withLabel(btnNoiseFilter)}
+        {withLabel(btnVelocity)}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's
@@ -800,23 +848,23 @@ const ControlButtons = () => {
       {(btnBot || btnForecast) ? (
         <div className={styles.group}>
           <span className={styles.groupLabel}>{t("controls.groupViews")}</span>
-          {btnBot}
-          {btnForecast}
+          {withLabel(btnBot)}
+          {withLabel(btnForecast)}
         </div>
       ) : null}
       <div className={styles.group}>
         <span className={styles.groupLabel}>{t("controls.groupDisplay")}</span>
-        {btnContrast}
-        {btnAuto}
-        {btnNightRed}
+        {withLabel(btnContrast)}
+        {withLabel(btnAuto)}
+        {withLabel(btnNightRed)}
       </div>
       <div className={styles.group}>
         <span className={styles.groupLabel}>{t("controls.groupSystem")}</span>
-        {btnRefresh}
-        {btnSettings}
-        {btnDebug}
-        {btnUpdateLocal}
-        {btnUpdateRemote}
+        {withLabel(btnRefresh)}
+        {withLabel(btnSettings)}
+        {withLabel(btnDebug)}
+        {withLabel(btnUpdateLocal)}
+        {withLabel(btnUpdateRemote)}
       </div>
       {toastNode}
       <PlacesPopover
@@ -827,6 +875,10 @@ const ControlButtons = () => {
       />
     </div>
   );
+};
+
+ControlButtons.propTypes = {
+  labelled: PropTypes.bool,
 };
 
 export default ControlButtons;

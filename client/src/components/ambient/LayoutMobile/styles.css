@@ -124,3 +124,11 @@
 :global(html[data-shell="app"]) .alertSlot {
   bottom: 96px;
 }
+
+/* Rail hidden: the map takes the whole width. The dock keeps its place in the
+ * DOM (its stacking-context and toast rules stay intact) and is simply not
+ * laid out — the left-edge swipe opens the drawer, which is how it comes
+ * back. */
+:global(html[data-shell="app"]) .layout.railHidden > :last-child {
+  display: none;
+}

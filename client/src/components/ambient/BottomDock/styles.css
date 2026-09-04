@@ -188,3 +188,33 @@
   position: static;
   margin-top: 6px;
 }
+
+/* Rail collapse button (app shell). Sits between the scrolling button column
+ * and the status chip, so it stays reachable however long the column grows. */
+.hideRail.hideRail {
+  appearance: none;
+  flex: none;
+  width: 100%;
+  height: 32px;
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--c-text-dim);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hideRail.hideRail:active {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+
+.hideRail svg {
+  width: 20px;
+  height: 20px;
+}

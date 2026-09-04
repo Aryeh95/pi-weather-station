@@ -457,7 +457,13 @@
     "noiseFilterEnable": "Filter clear-air noise",
     "noiseFilterDisable": "Show clear-air returns",
     "velocityOn": "Show base velocity",
-    "velocityOff": "Show reflectivity"
+    "velocityOff": "Show reflectivity",
+    "startFollow": "Follow my location",
+    "stopFollow": "Stop following my location",
+    "hideRail": "Hide toolbar",
+    "showRail": "Show toolbar",
+    "drawerTitle": "Controls",
+    "drawerClose": "Close controls"
   },
   "toasts": {
     "mapRecentered": "Map recentered",
@@ -497,7 +503,9 @@
     "noiseFilterOn": "Noise filter on",
     "noiseFilterOff": "Noise filter off",
     "velocityOn": "Velocity mode on",
-    "velocityOff": "Velocity mode off"
+    "velocityOff": "Velocity mode off",
+    "followStarted": "Following your location",
+    "followStopped": "Stopped following"
   },
   "health": {
     "title": "Service health",

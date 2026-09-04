@@ -18,7 +18,25 @@ export function getCoordsFromBrowser() {
         else resolve(pos.coords);
       },
       (err) => reject(err),
-      { timeout: 10000, maximumAge: 300000 }
+      {
+        // `enableHighAccuracy` is what actually engages the GPS radio —
+        // granting ACCESS_FINE_LOCATION only makes a precise fix *available*,
+        // and without this flag the platform is free to answer from the
+        // cheaper network provider, which is what "fine location granted but
+        // the pin is a kilometre out" looks like. The pin doubles as home for
+        // the storm-arrival estimate and the alert-radius ring, so precision
+        // is worth the radio.
+        //
+        // Kiosk builds ask for the cheap fix: that machine is stationary,
+        // has no GPS, and resolves its position from the server anyway.
+        enableHighAccuracy: __STANDALONE__,
+        // A cold GPS fix outdoors can take longer than a network one; 20 s
+        // in the app before falling through to the IP lookup.
+        timeout: __STANDALONE__ ? 20000 : 10000,
+        // Accept a fix up to 5 min old — the phone has almost certainly
+        // located itself recently, and reusing that starts the map instantly.
+        maximumAge: 300000,
+      }
     );
   });
 }

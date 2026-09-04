@@ -616,3 +616,43 @@ which lets the client run without `server/index.js` at all. Full write-up in
   editable and lost every change. The panel hides what has no meaning without
   a server (API keys, trust-cert, Mapbox styles, sleep, diagnostics) behind
   `__STANDALONE__` rather than disabling it.
+- **Follow-me mode** (`client/src/hooks/useFollowLocation.js`, app only) turns
+  the sidebar's recentre button into a toggle. Three things it got wrong first:
+  committing every `watchPosition` callback (one a second — gated on 200 m of
+  travel instead, which also filters a parked phone's jitter); treating ANY
+  geolocation error as fatal (the platform emits `POSITION_UNAVAILABLE`
+  between fixes, so follow switched itself off mid-drive — only code 1,
+  `PERMISSION_DENIED`, ends the mode now); and letting the screen sleep, which
+  a wake lock now prevents while the mode is on. Release-on-drag hangs off
+  Leaflet `dragstart`, which fires for user gestures only and so is not
+  triggered by follow's own `setView`.
+- **`enableHighAccuracy` is separate from the permission.** Granting
+  `ACCESS_FINE_LOCATION` only makes a precise fix available; without the flag
+  the platform may answer from the network provider and the pin sits a
+  kilometre off. Set in the app build only — the kiosk is stationary and has
+  no GPS.
+- **Drive-simulation recipe** (this is what caught the error-handling bug):
+  serve `client/dist-app` statically, launch Playwright with
+  `permissions: ["geolocation"]`, tap the follow button, then call
+  `ctx.setGeolocation()` in steps and assert that a new
+  `api.weather.gov/points/` lookup fires per step. Note the harness emits
+  `POSITION_UNAVAILABLE` between overrides — that is realistic, not noise.
+- **Keep-screen-on is `keepScreenAwake`** (`hooks/useWakeLock.js`), a persisted
+  per-device pref, NOT a property of follow mode — it was implicit in follow
+  first, which meant neither could be had without the other. The browser drops
+  a wake lock on every visibility change and does not restore it, so the hook
+  re-acquires on `visibilitychange` or the setting silently stops working after
+  the first trip to another app.
+- **The app rail hides (`railHidden`) and expands (`AppDrawer`).** The drawer
+  renders `ControlButtons labelled`, which clones each button and appends its
+  own `aria-label` — one definition per control, no parallel list to drift.
+  Two ordering traps: render `<AppDrawer>` BEFORE `<BottomDock>`, because
+  `.layout > :last-child` carries the dock's stacking rule and would override
+  the drawer's fixed positioning; and the left-edge swipe starts ON the rail,
+  so without a capture-phase click swallow the gesture also presses the button
+  underneath (a swipe from over Refresh reloaded the app).
+- **Testing gestures:** React ignores hand-rolled `dispatchEvent` touch
+  payloads — use CDP `Input.dispatchTouchEvent` for genuine touches. Even then
+  the harness page ended at `about:blank` after a swipe, so the drawer's
+  rendering was verified by building with `drawerOpen` defaulted true and
+  screenshotting, while the gesture gate was verified from its own logging.

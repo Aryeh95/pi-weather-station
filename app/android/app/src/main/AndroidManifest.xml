@@ -41,10 +41,17 @@
 
     <!-- The radar centres on the device's position at launch: the client asks
          navigator.geolocation first and falls back to an IP lookup only if the
-         permission is refused (see client/src/AppContext.js). Coarse is enough
-         for choosing a NEXRAD site and framing the map, so fine location is
-         declared too but neither is required to run — the app degrades to the
-         IP position, and then to the last pin. -->
+         permission is refused (see client/src/AppContext.js).
+
+         FINE is requested on purpose. Choosing a NEXRAD site would be happy
+         with a coarse fix, but the pin is also "home" for the storm-arrival
+         estimate and the centre of the alert radius ring, and those read
+         better from a precise position than from a ~1-3 km network fix.
+         Coarse is declared alongside it so a user who grants only
+         approximate location still gets a working map.
+
+         Neither permission is required to run: refusing both falls back to
+         the IP position, and then to the last pin. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
