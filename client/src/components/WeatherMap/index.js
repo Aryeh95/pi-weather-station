@@ -1189,10 +1189,18 @@ const WeatherMap = ({ zoom, dark }) => {
   const stormScanEpoch = stormScanTime ? Date.parse(stormScanTime) : NaN;
   const ageRows = [];
   if (siteRowShown) {
+    // When the raw radial is what's drawn, its OWN scan time is the honest
+    // age — normally the same volume scan the frame list names, but not
+    // while dual-pol clean is holding an older clean frame rather than
+    // swapping in an unmasked new one. Reporting the frame list there
+    // would claim an age for a picture that is not on the screen.
+    const radialEpoch = radialShown && radial.scanTime
+      ? Date.parse(radial.scanTime)
+      : NaN;
     ageRows.push({
       key: "site",
       label: radarVelocity ? `${iemSite} ${t("radar.ageVelocity")}` : iemSite,
-      epoch: currentSiteFrame.epoch,
+      epoch: Number.isFinite(radialEpoch) ? radialEpoch : currentSiteFrame.epoch,
       approximate: false,
       sourceStale: iemStale,
     });
@@ -1842,6 +1850,7 @@ const WeatherMap = ({ zoom, dark }) => {
           lightningCount={showLightning ? lightning.count : null}
           velocity={radarVelocity && iemVisible.site}
           cleanApplied={radial.cleanApplied}
+          holdingClean={radial.holdingClean}
         />
       )}
       {timelineShown && (

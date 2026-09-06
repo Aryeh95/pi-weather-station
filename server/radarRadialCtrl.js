@@ -539,6 +539,26 @@ async function fetchRadialAtStamp(site, stamp, product = DEFAULT_PRODUCT, clean 
 }
 
 /**
+ * Should this request be cleaned?
+ *
+ * Dual-pol clean is a reflectivity idea: the classification is derived
+ * from the reflectivity field, so masking velocity by it would be a
+ * different claim than the one that product makes.
+ *
+ * The value is compared as a STRING because that is what a query
+ * parameter is — under Express and equally under the Android app, whose
+ * axios adapter stringifies `params` before handing them to this handler
+ * (standalone/install.js). A `=== 1` here would work on neither.
+ *
+ * @param {*} raw `req.query.clean`
+ * @param {String} product bucket product token
+ * @returns {Boolean} true to mask non-meteorological gates
+ */
+function wantsClean(raw, product) {
+  return String(raw) === "1" && PRODUCTS[product]?.kind === "reflectivity";
+}
+
+/**
  * GET /api/radar/radial?site=DIX[&product=N0B|N0G][&stamp=YYYYMMDDHHMM][&clean=1]
  *
  * The raw-radial feed behind the client-side canvas renderer. Without
@@ -568,10 +588,7 @@ async function getRadarRadial(req, res) {
   if (stamp !== null && !/^\d{12}$/.test(stamp)) {
     return res.status(400).json("Invalid stamp").end();
   }
-  // Dual-pol clean is a reflectivity idea: the classification is derived
-  // from the reflectivity field, so masking velocity by it would be a
-  // different claim than the one this product makes.
-  const clean = req.query.clean === "1" && PRODUCTS[product].kind === "reflectivity";
+  const clean = wantsClean(req.query.clean, product);
   try {
     const payload = stamp
       ? await fetchRadialAtStamp(site, stamp, product, clean)
@@ -594,6 +611,7 @@ module.exports = {
   fetchRadialAtStamp,
   keyForStamp,
   keyForEpoch,
+  wantsClean,
   applyClassMask,
   gridsAlign,
   cleanRadial,

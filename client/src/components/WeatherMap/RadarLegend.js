@@ -68,9 +68,13 @@ const VelocityScale = () => (
  * @param {number|null} [props.lightningCount] GLM flash count for the lightning section (null hides it)
  * @param {boolean} [props.velocity] Show the base-velocity colour bar (velocity mode on, site layer in view)
  * @param {boolean|null} [props.cleanApplied] Dual-pol clean: true applied, false the scan had no classification, null not asked for
+ * @param {boolean} [props.holdingClean] The frame on screen is an older CLEAN scan, held because the newest one has no classification yet
  * @returns {JSX.Element} Legend overlay
  */
-const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false, cleanApplied = null }) => {
+const RadarLegend = ({
+  dark, chipMode, lightningCount = null, velocity = false,
+  cleanApplied = null, holdingClean = false,
+}) => {
   const { t } = useTranslation();
   const {
     showWeatherAlerts,
@@ -126,7 +130,9 @@ const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false, 
           * question "what am I looking at" is already being answered. */}
         {radarNoiseMode === "clean" ? (
           <div className={styles.alertCount}>
-            {t(cleanApplied === false ? "radar.legendCleanUnavailable" : "radar.legendClean")}
+            {t(cleanApplied === false
+              ? "radar.legendCleanUnavailable"
+              : (holdingClean ? "radar.legendCleanHolding" : "radar.legendClean"))}
           </div>
         ) : null}
       </div>
@@ -248,6 +254,7 @@ const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false, 
 
 RadarLegend.propTypes = {
   cleanApplied: PropTypes.bool,
+  holdingClean: PropTypes.bool,
   dark: PropTypes.bool,
   chipMode: PropTypes.bool,
   lightningCount: PropTypes.number,

@@ -385,6 +385,7 @@
     "legendPrecip": "Precipitation",
     "legendClean": "Dual-pol clean",
     "legendCleanUnavailable": "Dual-pol clean · unavailable",
+    "legendCleanHolding": "Dual-pol clean · holding last clean scan",
     "legendTornado": "Tornado",
     "legendStorm": "T-storm",
     "legendFlood": "Flood",

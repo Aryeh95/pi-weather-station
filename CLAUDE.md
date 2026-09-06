@@ -277,9 +277,26 @@ The old key migrates: a stored `"false"` stays off, anything else lands on
   2026-09-06: 04:43:35 / 04:44:06), so a poll can fall in the gap; the
   hook retries at 10 s, at most 5 times, which covers the gap without
   polling forever at a site whose classification is simply never
-  published. Verified by forcing the pending response in Playwright:
-  legend reads "unavailable" during the window and the disc clears ~22 s
-  after the toggle instead of waiting out a 60 s poll.
+  published.
+- **The last clean frame is HELD through that gap** rather than replaced
+  by the unmasked new one — swapping the bloom in for 20 s is exactly what
+  the mode exists to prevent, and the held frame is one volume scan old,
+  not wrong. Two things keep the trade honest rather than hidden:
+  - the frame-age chip reports the RADIAL's own `scanTime` whenever the
+    radial is what is drawn, so a held frame ages visibly (verified: the
+    row read "3 min ago" for a 05:45:21 frame while the newest scan was
+    05:50) instead of claiming the newest scan's age;
+  - the legend reads "holding last clean scan" for the duration.
+
+  Bounded by `CLEAN_HOLD_MAX_MS` (10 min, two-plus volume scans): a site
+  that STOPS publishing the classification mid-session would otherwise
+  freeze the radar, so past that the newest picture wins and the legend
+  says "unavailable". The hold can only start after one successful clean
+  frame, so a site that never publishes N0H shows unmasked with
+  "unavailable" from the start rather than holding nothing.
+- **History scrubbing does not hold.** Each loop frame is explicitly
+  requested; a historical scan whose classification is missing renders
+  unmasked, as the IEM tile behind it would have.
 
 Result on the reported scan: **95.8% of the drawn speckle removed**, and
 of the 368 gates ≥ 40 dBZ only 7 went — 5 of them ground clutter inside
@@ -309,6 +326,24 @@ decision, not a check.
 Until then: **rebuild dist LAST**, after the final source edit, and check
 `grep -c <a-new-string-literal> client/dist/bundle.min.js` before
 committing.
+
+### The app gets this for free — but two places could have dropped it
+
+`client/src/standalone/` runs the same controllers in the WebView, so the
+mask, the hold and the legend all come along with the client. Two places
+could have silently lost it and did not:
+
+- **Product 165 is in the app's static Level III product list**
+  (`standalone/shims/nexradProducts.js`). The library builds its product
+  table by reading its own directory, which a bundle cannot do, so the app
+  replaces it with an explicit list. N0H decodes in the app because 165 is
+  on that list, and `test/standaloneProducts.test.js` fails if the list
+  and the installed package drift apart.
+- **`clean` is compared as the STRING "1"** (`wantsClean`). A query
+  parameter is a string under Express, and `standalone/install.js`
+  stringifies axios `params` before handing them to the same handler, so
+  both surfaces take one path through one controller. `=== 1` would have
+  worked on neither; `test/dualPolClean.test.js` pins it.
 
 ### Limits worth knowing
 

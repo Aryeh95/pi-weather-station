@@ -31,6 +31,7 @@ const {
   CLASS_PRODUCT,
   PRODUCTS,
   packRadials,
+  wantsClean,
 } = require("../server/radarRadialCtrl");
 const parseLevel3 = require("nexrad-level-3-data");
 
@@ -187,4 +188,19 @@ test("N0H decodes with no shim, on the grid the mask assumes", () => {
   const count = (c) => packed.reduce((n, v) => n + (v === c ? 1 : 0), 0);
   assert.ok(count(BI) > count(RA) * 10,
             `expected a biological bloom, got BI ${count(BI)} vs RA ${count(RA)}`);
+});
+
+test("clean is decided from the query STRING, and only for reflectivity", () => {
+  // A query parameter is a string under Express, and equally in the
+  // Android app: standalone/install.js stringifies axios `params` before
+  // handing them to this handler, so the app and the kiosk take the same
+  // path through one controller rather than diverging on a type.
+  assert.equal(wantsClean("1", "N0B"), true);
+  assert.equal(wantsClean(1, "N0B"), true);
+  assert.equal(wantsClean("0", "N0B"), false);
+  assert.equal(wantsClean(undefined, "N0B"), false);
+  // Velocity is a different field; the classification says nothing about it.
+  assert.equal(wantsClean("1", "N0G"), false);
+  assert.equal(wantsClean("1", CLASS_PRODUCT), false);
+  assert.equal(wantsClean("1", "NOPE"), false);
 });

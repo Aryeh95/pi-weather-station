@@ -385,6 +385,7 @@
     "legendPrecip": "Precipitación",
     "legendClean": "Limpieza dual-pol",
     "legendCleanUnavailable": "Limpieza dual-pol · no disponible",
+    "legendCleanHolding": "Limpieza dual-pol · manteniendo el último barrido limpio",
     "legendTornado": "Tornado",
     "legendStorm": "Tormenta",
     "legendFlood": "Inundación",

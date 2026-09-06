@@ -385,6 +385,7 @@
     "legendPrecip": "Précipitations",
     "legendClean": "Nettoyage dual-pol",
     "legendCleanUnavailable": "Nettoyage dual-pol · indisponible",
+    "legendCleanHolding": "Nettoyage dual-pol · dernier balayage propre conservé",
     "legendTornado": "Tornade",
     "legendStorm": "Orage",
     "legendFlood": "Inondation",
