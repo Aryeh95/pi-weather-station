@@ -266,10 +266,49 @@ The old key migrates: a stored `"false"` stays off, anything else lands on
   untouched, `clean.applied: false`. The render key keys on whether the
   mask was APPLIED, not requested, so a fallback frame is not re-rendered
   pointlessly.
+- **The skip path still has to publish the clean status.** An unmasked
+  clean frame is pixel-identical to the dBZ-only one, so it takes the
+  "same render key, skip the render" branch — and the first version left
+  `cleanApplied` at its previous value, so the legend read "Dual-pol
+  clean" over a picture the mask had never touched. Reported from the
+  kiosk 2026-09-06. The skip branch publishes `cleanApplied` now even
+  though it publishes no new image.
+- **Retries are bounded.** N0H lands 30-45 s after N0B (measured
+  2026-09-06: 04:43:35 / 04:44:06), so a poll can fall in the gap; the
+  hook retries at 10 s, at most 5 times, which covers the gap without
+  polling forever at a site whose classification is simply never
+  published. Verified by forcing the pending response in Playwright:
+  legend reads "unavailable" during the window and the disc clears ~22 s
+  after the toggle instead of waiting out a 60 s poll.
 
 Result on the reported scan: **95.8% of the drawn speckle removed**, and
 of the 368 gates ≥ 40 dBZ only 7 went — 5 of them ground clutter inside
 12 km of the radar. Payload size unchanged.
+
+### The committed bundle can be a build of older source (2026-09-06)
+
+Shipped this way and cost a debugging round. The dual-pol commit ran
+`npm run prod`, then edited `useRadarRadial.js` again, then committed —
+so `client/dist/bundle.min.js` was a build of the code BEFORE the retry
+was added. Every kiosk served that. The symptom on the kiosk was the
+bloom reappearing for up to a minute on each new scan with no fast
+recovery, which reads exactly like "the filter is not working".
+
+**CI cannot catch this.** The dist job compares the FILE SET only, on
+purpose (the bundle is built on macOS, terser mangles differently on
+Linux, so bytes always differ). A stale bundle has an identical file set
+and passes. Two content-based guards were tried and both rejected: a
+string-literal comparison over minified output either pairs quotes across
+unrelated statements — "finding" slabs of the bundle that differ
+harmlessly between platforms, the exact false positive the file-set rule
+avoids — or, once filtered down to safely textual matches, misses the
+change entirely on quote parity. Closing it properly means building dist
+in CI instead of committing a hand-built one, which is a workflow
+decision, not a check.
+
+Until then: **rebuild dist LAST**, after the final source edit, and check
+`grep -c <a-new-string-literal> client/dist/bundle.min.js` before
+committing.
 
 ### Limits worth knowing
 

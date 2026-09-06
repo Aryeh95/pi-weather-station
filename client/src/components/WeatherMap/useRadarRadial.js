@@ -16,10 +16,14 @@ import { renderRadialImage, decodeBins, NOISE_FILTER_MIN_DBZ } from "./radialRen
 
 const POLL_INTERVAL_MS = 60 * 1000;
 // Dual-pol clean asked for, classification not published yet. The two
-// products of one scan land ~30 s apart (measured on LWX), so a poll can
-// fall in the gap and render the unfiltered bloom the mode exists to
-// remove. Come back for it rather than waiting out the full minute.
-const CLEAN_RETRY_MS = 20 * 1000;
+// products of one scan land ~30-45 s apart (measured on LWX 2026-09-06:
+// N0B at 04:43:35, N0H at 04:44:06), so a poll can fall in the gap and
+// draw the unfiltered bloom the mode exists to remove. Come back for it
+// rather than waiting out the full minute — but a bounded number of
+// times, or a site whose classification simply is not published would
+// poll forever.
+const CLEAN_RETRY_MS = 10 * 1000;
+const CLEAN_RETRY_LIMIT = 5; // ~50 s, i.e. up to the next scheduled poll
 
 /**
  * Keep a rendered raw-radial image current for a site.
@@ -43,6 +47,7 @@ export default function useRadarRadial({
   const urlRef = useRef(null);
   const cancelledRef = useRef(false);
   const retryRef = useRef(null);
+  const retriesRef = useRef(0);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -72,6 +77,7 @@ export default function useRadarRadial({
         retryRef.current = null;
       }
     };
+    retriesRef.current = 0;
 
     const fetchAndRender = () => {
       clearRetry();
@@ -96,14 +102,28 @@ export default function useRadarRadial({
           // whether it was asked for: a scan with no classification
           // available comes back unmasked, and that is the same picture
           // the dBZ-only mode would have drawn.
-          if (dualPolClean && d.clean && !d.clean.applied
-              && d.clean.reason === "no-classification") {
-            retryRef.current = setTimeout(fetchAndRender, CLEAN_RETRY_MS);
+          const cleanApplied = dualPolClean ? Boolean(d.clean?.applied) : null;
+          if (cleanApplied === false && d.clean?.reason === "no-classification") {
+            if (retriesRef.current < CLEAN_RETRY_LIMIT) {
+              retriesRef.current += 1;
+              retryRef.current = setTimeout(fetchAndRender, CLEAN_RETRY_MS);
+            }
+          } else {
+            retriesRef.current = 0;
           }
           const renderKey = `${d.key}|${d.kind}|nf:${Boolean(noiseFilter)}|dp:${Boolean(d.clean?.applied)}`;
           if (renderKey === lastKeyRef.current) {
-            // Same volume scan — refresh only the staleness flag.
-            setState((prev) => (prev.stale ? { ...prev, stale: false } : prev));
+            // Same pixels, so no re-render — but the CLEAN status under
+            // them can still have changed, and an unmasked clean frame is
+            // pixel-identical to the dBZ-only one, so this is exactly the
+            // path a "classification not published yet" answer takes.
+            // Publishing it is what keeps the legend from claiming a mask
+            // that did not run (seen on the kiosk 2026-09-06).
+            setState((prev) => (
+              (prev.stale || prev.cleanApplied !== cleanApplied)
+                ? { ...prev, stale: false, cleanApplied }
+                : prev
+            ));
             return;
           }
           const minDbz = noiseFilter ? NOISE_FILTER_MIN_DBZ : undefined;
@@ -111,8 +131,7 @@ export default function useRadarRadial({
           canvas.toBlob((blob) => {
             if (cancelledRef.current || !blob) return;
             lastKeyRef.current = renderKey;
-            publish(URL.createObjectURL(blob), bounds, d.scanTime,
-                    dualPolClean ? Boolean(d.clean?.applied) : null);
+            publish(URL.createObjectURL(blob), bounds, d.scanTime, cleanApplied);
           }, "image/png");
         })
         .catch(() => {
