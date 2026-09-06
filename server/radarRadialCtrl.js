@@ -74,8 +74,25 @@ const PRODUCTS = {
     // 0 = below threshold, 1 = range folded (drawn as RF, not skipped).
     reservedLevels: 2,
   },
+  // Dual-pol hydrometeor classification. Not a shim: the library ships a
+  // definition for 165, so this entry only names the product for the
+  // route and the cleaner. Levels are CLASS CODES, not a linear scale —
+  // hence the fixed scaling block, which would otherwise be read from a
+  // `plot` descriptor that carries no minimum for this product.
+  N0H: {
+    code: 165,
+    kind: "classification",
+    units: "class",
+    abbreviations: ["N0H", "N1H", "N2H", "N3H"],
+    description: "Hydrometeor Classification",
+    // 0 = below threshold; every other level is a class code.
+    reservedLevels: 1,
+    scaling: { min: 0, increment: 1, levels: 16 },
+  },
 };
 const DEFAULT_PRODUCT = "N0B";
+// The classification the dual-pol clean mode reads its verdict from.
+const CLASS_PRODUCT = "N0H";
 
 // Register the shims once. Mutating the library's exported tables is
 // blunt but deliberate — it is exactly how the library's own products
@@ -95,6 +112,14 @@ for (const def of Object.values(PRODUCTS)) {
 // One product per volume scan (4-6 min); 60 s matches the other radar
 // caches. Keyed `site:product`.
 const RADIAL_TTL_MS = 60 * 1000;
+// Dual-pol clean asked for but the classification was not in the bucket
+// yet. Measured 2026-09-06 on LWX: N0H lands about 30 s after the N0B of
+// the same scan (01:51:13 / 01:51:44), so a poll can fall between them.
+// Caching that gap for the full minute would hold the unmasked frame long
+// after the mask became possible.
+const CLEAN_PENDING_TTL_MS = 15 * 1000;
+// Reasons worth retrying soon; a grid mismatch will not fix itself.
+const CLEAN_TRANSIENT = new Set(["no-classification", "classification-failed"]);
 const radialCache = new BoundedMap(16);
 
 // Historical scans, keyed `site:product:stamp`. A completed volume scan
@@ -203,9 +228,25 @@ async function keyForStamp(site, product, stamp) {
   const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(stamp);
   if (!m) return null;
   const [, y, mo, d, hh, mm] = m.map(Number);
-  const target = Date.UTC(y, mo - 1, d, hh, mm);
+  return keyForEpoch(site, product, Date.UTC(y, mo - 1, d, hh, mm));
+}
 
-  // The stamp's own hour, plus a neighbour when the minute sits close
+/**
+ * Find the key for the volume scan nearest a UTC instant.
+ *
+ * The stamp form above rounds to the minute; this one keeps seconds,
+ * which is what pairs one product of a scan with another (every product
+ * of a volume scan is written with the same second).
+ *
+ * @param {String} site 3-letter radar id
+ * @param {String} product bucket product token
+ * @param {Number} target epoch ms
+ * @returns {Promise<String|null>} nearest key within the window, or null
+ */
+async function keyForEpoch(site, product, target) {
+  const mm = new Date(target).getUTCMinutes();
+
+  // The target's own hour, plus a neighbour when the minute sits close
   // enough to the boundary that the matching key could live next door.
   const hours = [new Date(target)];
   if (mm <= 2) hours.push(new Date(target - 60 * 60 * 1000));
@@ -268,7 +309,7 @@ async function decodeKey(site, product, key) {
     // (velocity); level L ≥ 2 is `min + L × increment` in `units` — the
     // same table the parser builds internally for its scaled view.
     reservedLevels: def.reservedLevels,
-    scaling: {
+    scaling: def.scaling || {
       min: pd.plot ? pd.plot.minimumDataValue : (def.kind === "velocity" ? -63.5 : -32),
       increment: pd.plot ? pd.plot.dataIncrement : 0.5,
       levels: pd.plot ? pd.plot.dataLevels : 254,
@@ -284,6 +325,148 @@ async function decodeKey(site, product, key) {
   return value;
 }
 
+// ── Dual-pol clean ────────────────────────────────────────────────────
+// A reflectivity threshold cannot separate insects from drizzle: both
+// live at 15-25 dBZ. Dual-pol can, and the NWS already does it at the
+// radar site and publishes the answer as its own Level III product, so
+// this reads that verdict rather than classifying anything itself.
+//
+// Class codes are the product's own data levels (see the library's
+// products/165 key). Measured against LWX 2026-09-06T01:29:38Z, a
+// nocturnal bloom filling the whole disc:
+//
+//   BI biological   68.2% of drawn gates   median 19.5 dBZ, 56 km
+//   BD "big drops"  26.9%                  median 19.5 dBZ, 67 km
+//   RA light rain    1.9%                  median   22 dBZ, 126 km
+//   GC clutter       0.3%                  median   20 dBZ, 12.5 km
+//
+// BI and BD are one population there — same median, same p95, same range
+// band. The classifier splits the bloom because insects and genuine big
+// drops share a high differential reflectivity. What separates them is
+// intensity: real big drops live in convective cores, and only 59 of
+// 71 803 BD gates in that scan (0.08%) reached 30 dBZ. So BD is masked
+// only when it is weak, which keeps the real thing when a core makes it.
+const CLASS_BIOLOGICAL = 10;
+const CLASS_GROUND_CLUTTER = 20;
+const CLASS_BIG_DROPS = 80;
+const CLASS_UNKNOWN = 140;
+// Always non-meteorological.
+const MASK_CLASSES = new Set([CLASS_BIOLOGICAL, CLASS_GROUND_CLUTTER, CLASS_UNKNOWN]);
+// Masked only below this reflectivity.
+const BIG_DROPS_RAIN_MIN_DBZ = 30;
+
+/**
+ * Blank the gates a dual-pol classification calls non-meteorological.
+ *
+ * Mutates nothing: returns a new bins buffer plus a report of what it
+ * did. Geometry is checked rather than assumed — the two products are
+ * re-bucketed to the same 0.5° slots and 0.25 km gates by packRadials,
+ * but a mismatch would paint a stencil in the wrong place, so a
+ * mismatch means no mask at all.
+ *
+ * Gates past the classification's range (it reaches 300 km against
+ * reflectivity's 460) are left alone.
+ *
+ * @param {Object} refl decoded N0B payload
+ * @param {Object} cls decoded N0H payload
+ * @returns {{bins: Buffer, masked: Number, considered: Number}} `considered`
+ *   counts only echo gates the classification had a verdict for, so
+ *   `masked / considered` reads as "of what could be judged, how much was
+ *   not weather" instead of being diluted by the unjudgeable outer ring.
+ */
+function applyClassMask(refl, cls) {
+  const bins = Buffer.from(refl.bins, "base64");
+  const cbins = Buffer.from(cls.bins, "base64");
+  const out = Buffer.from(bins);
+  // Level → is this gate below the big-drops rain floor?
+  const weak = new Uint8Array(256);
+  for (let level = 0; level < 256; level += 1) {
+    const dbz = refl.scaling.min + level * refl.scaling.increment;
+    weak[level] = dbz < BIG_DROPS_RAIN_MIN_DBZ ? 1 : 0;
+  }
+  let masked = 0;
+  let considered = 0;
+  const nb = refl.numBins;
+  const cnb = cls.numBins;
+  const buckets = Math.min(refl.numBuckets, cls.numBuckets);
+  for (let a = 0; a < buckets; a += 1) {
+    const rowR = a * nb;
+    const rowC = a * cnb;
+    const span = Math.min(nb, cnb);
+    for (let b = 0; b < span; b += 1) {
+      const level = bins[rowR + b];
+      if (level < refl.reservedLevels) continue;
+      considered += 1;
+      const code = cbins[rowC + b];
+      if (MASK_CLASSES.has(code) || (code === CLASS_BIG_DROPS && weak[level])) {
+        out[rowR + b] = 0;
+        masked += 1;
+      }
+    }
+  }
+  return { bins: out, masked, considered };
+}
+
+/**
+ * Same geometry? The mask indexes reflectivity's own bucket/bin grid, so
+ * anything but an exact match on the grid would misplace it.
+ *
+ * @param {Object} refl decoded reflectivity payload
+ * @param {Object} cls decoded classification payload
+ * @returns {Boolean} true when the mask can be applied by index
+ */
+function gridsAlign(refl, cls) {
+  return refl.bucketDeg === cls.bucketDeg
+    && refl.binKm === cls.binKm
+    && refl.firstBinKm === cls.firstBinKm
+    && refl.numBuckets === cls.numBuckets;
+}
+
+/**
+ * Reflectivity with the non-meteorological gates removed.
+ *
+ * Never fatal: when the classification for that exact volume scan is
+ * missing, unreadable or on a different grid, the reflectivity comes
+ * back untouched with `clean.applied` false and a reason. The client
+ * still has the dBZ floor.
+ *
+ * @param {Object} refl decoded N0B payload (available:true)
+ * @returns {Promise<Object>} a copy carrying `clean`
+ */
+async function cleanRadial(refl) {
+  const scanEpoch = Date.parse(refl.scanTime || "");
+  if (!Number.isFinite(scanEpoch)) {
+    return { ...refl, clean: { applied: false, reason: "no-scan-time" } };
+  }
+  let cls;
+  try {
+    const key = await keyForEpoch(refl.site, CLASS_PRODUCT, scanEpoch);
+    increment("nexrad-l3", "radial-list");
+    if (!key) {
+      return { ...refl, clean: { applied: false, reason: "no-classification" } };
+    }
+    cls = await decodeKey(refl.site, CLASS_PRODUCT, key);
+  } catch {
+    return { ...refl, clean: { applied: false, reason: "classification-failed" } };
+  }
+  if (!gridsAlign(refl, cls)) {
+    return { ...refl, clean: { applied: false, reason: "grid-mismatch" } };
+  }
+  const { bins, masked, considered } = applyClassMask(refl, cls);
+  return {
+    ...refl,
+    bins: bins.toString("base64"),
+    clean: {
+      applied: true,
+      product: CLASS_PRODUCT,
+      key: cls.key,
+      scanTime: cls.scanTime,
+      masked,
+      considered,
+    },
+  };
+}
+
 /**
  * Fetch + decode the newest radial product for a site.
  *
@@ -291,8 +474,8 @@ async function decodeKey(site, product, key) {
  * @param {String} [product] bucket product token, default N0B
  * @returns {Promise<Object>} payload for /api/radar/radial
  */
-async function fetchRadial(site, product = DEFAULT_PRODUCT) {
-  const cacheKey = `${site}:${product}`;
+async function fetchRadial(site, product = DEFAULT_PRODUCT, clean = false) {
+  const cacheKey = `${site}:${product}${clean ? ":clean" : ""}`;
   const hit = radialCache.get(cacheKey);
   if (hit && hit.expires > Date.now()) return hit.value;
 
@@ -307,8 +490,12 @@ async function fetchRadial(site, product = DEFAULT_PRODUCT) {
     return empty;
   }
 
-  const value = await decodeKey(site, product, key);
-  radialCache.set(cacheKey, { value, expires: Date.now() + RADIAL_TTL_MS });
+  const decoded = await decodeKey(site, product, key);
+  const value = clean ? await cleanRadial(decoded) : decoded;
+  const ttl = (value.clean && !value.clean.applied && CLEAN_TRANSIENT.has(value.clean.reason))
+    ? CLEAN_PENDING_TTL_MS
+    : RADIAL_TTL_MS;
+  radialCache.set(cacheKey, { value, expires: Date.now() + ttl });
   return value;
 }
 
@@ -322,8 +509,8 @@ async function fetchRadial(site, product = DEFAULT_PRODUCT) {
  * @param {String} [product] bucket product token, default N0B
  * @returns {Promise<Object>} payload for /api/radar/radial
  */
-async function fetchRadialAtStamp(site, stamp, product = DEFAULT_PRODUCT) {
-  const cacheKey = `${site}:${product}:${stamp}`;
+async function fetchRadialAtStamp(site, stamp, product = DEFAULT_PRODUCT, clean = false) {
+  const cacheKey = `${site}:${product}:${stamp}${clean ? ":clean" : ""}`;
   const hit = historyCache.get(cacheKey);
   if (hit && hit.expires > Date.now()) return hit.value;
 
@@ -339,19 +526,31 @@ async function fetchRadialAtStamp(site, stamp, product = DEFAULT_PRODUCT) {
     return empty;
   }
 
-  const value = await decodeKey(site, product, key);
+  const decoded = await decodeKey(site, product, key);
+  const value = clean ? await cleanRadial(decoded) : decoded;
   value.stamp = stamp;
-  historyCache.set(cacheKey, { value, expires: Date.now() + HISTORY_TTL_MS });
+  // Same reasoning as the live path: a historical scan whose
+  // classification has not landed is not immutable yet.
+  const ttl = (value.clean && !value.clean.applied && CLEAN_TRANSIENT.has(value.clean.reason))
+    ? CLEAN_PENDING_TTL_MS
+    : HISTORY_TTL_MS;
+  historyCache.set(cacheKey, { value, expires: Date.now() + ttl });
   return value;
 }
 
 /**
- * GET /api/radar/radial?site=DIX[&product=N0B|N0G][&stamp=YYYYMMDDHHMM]
+ * GET /api/radar/radial?site=DIX[&product=N0B|N0G][&stamp=YYYYMMDDHHMM][&clean=1]
  *
  * The raw-radial feed behind the client-side canvas renderer. Without
  * `stamp`, the newest scan; with it, the historical scan matching that
  * IEM frame stamp (used to render loop playback sharp). `product`
  * selects reflectivity (default) or velocity.
+ *
+ * `clean=1` blanks the gates the volume scan's dual-pol classification
+ * calls non-meteorological — insects, birds, ground clutter — before
+ * the payload is packed, so the client renders as it always did and the
+ * payload does not grow. Reflectivity only; reports what it did (or why
+ * it could not) in `clean`.
  *
  * @param {Object} req
  * @param {Object} res
@@ -369,10 +568,14 @@ async function getRadarRadial(req, res) {
   if (stamp !== null && !/^\d{12}$/.test(stamp)) {
     return res.status(400).json("Invalid stamp").end();
   }
+  // Dual-pol clean is a reflectivity idea: the classification is derived
+  // from the reflectivity field, so masking velocity by it would be a
+  // different claim than the one this product makes.
+  const clean = req.query.clean === "1" && PRODUCTS[product].kind === "reflectivity";
   try {
     const payload = stamp
-      ? await fetchRadialAtStamp(site, stamp, product)
-      : await fetchRadial(site, product);
+      ? await fetchRadialAtStamp(site, stamp, product, clean)
+      : await fetchRadial(site, product, clean);
     return res.status(200).json(payload).end();
   } catch (err) {
     const status = err?.response?.status || 500;
@@ -390,6 +593,13 @@ module.exports = {
   fetchRadial,
   fetchRadialAtStamp,
   keyForStamp,
+  keyForEpoch,
+  applyClassMask,
+  gridsAlign,
+  cleanRadial,
+  MASK_CLASSES,
+  BIG_DROPS_RAIN_MIN_DBZ,
+  CLASS_PRODUCT,
   PRODUCTS,
   BIN_KM,
   NUM_BUCKETS,

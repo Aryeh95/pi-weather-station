@@ -13,6 +13,7 @@ import useIdleDetection from "~/hooks/useIdleDetection";
 import useDocumentVisible from "~/hooks/useDocumentVisible";
 import useFavoriteLocations from "~/hooks/useFavoriteLocations";
 import { placeLabelFromAddress } from "~/ui/placeLabel";
+import { RADAR_NOISE_MODES, RADAR_NOISE_DEFAULT } from "~/ui/radarNoise";
 import { eventProductType } from "~/ui/alertLogic";
 import axios from "axios";
 import tzlookup from "tz-lookup";
@@ -635,21 +636,36 @@ export function AppContextProvider({ children }) {
     });
   }, []);
 
-  // Clear-air noise filter for the raw-radial layer. In clear-air VCPs
-  // the radar still returns bugs, birds, dust and refraction gradients at
-  // low dBZ — real signal, but meteorologically meaningless speckle that
-  // fills the whole disc on a dry day. The filter raises the layer's
-  // minimum displayed reflectivity (NOISE_FILTER_MIN_DBZ in
-  // radialRender.js). Per-device, DEFAULT ON — only an explicit stored
-  // "false" shows the unfiltered picture.
-  const [radarNoiseFilter, setRadarNoiseFilter] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem("radarNoiseFilter") !== "false";
+  // Clear-air noise filter for the raw-radial layer, in three steps.
+  //
+  // In clear-air VCPs the radar still returns bugs, birds, dust and
+  // refraction gradients — real signal, meteorologically meaningless
+  // speckle that fills the whole disc on a dry day.
+  //
+  //   "off"   the raw picture, every echo the radar reported
+  //   "dbz"   hide below NOISE_FILTER_MIN_DBZ (radialRender.js)
+  //   "clean" that, plus drop the gates the volume scan's own dual-pol
+  //           classification calls non-meteorological (server side, see
+  //           cleanRadial in radarRadialCtrl.js)
+  //
+  // "clean" exists because a dBZ threshold cannot separate insects from
+  // drizzle — both sit at 15-25 dBZ, so a nocturnal bloom survives the
+  // floor intact (measured: 96% of a filtered disc was biological).
+  //
+  // Per-device. DEFAULT "dbz", and the old boolean migrates: a stored
+  // "false" (the only value that used to mean off) stays off, anything
+  // else lands on the floor that device already had.
+  const [radarNoiseMode, setRadarNoiseMode] = useState(() => {
+    if (typeof window === "undefined") return RADAR_NOISE_DEFAULT;
+    const stored = window.localStorage.getItem("radarNoiseFilter");
+    if (stored === "false") return "off";
+    return RADAR_NOISE_MODES.includes(stored) ? stored : RADAR_NOISE_DEFAULT;
   });
-  const toggleRadarNoiseFilter = useCallback(() => {
-    setRadarNoiseFilter((prev) => {
-      const next = !prev;
-      try { window.localStorage.setItem("radarNoiseFilter", String(next)); } catch { /* localStorage may be unavailable */ }
+  const cycleRadarNoiseMode = useCallback(() => {
+    setRadarNoiseMode((prev) => {
+      const i = RADAR_NOISE_MODES.indexOf(prev);
+      const next = RADAR_NOISE_MODES[(i + 1) % RADAR_NOISE_MODES.length];
+      try { window.localStorage.setItem("radarNoiseFilter", next); } catch { /* localStorage may be unavailable */ }
       return next;
     });
   }, []);
@@ -2242,7 +2258,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
-    toggleRadarNoiseFilter,
+    cycleRadarNoiseMode,
     toggleRadarVelocity,
     setAlertRadiusKmLive,
     selectGovAlert,
@@ -2312,7 +2328,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
-    toggleRadarNoiseFilter,
+    cycleRadarNoiseMode,
     toggleRadarVelocity,
     setAlertRadiusKmLive,
     selectGovAlert,
@@ -2558,7 +2574,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
-    radarNoiseFilter,
+    radarNoiseMode,
     radarVelocity,
     showAlertRing,
     alertRadiusKm,
@@ -2572,7 +2588,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
-    radarNoiseFilter,
+    radarNoiseMode,
     radarVelocity,
     showAlertRing,
     alertRadiusKm,

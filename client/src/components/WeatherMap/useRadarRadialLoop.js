@@ -42,11 +42,14 @@ const PACE_MS = 150;
  * @param {Array<String>} params.stamps frame stamps to cover, in fetch-priority order
  * @param {Boolean} params.enabled false pauses fetching and clears everything
  * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ (reflectivity only)
+ * @param {Boolean} [params.dualPolClean] also drop gates the scan's dual-pol classification calls non-meteorological (server side)
  * @param {String} [params.product] "N0B" (reflectivity, default) or "N0G" (velocity)
  * @param {Boolean} [params.paused] true stops the warm-up pump but keeps rendered frames
  * @returns {{byStamp: Object<String, {url: String, bounds: Array}>}} rendered frames
  */
-export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter, product = "N0B", paused = false }) {
+export default function useRadarRadialLoop({
+  site, stamps, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false,
+}) {
   const [byStamp, setByStamp] = useState({});
   // stamp → {url, bounds} for rendered frames, {miss: true, at} for
   // known-absent scans. Lives in a ref so the pump can mutate it without
@@ -69,7 +72,7 @@ export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter,
     generationRef.current += 1;
     revokeAll();
     setByStamp({});
-  }, [site, product, noiseFilter, enabled]);
+  }, [site, product, noiseFilter, dualPolClean, enabled]);
 
   useEffect(() => {
     if (!enabled || !site || !stamps || !stamps.length) return undefined;
@@ -105,7 +108,9 @@ export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter,
       let s = nextStamp();
       while (!cancelled && generationRef.current === gen && s) {
         try {
-          const res = await axios.get("/api/radar/radial", { params: { site, product, stamp: s } });
+          const params = { site, product, stamp: s };
+          if (dualPolClean) params.clean = 1;
+          const res = await axios.get("/api/radar/radial", { params });
           const d = res.data || {};
           if (cancelled || generationRef.current !== gen) return;
           if (d.available) {
@@ -134,7 +139,7 @@ export default function useRadarRadialLoop({ site, stamps, enabled, noiseFilter,
     pump();
 
     return () => { cancelled = true; };
-  }, [site, product, enabled, paused, noiseFilter, stamps]);
+  }, [site, product, enabled, paused, noiseFilter, dualPolClean, stamps]);
 
   // Revoke everything on unmount — each URL pins a blob for the life of
   // the page otherwise.

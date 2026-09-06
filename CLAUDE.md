@@ -203,6 +203,86 @@ opaque pixels in both a mosaic tile and a `ridge::` N0B tile are exact table
 entries (tile.py resamples nearest-neighbour). The filter is therefore an
 exact colour → dBZ lookup; unknown colours are left alone.
 
+## Dual-pol clean — third noise-filter state (2026-09-06)
+
+Motivating report: a full-disc green/blue bloom over Baltimore at 21:28
+local **with the 15 dBZ filter already on**. The filter was working; the
+echo was simply above its floor.
+
+Measured on the exact scan the kiosk was drawing
+(`LWX_N0B_2026_09_06_01_29_38`):
+
+- 447 921 gates had echo; the filter was already dropping 180 664 of them
+  (40%) for being under 15 dBZ.
+- Of what it drew, **93% was 15-25 dBZ** and only 0.17% of the disc
+  exceeded 30 dBZ. There was essentially no precipitation on screen.
+- Coverage above 15 dBZ ran **90%+ from 20-70 km and fell to 2.9% by
+  140 km** — the 0.5° beam climbing out of the boundary layer. Rain does
+  not stop at a range ring; a biological bloom does.
+- The NWS's own dual-pol classifier (`N0H`, product 165, same bucket, same
+  volume scan) called **68.2% of the drawn gates Biological** and 1.9%
+  light rain.
+
+**A dBZ threshold cannot fix this** — insects and drizzle overlap at
+15-25 dBZ. Raising the floor to 25 would have removed 93% of the speckle
+and light rain with it. Hence a third state rather than a bigger number.
+
+### What was built
+
+`radarNoiseMode` (was the boolean `radarNoiseFilter`) cycles
+**off → dbz → clean**; `client/src/ui/radarNoise.js` owns the vocabulary.
+The old key migrates: a stored `"false"` stays off, anything else lands on
+`"dbz"`, so an upgrade changes nothing until the button is pressed.
+
+- **The mask runs SERVER-SIDE**, in `cleanRadial` before `packRadials`.
+  Sending the classification to the client would have added ~1.15 MB of
+  base64 per frame on top of N0B's 1.7 MB; zeroing the levels instead
+  leaves the payload byte-for-byte the same size and the renderer
+  untouched. `?clean=1`, reported back in a `clean` block.
+- **Pairing is by volume scan, to the second.** `keyForStamp` was
+  generalised to `keyForEpoch` for this: every product of one scan is
+  written with the same second (`LWX_N0B_…_01_29_38` /
+  `LWX_N0H_…_01_29_38`), and pairing a fresh reflectivity frame with a
+  stale classification would stencil the wrong shape.
+- **`N0H` needs NO shim** — unlike 153/154, `nexrad-level-3-data` ships a
+  definition for 165, so the shim loop's `if (!products[code])` guard must
+  keep skipping it. It does need a fixed `scaling` block: its `plot`
+  descriptor carries only `maxDataValue`, so the generic read would set
+  `min: undefined`. `test/dualPolClean.test.js` fails if a library upgrade
+  drops the product.
+- **BD ("big drops") is masked only below 30 dBZ.** BI and BD were one
+  population in that scan — same median (19.5 dBZ), same p95, same range
+  band — because insects and genuine big drops share a high differential
+  reflectivity. Intensity separates them: only 59 of 71 803 BD gates
+  (0.08%) reached 30 dBZ. Masking BD unconditionally would eat real
+  convective cores.
+- **The grid is checked, not assumed.** N0H is 1° × 1200 bins (300 km)
+  against N0B's 0.5° × 1840 (460 km); `packRadials` re-buckets both to the
+  same 720 × 0.5° slots (verified: 720/720 covered), so the mask indexes
+  straight across — but `gridsAlign` refuses rather than misplacing the
+  stencil if that ever stops being true, and gates past 300 km are left
+  alone rather than blanked.
+- **Never fatal.** No classification for a scan → reflectivity comes back
+  untouched, `clean.applied: false`. The render key keys on whether the
+  mask was APPLIED, not requested, so a fallback frame is not re-rendered
+  pointlessly.
+
+Result on the reported scan: **95.8% of the drawn speckle removed**, and
+of the 368 gates ≥ 40 dBZ only 7 went — 5 of them ground clutter inside
+12 km of the radar. Payload size unchanged.
+
+### Limits worth knowing
+
+- **Tiles keep the dBZ floor only.** A pre-rendered IEM PNG carries no
+  per-gate classification, so "clean" degrades to `FilteredTileLayer` for
+  the mosaic and for history frames whose radial has not rendered. The
+  legend says which is in force; the dock button reports the setting.
+- Reflectivity only — the classification is derived from the reflectivity
+  field, so masking velocity by it would be a different claim.
+- The dock glyph carries the state (funnel unpressed / funnel pressed /
+  broom), because two of the three states are "filtering" and pressed
+  styling alone cannot say which.
+
 ## Frame age display
 
 Built as a chip on the map (`RadarFrameAge`). Thresholds encode NEXRAD's

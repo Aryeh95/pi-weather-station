@@ -230,12 +230,33 @@ gate-level picture, not IEM's pre-smoothed raster of it.
 | `site` | — | 3-letter NEXRAD id (required) |
 | `product` | `N0B` | `N0B` super-res base reflectivity (product 153) or `N0G` super-res base velocity (product 154) |
 | `stamp` | — | `YYYYMMDDHHMM` UTC frame stamp: the historical scan matching that IEM frame instead of the newest (sharp loop playback) |
+| `clean` | — | `1` blanks the gates the scan's dual-pol classification calls non-meteorological (reflectivity only; ignored for `N0G`) |
 
 - **Source:** `SSS_N0B_*` / `SSS_N0G_*` keys in the public
   `unidata-nexrad-level3` bucket, decoded through product-153 / 154 shims
   over `nexrad-level-3-data` (both share product 94's layout). Velocity
   files carry the same volume-scan timestamps as reflectivity, so the N0B
   frame stamps resolve N0G scans too.
+- **`clean=1`:** reads `SSS_N0H_*` (hydrometeor classification, product
+  165 — no shim, the library ships a definition) for the SAME volume scan,
+  matched to the second, and zeroes reflectivity gates the NWS classifier
+  calls biological, ground clutter or unknown, plus "big drops" below
+  30 dBZ. The mask runs before the bins are packed, so the payload shape
+  and size are unchanged and the client renders exactly as it otherwise
+  would. Never fatal: with no classification published for that scan the
+  reflectivity comes back untouched and `clean.applied` is false with a
+  `reason`. Reported as:
+
+```json
+"clean": {
+  "applied": true,
+  "product": "N0H",
+  "key": "LWX_N0H_2026_09_06_01_29_38",
+  "scanTime": "2026-09-06T01:29:38.000Z",
+  "masked": 404803,
+  "considered": 446515
+}
+```
 - **Cached:** 60 s per site+product for the newest scan; historical scans
   30 min (immutable) / 2 min for a miss. Payload ~1.7 MB (N0B) / ~1.1 MB
   (N0G): base64 of 720 azimuth buckets × N range bins of raw byte levels.

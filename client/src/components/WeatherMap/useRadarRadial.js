@@ -15,6 +15,11 @@ import axios from "axios";
 import { renderRadialImage, decodeBins, NOISE_FILTER_MIN_DBZ } from "./radialRender";
 
 const POLL_INTERVAL_MS = 60 * 1000;
+// Dual-pol clean asked for, classification not published yet. The two
+// products of one scan land ~30 s apart (measured on LWX), so a poll can
+// fall in the gap and render the unfiltered bloom the mode exists to
+// remove. Come back for it rather than waiting out the full minute.
+const CLEAN_RETRY_MS = 20 * 1000;
 
 /**
  * Keep a rendered raw-radial image current for a site.
@@ -23,23 +28,29 @@ const POLL_INTERVAL_MS = 60 * 1000;
  * @param {String|null} params.site 3-letter NEXRAD id
  * @param {Boolean} params.enabled false pauses polling and clears the image
  * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ (reflectivity only)
+ * @param {Boolean} [params.dualPolClean] also drop gates the scan's dual-pol classification calls non-meteorological (server side)
  * @param {String} [params.product] "N0B" (reflectivity, default) or "N0G" (velocity)
  * @param {Boolean} [params.paused] true suspends polling but keeps the current image
- * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean}}
+ * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean, cleanApplied: Boolean|null}}
+ *   `cleanApplied` is null unless dual-pol clean was asked for: true when the
+ *   scan's classification was found and used, false when it was not.
  */
-export default function useRadarRadial({ site, enabled, noiseFilter, product = "N0B", paused = false }) {
-  const [state, setState] = useState({ url: null, bounds: null, scanTime: null, stale: false });
+export default function useRadarRadial({
+  site, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false,
+}) {
+  const [state, setState] = useState({ url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null });
   const lastKeyRef = useRef(null);
   const urlRef = useRef(null);
   const cancelledRef = useRef(false);
+  const retryRef = useRef(null);
 
   useEffect(() => {
     cancelledRef.current = false;
 
-    const publish = (url, bounds, scanTime) => {
+    const publish = (url, bounds, scanTime, cleanApplied = null) => {
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       urlRef.current = url;
-      setState({ url, bounds, scanTime, stale: false });
+      setState({ url, bounds, scanTime, stale: false, cleanApplied });
     };
 
     if (!enabled || !site) {
@@ -48,15 +59,28 @@ export default function useRadarRadial({ site, enabled, noiseFilter, product = "
         URL.revokeObjectURL(urlRef.current);
         urlRef.current = null;
       }
-      setState({ url: null, bounds: null, scanTime: null, stale: false });
+      setState({ url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null });
       return () => { cancelledRef.current = true; };
     }
     // Paused: keep the rendered image, stop asking for new scans. The
     // effect re-runs on resume and fetches at once.
     if (paused) return undefined;
 
+    const clearRetry = () => {
+      if (retryRef.current) {
+        clearTimeout(retryRef.current);
+        retryRef.current = null;
+      }
+    };
+
     const fetchAndRender = () => {
-      axios.get("/api/radar/radial", { params: { site, product } })
+      clearRetry();
+      // The mask is applied server-side, before the bins are packed, so
+      // the payload and the render are identical either way — only the
+      // gates that survive differ.
+      const params = { site, product };
+      if (dualPolClean) params.clean = 1;
+      axios.get("/api/radar/radial", { params })
         .then((res) => {
           if (cancelledRef.current) return;
           const d = res.data || {};
@@ -68,8 +92,15 @@ export default function useRadarRadial({ site, enabled, noiseFilter, product = "
           }
           // The render key carries the filter state too, so toggling the
           // noise filter re-renders the current scan instead of waiting
-          // for the next one.
-          const renderKey = `${d.key}|${d.kind}|nf:${Boolean(noiseFilter)}`;
+          // for the next one. It uses whether the mask was APPLIED, not
+          // whether it was asked for: a scan with no classification
+          // available comes back unmasked, and that is the same picture
+          // the dBZ-only mode would have drawn.
+          if (dualPolClean && d.clean && !d.clean.applied
+              && d.clean.reason === "no-classification") {
+            retryRef.current = setTimeout(fetchAndRender, CLEAN_RETRY_MS);
+          }
+          const renderKey = `${d.key}|${d.kind}|nf:${Boolean(noiseFilter)}|dp:${Boolean(d.clean?.applied)}`;
           if (renderKey === lastKeyRef.current) {
             // Same volume scan — refresh only the staleness flag.
             setState((prev) => (prev.stale ? { ...prev, stale: false } : prev));
@@ -80,7 +111,8 @@ export default function useRadarRadial({ site, enabled, noiseFilter, product = "
           canvas.toBlob((blob) => {
             if (cancelledRef.current || !blob) return;
             lastKeyRef.current = renderKey;
-            publish(URL.createObjectURL(blob), bounds, d.scanTime);
+            publish(URL.createObjectURL(blob), bounds, d.scanTime,
+                    dualPolClean ? Boolean(d.clean?.applied) : null);
           }, "image/png");
         })
         .catch(() => {
@@ -96,8 +128,9 @@ export default function useRadarRadial({ site, enabled, noiseFilter, product = "
     return () => {
       cancelledRef.current = true;
       clearInterval(id);
+      clearRetry();
     };
-  }, [site, enabled, noiseFilter, product, paused]);
+  }, [site, enabled, noiseFilter, dualPolClean, product, paused]);
 
   // Revoke the final URL when the consumer unmounts.
   useEffect(() => () => {

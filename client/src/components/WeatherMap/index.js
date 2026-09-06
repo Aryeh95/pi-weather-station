@@ -80,6 +80,7 @@ import useRadarRadialLoop from "./useRadarRadialLoop";
 import StormTracks from "./StormTracks";
 import FilteredTileLayer from "./FilteredTileLayer";
 import { NOISE_FILTER_MIN_DBZ } from "./radialRender";
+import { noiseFloorOn, dualPolCleanOn } from "~/ui/radarNoise";
 import {
   IEM_ATTRIBUTION,
   buildMosaicFrames,
@@ -810,7 +811,7 @@ const WeatherMap = ({ zoom, dark }) => {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
-    radarNoiseFilter,
+    radarNoiseMode,
     radarVelocity,
     showAlertRing,
     nearbyAlerts,
@@ -1041,7 +1042,8 @@ const WeatherMap = ({ zoom, dark }) => {
   const radial = useRadarRadial({
     site: iemSite,
     enabled: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
-    noiseFilter: radarNoiseFilter,
+    noiseFilter: noiseFloorOn(radarNoiseMode),
+    dualPolClean: dualPolCleanOn(radarNoiseMode),
     product: radialProduct,
     paused: pollingPaused,
   });
@@ -1080,7 +1082,8 @@ const WeatherMap = ({ zoom, dark }) => {
     site: iemSite,
     stamps: loopStamps,
     enabled: radarTimelineVisible && iemVisible.site && iemSiteAvailable && Boolean(iemSite),
-    noiseFilter: radarNoiseFilter,
+    noiseFilter: noiseFloorOn(radarNoiseMode),
+    dualPolClean: dualPolCleanOn(radarNoiseMode),
     product: radialProduct,
     paused: pollingPaused,
   });
@@ -1591,8 +1594,12 @@ const WeatherMap = ({ zoom, dark }) => {
           * IEM's published N0Q table and clears anything below 15 dBZ —
           * the same floor the raw-radial LUT applies, so low zoom and
           * history scrubbing stop showing the speckle the live layer
-          * hides. Off, the stock TileLayer draws the PNGs untouched. */}
-        {mountedMosaicFrames.map((f) => (radarNoiseFilter ? (
+          * hides. Off, the stock TileLayer draws the PNGs untouched.
+          *
+          * Dual-pol clean cannot reach here: a pre-rendered PNG carries
+          * no per-gate classification, so "clean" gets the dBZ floor on
+          * the tiles and the full mask only on the raw-radial layer. */}
+        {mountedMosaicFrames.map((f) => (noiseFloorOn(radarNoiseMode) ? (
           <FilteredTileLayer
             key={`iem-mosaic-f-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
@@ -1627,7 +1634,7 @@ const WeatherMap = ({ zoom, dark }) => {
           * never the `-0` "latest" sentinel: `-0` would render but
           * gives no way to know how old the picture is, and making
           * frame age visible is the point of this work. */}
-        {mountedSiteFrames.map((f) => (radarNoiseFilter ? (
+        {mountedSiteFrames.map((f) => (noiseFloorOn(radarNoiseMode) ? (
           <FilteredTileLayer
             key={`iem-site-f-${iemSite}-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
@@ -1834,6 +1841,7 @@ const WeatherMap = ({ zoom, dark }) => {
           chipMode={radarTimelineVisible && isSmallScreen}
           lightningCount={showLightning ? lightning.count : null}
           velocity={radarVelocity && iemVisible.site}
+          cleanApplied={radial.cleanApplied}
         />
       )}
       {timelineShown && (

@@ -67,15 +67,17 @@ const VelocityScale = () => (
  * @param {boolean} props.chipMode Render the compact chip instead of the card (short screens with the timeline open)
  * @param {number|null} [props.lightningCount] GLM flash count for the lightning section (null hides it)
  * @param {boolean} [props.velocity] Show the base-velocity colour bar (velocity mode on, site layer in view)
+ * @param {boolean|null} [props.cleanApplied] Dual-pol clean: true applied, false the scan had no classification, null not asked for
  * @returns {JSX.Element} Legend overlay
  */
-const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false }) => {
+const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false, cleanApplied = null }) => {
   const { t } = useTranslation();
   const {
     showWeatherAlerts,
     nearbyAlerts,
     nearbyResidualCount,
     alertRadiusKm,
+    radarNoiseMode,
   } = useContext(AlertsContext);
   const { distanceUnit } = useContext(UiPrefsContext);
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -118,6 +120,15 @@ const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false }
           <span>60</span>
           <span>75 dBZ</span>
         </div>
+        {/* Dual-pol clean is the one filter setting that can be on and
+          * doing nothing — the mask needs the scan's classification, and
+          * not every scan has one published. Say which, here, where the
+          * question "what am I looking at" is already being answered. */}
+        {radarNoiseMode === "clean" ? (
+          <div className={styles.alertCount}>
+            {t(cleanApplied === false ? "radar.legendCleanUnavailable" : "radar.legendClean")}
+          </div>
+        ) : null}
       </div>
       {velocity ? (
         <div className={styles.legendSection}>
@@ -236,6 +247,7 @@ const RadarLegend = ({ dark, chipMode, lightningCount = null, velocity = false }
 };
 
 RadarLegend.propTypes = {
+  cleanApplied: PropTypes.bool,
   dark: PropTypes.bool,
   chipMode: PropTypes.bool,
   lightningCount: PropTypes.number,

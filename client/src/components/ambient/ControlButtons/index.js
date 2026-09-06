@@ -27,6 +27,7 @@ import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
 import lightningIcon from "@iconify/icons-carbon/lightning";
 import noiseFilterIcon from "@iconify/icons-carbon/filter";
+import dualPolCleanIcon from "@iconify/icons-carbon/clean";
 /* Velocity mode: opposed horizontal arrows read as "toward / away from
  * the radar" — the one thing a base-velocity field shows. */
 import velocityIcon from "@iconify/icons-carbon/arrows-horizontal";
@@ -114,7 +115,7 @@ const ControlButtons = ({ labelled = false }) => {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleLightning,
-    toggleRadarNoiseFilter,
+    cycleRadarNoiseMode,
     toggleRadarVelocity,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
@@ -147,7 +148,7 @@ const ControlButtons = ({ labelled = false }) => {
     showWeatherAlerts,
     showStormTracks,
     showLightning,
-    radarNoiseFilter,
+    radarNoiseMode,
     radarVelocity,
     nearbyAlerts,
   } = useContext(AlertsContext);
@@ -572,6 +573,29 @@ const ControlButtons = ({ labelled = false }) => {
   // returns (bugs/birds/dust in clear-air mode) that otherwise paint the
   // whole disc on a dry day. Unlike its neighbours the pressed state means
   // "filter active", and it defaults ON.
+  /* Clear-air noise filter, three steps: off → dBZ floor → dual-pol clean.
+   * A tap always filters more, wrapping back to the raw picture, so the
+   * control stays predictable without a menu.
+   *
+   * The glyph carries the state, not just the pressed styling: two of the
+   * three states are "filtering", and a funnel that is merely pressed
+   * cannot say which. Off and dBZ share the funnel (unpressed / pressed);
+   * clean gets the broom.
+   *
+   * "clean" is the one state that can silently do nothing — its mask is
+   * applied server-side and a scan may have no classification published.
+   * The legend says so when that happens (RadarLegend); the button only
+   * reports the setting, which is what it controls.
+   */
+  const noiseNext = {
+    off: { toast: "toasts.noiseFilterDbz", label: "controls.noiseFilterToDbz" },
+    dbz: { toast: "toasts.noiseFilterClean", label: "controls.noiseFilterToClean" },
+    clean: { toast: "toasts.noiseFilterOff", label: "controls.noiseFilterToOff" },
+  }[radarNoiseMode] || { toast: "toasts.noiseFilterDbz", label: "controls.noiseFilterToDbz" };
+  const noiseFilterOn = radarNoiseMode !== "off";
+  const noiseFilterLabel = radarOverlaysDisabled
+    ? t("controls.radarOverlaysNeedMaximize")
+    : t(noiseNext.label);
   const btnNoiseFilter = (
     <div
       key="noiseFilter"
@@ -581,19 +605,15 @@ const ControlButtons = ({ labelled = false }) => {
           notify("toasts.radarOverlaysNeedMaximize", e);
           return;
         }
-        toggleRadarNoiseFilter();
-        notify(radarNoiseFilter ? "toasts.noiseFilterOff" : "toasts.noiseFilterOn", e);
+        cycleRadarNoiseMode();
+        notify(noiseNext.toast, e);
       }}
-      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${radarNoiseFilter && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
-      title={radarOverlaysDisabled
-        ? t("controls.radarOverlaysNeedMaximize")
-        : t(radarNoiseFilter ? "controls.noiseFilterDisable" : "controls.noiseFilterEnable")}
-      aria-label={radarOverlaysDisabled
-        ? t("controls.radarOverlaysNeedMaximize")
-        : t(radarNoiseFilter ? "controls.noiseFilterDisable" : "controls.noiseFilterEnable")}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${noiseFilterOn && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={noiseFilterLabel}
+      aria-label={noiseFilterLabel}
       aria-disabled={radarOverlaysDisabled || undefined}
     >
-      <InlineIcon icon={noiseFilterIcon} />
+      <InlineIcon icon={radarNoiseMode === "clean" ? dualPolCleanIcon : noiseFilterIcon} />
     </div>
   );
   // Velocity mode — swaps the high-zoom single-site product from N0B
