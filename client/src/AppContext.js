@@ -621,6 +621,21 @@ export function AppContextProvider({ children }) {
     });
   }, []);
 
+  // Radar site picker (RadarScope-style chips on every WSR-88D). Per-
+  // device display toggle, OFF by default — it is a tool you open to
+  // choose, not a layer to leave up.
+  const [showRadarSites, setShowRadarSites] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("showRadarSites") === "true";
+  });
+  const toggleRadarSites = useCallback(() => {
+    setShowRadarSites((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("showRadarSites", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
+
   // GOES GLM lightning overlay. Per-device, OFF by default like the
   // other radar overlays -- and the cold-start window fetch (~10 MB from
   // the GOES bucket) only ever happens when someone actually wants it.
@@ -1747,6 +1762,25 @@ export function AppContextProvider({ children }) {
   }, []);
 
   /**
+   * Pin the single-site radar to one site from the map picker, or clear
+   * the pin ("" → automatic). Same `radarSite` setting the Settings
+   * field edits, written through PATCH so nothing else in settings.json
+   * is touched. Optimistic: the frames poller refetches on the state
+   * change, and the server sanitises identically (KLWX → LWX).
+   *
+   * @param {String} site 3- or 4-letter NEXRAD id, or "" for automatic
+   * @returns {Promise} resolves when persisted
+   */
+  const pickRadarSite = useCallback((site) => {
+    const up = String(site == null ? "" : site).trim().toUpperCase();
+    const norm = /^[A-Z]{4}$/.test(up) ? up.slice(1) : (/^[A-Z]{3}$/.test(up) ? up : "");
+    setRadarSite(norm);
+    // Persist failure (remote client, server down) keeps the optimistic
+    // pick for this session; the next settings hydrate corrects it.
+    return axios.patch("/setting", { key: "radarSite", val: norm }).catch(() => undefined);
+  }, []);
+
+  /**
    * Promote a favorite to the app's default location.
    *
    * Writes `startingLat` / `startingLon` (the same pair the Settings panel
@@ -2269,6 +2303,8 @@ export function AppContextProvider({ children }) {
     setRadarFrameTs,
     toggleWeatherAlerts,
     toggleStormTracks,
+    toggleRadarSites,
+    pickRadarSite,
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
@@ -2339,6 +2375,8 @@ export function AppContextProvider({ children }) {
     setRadarFrameTs,
     toggleWeatherAlerts,
     toggleStormTracks,
+    toggleRadarSites,
+    pickRadarSite,
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
@@ -2587,6 +2625,7 @@ export function AppContextProvider({ children }) {
     nearbyResidualCount,
     showWeatherAlerts,
     showStormTracks,
+    showRadarSites,
     showLightning,
     radarNoiseMode,
     radarVelocity,
@@ -2601,6 +2640,7 @@ export function AppContextProvider({ children }) {
     nearbyResidualCount,
     showWeatherAlerts,
     showStormTracks,
+    showRadarSites,
     showLightning,
     radarNoiseMode,
     radarVelocity,

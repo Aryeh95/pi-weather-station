@@ -1484,3 +1484,42 @@
 :global(.ambientRoot[data-layout="mobile"]) :global(.leaflet-control-attribution) {
   max-width: 100%;
 }
+
+/* Radar site picker chips (RadarScope-style). The wrapper is the Leaflet
+ * divIcon container — sized by content, no default marker box. The active
+ * site is the one the frames poller is serving; a pinned site (manual
+ * override) adds a small mark so "auto picked this" and "I chose this"
+ * read differently at kiosk distance. */
+.radar-site-icon {
+  background: none;
+  border: none;
+  width: auto !important;
+  height: auto !important;
+}
+.radar-site-chip {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--c-mono, monospace);
+  font-size: calc(12px * var(--c-font-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #e8e8e8;
+  background: rgba(40, 44, 52, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.radar-site-chip-active {
+  color: #fff;
+  background: #1a73e8;
+  border-color: #6fa8ff;
+}
+.radar-site-chip-pinned::after {
+  content: " \25CF";
+  font-size: 0.7em;
+  vertical-align: middle;
+}

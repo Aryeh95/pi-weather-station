@@ -77,6 +77,8 @@ import useLightning from "./useLightning";
 import LightningOverlay from "./LightningOverlay";
 import useRadarRadial from "./useRadarRadial";
 import useRadarRadialLoop from "./useRadarRadialLoop";
+import RadarSitePicker from "./RadarSitePicker";
+import { homeSiteCoversView } from "./radarSites";
 import StormTracks from "./StormTracks";
 import FilteredTileLayer from "./FilteredTileLayer";
 import { NOISE_FILTER_MIN_DBZ } from "./radialRender";
@@ -767,9 +769,11 @@ const WeatherMap = ({ zoom, dark }) => {
     setPiRadarMaximized,
     setHighlightedAlertId,
     toggleFollowLocation,
+    pickRadarSite,
   } = useContext(AppActionsContext);
   const {
     mapApiKey,
+    isLocal,
     followLocation,
     radarSite,
     mobileRadarMaximized,
@@ -811,6 +815,7 @@ const WeatherMap = ({ zoom, dark }) => {
     // default until the Phase 3 dock toggle wires it up.
     showWeatherAlerts,
     showStormTracks,
+    showRadarSites,
     showLightning,
     radarNoiseMode,
     radarVelocity,
@@ -947,9 +952,18 @@ const WeatherMap = ({ zoom, dark }) => {
   // storm-track / arrival overlays when nobody is panning.
   const [viewCenter, setViewCenter] = useState(null);
   const inSiteBand = Number.isFinite(currentMapZoom) && currentMapZoom > BAND_LOW_ZOOM;
-  const radarQueryPoint = (inSiteBand && viewCenter)
+  //
+  // STICKY HOME RADAR (2026-09-14): the view centre only takes over once
+  // it has left the home radar's coverage (SITE_STICKY_KM of the radar
+  // nearest the pin). Before this, a Pikesville kiosk whose view centre
+  // sat over the Chesapeake Bay resolved KDOX — genuinely the nearest
+  // radar to that point, but 120 km from the pin with KLWX at 74 km —
+  // and every zoom or pan across the bay flipped sites. Inside the home
+  // radar's reach the pin decides, exactly as at mosaic zoom.
+  const pinPoint = mapGeo ? { lat: mapGeo.latitude, lon: mapGeo.longitude } : null;
+  const radarQueryPoint = (inSiteBand && viewCenter && !homeSiteCoversView(pinPoint, viewCenter))
     ? viewCenter
-    : (mapGeo ? { lat: mapGeo.latitude, lon: mapGeo.longitude } : null);
+    : pinPoint;
 
   // ── IEM two-layer radar ───────────────────────────────────────────
   // Active only when the user has selected the "iem" source. Two layers
@@ -1765,6 +1779,14 @@ const WeatherMap = ({ zoom, dark }) => {
             polygons on purpose. Leaflet paints later-inserted vector layers
             on top, and a filled warning polygon would otherwise bury the
             thin dashed track running through it. */}
+        {showRadarSites ? (
+          <RadarSitePicker
+            activeSite={iemSite || null}
+            pinnedSite={radarSite || ""}
+            interactive={Boolean(isLocal)}
+            onPick={pickRadarSite}
+          />
+        ) : null}
         {showStormTracks ? (
           <StormTracks
             cells={stormCells}

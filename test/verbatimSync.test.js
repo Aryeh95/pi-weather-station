@@ -71,7 +71,7 @@ const TOP_LEVEL_DECL_RE = /^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|
 // geometry, the temperature/speed conversions, and the astronomy helpers all
 // belonged to the forecast UI), and trimmed alertLogic to the government-alert
 // helpers.
-const EXPECTED_CHECK_COUNT = 42;
+const EXPECTED_CHECK_COUNT = 48;
 
 /**
  * The four copy-carrying test files and how to find their copies.
@@ -110,6 +110,12 @@ const PAIRS = [
     // Marker-delimited copy of the storm-arrival geometry (closest-approach
     // projection of the home point onto a cell's forecast motion).
     testFile: "test/stormArrival.test.js",
+  },
+  {
+    // Marker-delimited copy of the radar-site geometry (nearest WSR-88D,
+    // sticky home-radar rule). The copy's `sites` is the same JSON the
+    // source imports, loaded with require.
+    testFile: "test/radarSites.test.js",
   },
   {
     // Marker-delimited copy of the raw-radial renderer's pure helpers
@@ -364,7 +370,7 @@ test("verbatimSync: discovery found the full copied-declaration inventory", () =
   assert.equal(
     CHECKS.length,
     EXPECTED_CHECK_COUNT,
-    `expected ${EXPECTED_CHECK_COUNT} copied declarations across the six test files, `
+    `expected ${EXPECTED_CHECK_COUNT} copied declarations across the seven test files, `
       + `found ${CHECKS.length} (${CHECKS.map((c) => c.name).join(", ")}) — `
       + "update EXPECTED_CHECK_COUNT if a copy was deliberately added/removed",
   );

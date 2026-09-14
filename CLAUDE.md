@@ -144,6 +144,34 @@ applied server-side in `/api/radar/frames` and `/api/radar/site` — it
 beats coordinates AND an explicit `site` query. The client only keeps a
 copy to refetch frames the moment it changes.
 
+**Sticky home radar + site picker (2026-09-14).** The nearest-radar fix
+above was not enough on the kiosk: "site follows the view" resolves from
+the map VIEW centre, and a Pikesville kiosk with its view centre over the
+Chesapeake Bay got KDOX — genuinely the nearest radar to that point, 120 km
+from the pin with KLWX at 74 km. `homeSiteCoversView(pin, view)` in
+`WeatherMap/radarSites.js` now keeps the pin as the query point while the
+view centre is within `SITE_STICKY_KM` (200 km) of the radar nearest the
+pin; only beyond that does the view centre take over. The radar nearest
+the pin is computed CLIENT-SIDE from `nexradSites.json` — NWS
+`/radar/stations` filtered to WSR-88D, minus the four overseas DoD sites
+(Guam, Korea, Okinawa) that IEM and the Level III bucket do not carry —
+so the app needs no server for it. Regenerate the list with:
+`curl -s -H "User-Agent: sweep" https://api.weather.gov/radar/stations`
+→ keep `stationType === "WSR-88D"` and `-178 < lon < -64`.
+
+`RadarSitePicker` (dock toggle `showRadarSites`, carbon `radar-enhanced`
+glyph, per-device, off by default) draws a chip on every site like
+RadarScope: the site the frames poller is serving is highlighted, a
+pinned one adds a dot; tapping pins (`pickRadarSite` → `PATCH /setting
+radarSite`), tapping the pinned site clears the pin. Chips are real
+`divIcon` Markers with `bubblingMouseEvents: false` so a tap never
+reaches the map-click handler that moves the location pin; remote (non-
+local) clients see the chips but taps are inert. The override also rides
+along as the `site` QUERY on `/api/radar/frames`, not only through the
+server's settings.json read — the Android app runs the controller
+in-process with no file to read, so the query is how the pin reaches it
+there.
+
 ### Server proxy
 
 Two JSON routes plus the frame-list poller. **Tiles are not proxied** — they are

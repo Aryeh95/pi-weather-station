@@ -51,9 +51,18 @@ export default function useIemRadarFrames({ latitude, longitude, enabled, paused
 
   const cancelledRef = useRef(false);
 
+  // The override rides along as the `site` query too, not only via the
+  // server's settings.json read: the Android app runs this controller
+  // in-process with no settings file to read, so the query is the only
+  // way the pin reaches it there. On the kiosk both agree.
+  const siteOverrideRef = useRef(siteOverride);
+  siteOverrideRef.current = siteOverride;
+
   const fetchFrames = useCallback(async (lat, lon) => {
     try {
-      const res = await axios.get("/api/radar/frames", { params: { lat, lon } });
+      const params = { lat, lon };
+      if (siteOverrideRef.current) params.site = siteOverrideRef.current;
+      const res = await axios.get("/api/radar/frames", { params });
       if (cancelledRef.current) return;
       const { available, site, frames, mosaic } = res.data || {};
       // The composite's current time rides along on every answer — even

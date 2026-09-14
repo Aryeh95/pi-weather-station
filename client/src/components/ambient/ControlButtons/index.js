@@ -25,6 +25,7 @@ import timePlotIcon from "@iconify/icons-carbon/time-plot";
 import legendIcon from "@iconify/icons-carbon/legend";
 import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
+import radarSitesIcon from "@iconify/icons-carbon/radar-enhanced";
 import lightningIcon from "@iconify/icons-carbon/lightning";
 import noiseFilterIcon from "@iconify/icons-carbon/filter";
 import dualPolCleanIcon from "@iconify/icons-carbon/clean";
@@ -114,6 +115,7 @@ const ControlButtons = ({ labelled = false }) => {
     toggleRadarTimelineVisible,
     toggleWeatherAlerts,
     toggleStormTracks,
+    toggleRadarSites,
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
@@ -147,6 +149,7 @@ const ControlButtons = ({ labelled = false }) => {
   const {
     showWeatherAlerts,
     showStormTracks,
+    showRadarSites,
     showLightning,
     radarNoiseMode,
     radarVelocity,
@@ -544,6 +547,33 @@ const ControlButtons = ({ labelled = false }) => {
       <InlineIcon icon={stormTracksIcon} />
     </div>
   );
+  // Radar site picker — RadarScope-style chips on every WSR-88D; tap one
+  // to pin the single-site layer to it. Same overlay gating as its
+  // neighbours.
+  const btnRadarSites = (
+    <div
+      key="radarSites"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleRadarSites();
+        notify(showRadarSites ? "toasts.radarSitesOff" : "toasts.radarSitesOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${showRadarSites && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showRadarSites ? "controls.hideRadarSites" : "controls.showRadarSites")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showRadarSites ? "controls.hideRadarSites" : "controls.showRadarSites")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={radarSitesIcon} />
+    </div>
+  );
   // GLM lightning toggle -- same overlay gating as its neighbours.
   const btnLightning = (
     <div
@@ -850,6 +880,7 @@ const ControlButtons = ({ labelled = false }) => {
         {withLabel(btnLegend)}
         {withLabel(btnWeatherAlerts)}
         {withLabel(btnStormTracks)}
+        {withLabel(btnRadarSites)}
         {withLabel(btnLightning)}
         {withLabel(btnNoiseFilter)}
         {withLabel(btnVelocity)}
