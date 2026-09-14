@@ -839,6 +839,11 @@ export function AppContextProvider({ children }) {
   }, []);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [customLat, setCustomLat] = useState(null);
+  // Manual NEXRAD site override (settings.json `radarSite`), "" = auto.
+  // The server applies it to /api/radar/frames itself; the client keeps
+  // a copy only for the Settings field and to refetch frames the moment
+  // it changes rather than on the next 60 s poll.
+  const [radarSite, setRadarSite] = useState("");
   const [customLon, setCustomLon] = useState(null);
   const [mouseHide, setMouseHide] = useState(false);
   // Per-device opt-in to surface yellow-tier (advisory) government
@@ -1239,6 +1244,7 @@ export function AppContextProvider({ children }) {
             if (startingLon) {
               setCustomLon(startingLon);
             }
+            setRadarSite(typeof res.radarSite === "string" ? res.radarSite : "");
             // Favorites ride along on this existing settings read rather than
             // getting their own fetch or their own mount effect — see
             // docs/favorite-locations-design.md §8.6.
@@ -1692,10 +1698,11 @@ export function AppContextProvider({ children }) {
    * @param {String} [settings.mapsKey] Mapbox API key (writes `mapApiKey`).
    * @param {String} [settings.geoKey] LocationIQ reverse-geocoding API key (writes `reverseGeoApiKey`).
    * @param {String} [settings.lat] Custom starting latitude as a string (writes `startingLat`).
+   * @param {String} [settings.site] Manual NEXRAD site override, "" for automatic (writes `radarSite`).
    * @param {String} [settings.lon] Custom starting longitude as a string (writes `startingLon`).
    * @returns {Promise} Resolves when complete
    */
-  const saveSettingsToJson = useCallback(({ mapsKey, geoKey, lat, lon }) => {
+  const saveSettingsToJson = useCallback(({ mapsKey, geoKey, lat, lon, site }) => {
     return new Promise((resolve, reject) => {
       axios
         .put("/settings", {
@@ -1703,6 +1710,7 @@ export function AppContextProvider({ children }) {
           reverseGeoApiKey: geoKey,
           startingLat: lat,
           startingLon: lon,
+          radarSite: site == null ? "" : site,
         })
         .then((res) => {
           resolve(res);
@@ -1710,6 +1718,10 @@ export function AppContextProvider({ children }) {
           setReverseGeoApiKey(geoKey);
           setCustomLat(lat);
           setCustomLon(lon);
+          // Echo the server's sanitised form (KLWX → LWX, junk → "") so
+          // the field shows what actually took effect.
+          const saved = res && res.data && typeof res.data.radarSite === "string" ? res.data.radarSite : "";
+          setRadarSite(saved);
           // Keep `browserGeo` in step with the newly saved default.
           // `browserGeo` is otherwise written ONLY at boot (getBrowserGeo),
           // and `resetMapPosition` — the dock's Recenter button — pans to it.
@@ -2372,6 +2384,7 @@ export function AppContextProvider({ children }) {
     displayScaleChoices,
     reverseGeoApiKey,
     mapApiKey,
+    radarSite,
     isLocal,
     remoteSecurityEnabled,
     debugEnabled,
@@ -2415,6 +2428,7 @@ export function AppContextProvider({ children }) {
     displayScaleChoices,
     reverseGeoApiKey,
     mapApiKey,
+    radarSite,
     isLocal,
     remoteSecurityEnabled,
     debugEnabled,

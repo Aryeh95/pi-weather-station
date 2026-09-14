@@ -26,11 +26,13 @@ const COORD_EPSILON = 0.05;
  * @param {object} params
  * @param {Number|null} params.latitude
  * @param {Number|null} params.longitude
+ * @param {String} [params.siteOverride] settings.json `radarSite`; the server applies it, this
+ *   hook only refetches immediately when it changes
  * @param {Boolean} params.enabled false pauses polling entirely (layer hidden / other source selected)
  * @param {Boolean} [params.paused] true suspends polling but KEEPS the last list (screensaver up / tab hidden)
  * @returns {{site: String|null, frames: Array, mosaic: {epoch: Number, valid: String}|null, stale: Boolean, loading: Boolean, available: Boolean}} the resolved site, its recent frames, and the composite mosaic's current time
  */
-export default function useIemRadarFrames({ latitude, longitude, enabled, paused = false }) {
+export default function useIemRadarFrames({ latitude, longitude, enabled, paused = false, siteOverride }) {
   const [state, setState] = useState({
     site: null,
     frames: [],
@@ -102,7 +104,7 @@ export default function useIemRadarFrames({ latitude, longitude, enabled, paused
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [enabled, paused, latKey, lonKey, fetchFrames]);
+  }, [enabled, paused, latKey, lonKey, fetchFrames, siteOverride]);  // eslint-disable-line react-hooks/exhaustive-deps -- siteOverride is a refetch trigger, not an input
 
   return state;
 }

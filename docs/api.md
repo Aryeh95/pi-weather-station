@@ -62,10 +62,11 @@ Creates or overwrites `settings.json`.
 - **Body:** JSON object with any subset of known keys (unknown keys are
   stripped)
 - **Allow-listed top-level keys:** `mapApiKey`, `reverseGeoApiKey`,
-  `startingLat`, `startingLon`, `favorites`, `advanced`. (The removed
-  Tomorrow.io / Anthropic / AirNow / OpenAQ keys and the `indoorTemperature`
-  block are still accepted for backward compatibility but nothing reads
-  them.)
+  `startingLat`, `startingLon`, `radarSite` (manual NEXRAD site override:
+  `LWX` or `KLWX`, stored as `LWX`; empty = nearest radar to the map
+  location), `favorites`, `advanced`. (The removed Tomorrow.io / Anthropic /
+  AirNow / OpenAQ keys and the `indoorTemperature` block are still accepted
+  for backward compatibility but nothing reads them.)
 - **`advanced` sub-object** — opaque, grouped by feature area:
   - `advanced.display.lightModeStyle` (string) — Mapbox basemap style in
     light mode: `light-v10`, `light-v11`, `streets-v12` (default).

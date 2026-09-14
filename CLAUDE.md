@@ -131,6 +131,19 @@ IEM exposes a proper JSON API — all three operations verified live:
 Implemented in `server/iemRadarCtrl.js` → `/api/radar/site`, `/api/radar/frames`
 (see `docs/api.md`).
 
+**Site choice is nearest-radar, not NWS's assignment (changed 2026-09-14).**
+`resolveRadarSite` used NWS `points` `radarStation` as primary; that is the
+forecast office's grid assignment, and its boundary runs through east
+Baltimore (probed: Towson → KLWX, Essex 10 km east → KDOX, with the two
+radars within 4 km of each other in range), so a seeded location that
+wandered across it flipped radars for no visible reason. Now IEM's
+`operation=available` list ranked by distance is primary and NWS is the
+fallback. A manual override lives in `settings.json` `radarSite`
+(Settings → "Radar site"; `LWX`/`KLWX` → stored `LWX`, blank = auto),
+applied server-side in `/api/radar/frames` and `/api/radar/site` — it
+beats coordinates AND an explicit `site` query. The client only keeps a
+copy to refetch frames the moment it changes.
+
 ### Server proxy
 
 Two JSON routes plus the frame-list poller. **Tiles are not proxied** — they are

@@ -34,6 +34,7 @@
 
 const axios = require("axios");
 const { recordServiceCall } = require("./serviceStatus");
+const { getSettingsData } = require("./settingsCtrl");
 const { increment } = require("./requestCounter");
 const { BoundedMap } = require("./boundedCache");
 
@@ -175,17 +176,22 @@ function coordKey(lat, lon) {
 }
 
 /**
- * Resolve the NEXRAD site covering a coordinate.
+ * Resolve the NEXRAD site for a coordinate: the NEAREST radar.
  *
- * Primary source is NWS: `points/{lat},{lon}` carries a `radarStation`
- * field, which is the office's own assignment for that point and so is
- * the authoritative answer to "which radar serves here".
+ * Primary source is IEM's `operation=available` list, filtered to
+ * NEXRAD (it also carries TDWR terminal radars and the national
+ * composite, neither of which serve N0B) and ranked by great-circle
+ * distance. Nearest wins — that is what a radar viewer wants, and what
+ * RadarScope does.
  *
- * Fallback is IEM's own `operation=available`, filtered to NEXRAD (the
- * list also contains TDWR terminal radars and the national composite,
- * neither of which serve N0B RIDGE tiles the way we want) and sorted by
- * great-circle distance. This covers the case where NWS is unreachable
- * or returns a point outside its coverage.
+ * NWS `points/{lat},{lon}` carries a `radarStation` too, and this used
+ * to be the primary source. It is NOT a nearest-radar answer: it is the
+ * forecast office's grid assignment, whose boundaries run through
+ * populated areas (probed 2026-09-14: Towson → KLWX, but Essex 10 km
+ * east → KDOX, with KLWX and KDOX within 4 km of each other in range).
+ * A kiosk whose seeded location wandered across that line flipped
+ * radars for no visible reason. NWS is now the fallback only, for when
+ * IEM's list is unreachable.
  *
  * @param {Number} lat
  * @param {Number} lon
@@ -199,26 +205,8 @@ async function resolveRadarSite(lat, lon) {
 
   let resolved = null;
 
-  // --- Primary: NWS point metadata ---------------------------------
+  // --- Primary: nearest NEXRAD from IEM's radar list ----------------
   try {
-    const res = await axios.get(`${NWS_POINTS_BASE}/${lat.toFixed(4)},${lon.toFixed(4)}`, {
-      timeout: API_TIMEOUT_MS,
-      headers: { "User-Agent": NWS_USER_AGENT, Accept: "application/geo+json" },
-    });
-    increment("nws", "points");
-    const site = normalizeSiteId(res.data?.properties?.radarStation);
-    if (site) {
-      resolved = { site, name: null, source: "nws" };
-      recordServiceCall(SERVICE_NAME, 200, `site ${site} via NWS`);
-    }
-  } catch (err) {
-    // Non-fatal — fall through to IEM. Recorded so the health panel
-    // can still see that NWS was tried and failed.
-    recordServiceCall(SERVICE_NAME, err?.response?.status || 500, "NWS point lookup failed");
-  }
-
-  // --- Fallback: IEM's own radar list ------------------------------
-  if (!resolved) {
     const res = await axios.get(IEM_JSON_BASE, {
       params: { operation: "available", lat, lon },
       timeout: API_TIMEOUT_MS,
@@ -229,29 +217,67 @@ async function resolveRadarSite(lat, lon) {
       (r) => r && r.type === "NEXRAD" && typeof r.id === "string"
         && Number.isFinite(r.lat) && Number.isFinite(r.lon)
     );
-    if (!nexrads.length) {
+    if (nexrads.length) {
+      // Equirectangular approximation — plenty for ranking candidates
+      // that are all within a few hundred km.
+      const cosLat = Math.cos((lat * Math.PI) / 180);
+      nexrads.sort((a, b) => {
+        const da = ((a.lat - lat) ** 2) + (((a.lon - lon) * cosLat) ** 2);
+        const db = ((b.lat - lat) ** 2) + (((b.lon - lon) * cosLat) ** 2);
+        return da - db;
+      });
+      const nearest = nexrads[0];
+      resolved = {
+        site: normalizeSiteId(nearest.id) || nearest.id,
+        name: nearest.name || null,
+        source: "iem",
+      };
+      recordServiceCall(SERVICE_NAME, 200, `site ${resolved.site} via IEM (nearest)`);
+    } else {
+      recordServiceCall(SERVICE_NAME, 200, "no NEXRAD site near coord");
+    }
+  } catch (err) {
+    // Non-fatal — fall through to NWS. Recorded so the health panel
+    // can still see that IEM was tried and failed.
+    recordServiceCall(SERVICE_NAME, err?.response?.status || 500, "IEM radar list failed");
+  }
+
+  // --- Fallback: NWS point metadata ---------------------------------
+  if (!resolved) {
+    const res = await axios.get(`${NWS_POINTS_BASE}/${lat.toFixed(4)},${lon.toFixed(4)}`, {
+      timeout: API_TIMEOUT_MS,
+      headers: { "User-Agent": NWS_USER_AGENT, Accept: "application/geo+json" },
+    });
+    increment("nws", "points");
+    const site = normalizeSiteId(res.data?.properties?.radarStation);
+    if (!site) {
       recordServiceCall(SERVICE_NAME, 200, "no NEXRAD site near coord");
       throw new Error("No NEXRAD site available for this location");
     }
-    // Equirectangular approximation — plenty for ranking candidates
-    // that are all within a few hundred km.
-    const cosLat = Math.cos((lat * Math.PI) / 180);
-    nexrads.sort((a, b) => {
-      const da = ((a.lat - lat) ** 2) + (((a.lon - lon) * cosLat) ** 2);
-      const db = ((b.lat - lat) ** 2) + (((b.lon - lon) * cosLat) ** 2);
-      return da - db;
-    });
-    const nearest = nexrads[0];
-    resolved = {
-      site: normalizeSiteId(nearest.id) || nearest.id,
-      name: nearest.name || null,
-      source: "iem",
-    };
-    recordServiceCall(SERVICE_NAME, 200, `site ${resolved.site} via IEM fallback`);
+    resolved = { site, name: null, source: "nws" };
+    recordServiceCall(SERVICE_NAME, 200, `site ${site} via NWS fallback`);
   }
 
   siteCache.set(key, { value: resolved, expires: Date.now() + SITE_TTL_MS });
   return resolved;
+}
+
+/**
+ * The user's manual site override from settings.json (`radarSite`), or
+ * null for automatic. Read fresh on each call — it is one small file
+ * read behind a 60 s client poll, and reading it live means a settings
+ * save takes effect on the very next frame fetch with no restart.
+ *
+ * @returns {Promise<String|null>} 3-letter site id or null
+ */
+async function overrideSite() {
+  try {
+    const settings = await getSettingsData();
+    const site = normalizeSiteId(settings && settings.radarSite);
+    return site || null;
+  } catch {
+    return null; // No settings file yet — automatic.
+  }
 }
 
 /**
@@ -268,6 +294,11 @@ async function getRadarSite(req, res) {
   const lon = parseFloat(req.query.lon);
   if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
     return res.status(400).json("Invalid coordinates").end();
+  }
+
+  const forced = await overrideSite();
+  if (forced) {
+    return res.status(200).json({ available: true, site: forced, name: null, source: "override" }).end();
   }
 
   try {
@@ -396,7 +427,10 @@ async function getRadarFrames(req, res) {
   if (!Number.isFinite(count) || count < 1) count = DEFAULT_FRAME_COUNT;
   count = Math.min(count, MAX_FRAME_COUNT);
 
-  let site = normalizeSiteId(req.query.site);
+  // A manual override in settings beats both the explicit `site` query
+  // and coordinate resolution — it is the user saying "this radar,
+  // wherever the map is".
+  let site = (await overrideSite()) || normalizeSiteId(req.query.site);
 
   // Coordinate form: resolve the site first so the client can make a
   // single call on startup.

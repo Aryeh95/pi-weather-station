@@ -640,6 +640,7 @@ const SectionConfig = ({ ctx, lang, remote }) => {
   const {
     mapApiKey, reverseGeoApiKey,
     customLat, customLon,
+    radarSite,
     brightnessPercent, brightnessAvailable, brightnessMinPercent, setBrightnessLive,
     displayScaleAvailable, displayScaleOverride, displayScaleAuto, displayScaleApplied,
     displayScaleChoices, saveDisplayScale, relaunchKiosk,
@@ -677,6 +678,7 @@ const SectionConfig = ({ ctx, lang, remote }) => {
     reverseGeoApiKey: reverseGeoApiKey || "",
     customLat: customLat != null ? String(customLat) : "",
     customLon: customLon != null ? String(customLon) : "",
+    radarSite: radarSite || "",
   });
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [saveError, setSaveError] = useState(null);
@@ -691,8 +693,9 @@ const SectionConfig = ({ ctx, lang, remote }) => {
       reverseGeoApiKey: prev.reverseGeoApiKey === "" ? (reverseGeoApiKey || "") : prev.reverseGeoApiKey,
       customLat: prev.customLat === "" ? (customLat != null ? String(customLat) : "") : prev.customLat,
       customLon: prev.customLon === "" ? (customLon != null ? String(customLon) : "") : prev.customLon,
+      radarSite: prev.radarSite === "" ? (radarSite || "") : prev.radarSite,
     }));
-  }, [mapApiKey, reverseGeoApiKey, customLat, customLon]);
+  }, [mapApiKey, reverseGeoApiKey, customLat, customLon, radarSite]);
 
   // `isDirty` used to gate the Save button's disabled attribute, but
   // it caused the "Save click does nothing" UX bug — the button looked
@@ -729,6 +732,7 @@ const SectionConfig = ({ ctx, lang, remote }) => {
       geoKey: draft.reverseGeoApiKey,
       lat: draft.customLat,
       lon: draft.customLon,
+      site: draft.radarSite,
     })
       .then(() => {
         setSaveState("saved");
@@ -836,6 +840,29 @@ const SectionConfig = ({ ctx, lang, remote }) => {
               "Empty = automatic geolocation.",
               "Vide = géolocalisation automatique.",
               "Vacío = geolocalización automática.")}
+          />
+        )}
+        {remote ? (
+          <Field
+            label={lbl(lang, "Radar site", "Site radar", "Sitio de radar")}
+            value={radarSite ? radarSite : lbl(lang, "Auto (nearest)", "Auto (le plus proche)", "Auto (más cercano)")}
+            mono
+            selectable
+          />
+        ) : (
+          <EditableField
+            label={lbl(lang, "Radar site", "Site radar", "Sitio de radar")}
+            pill={lbl(lang, "Override", "Manuel", "Manual")}
+            value={draft.radarSite}
+            mono
+            placeholder="LWX"
+            onChange={updateDraft("radarSite")}
+            onClear={() => updateDraft("radarSite")("")}
+            clearLabel={lbl(lang, "Auto", "Auto", "Auto")}
+            helper={lbl(lang,
+              "NEXRAD id, e.g. LWX or KLWX. Empty = the radar nearest the map location.",
+              "Identifiant NEXRAD, p. ex. LWX ou KLWX. Vide = le radar le plus proche de la position de la carte.",
+              "Id NEXRAD, p. ej. LWX o KLWX. Vacío = el radar más cercano a la ubicación del mapa.")}
           />
         )}
         {brightnessAvailable ? (

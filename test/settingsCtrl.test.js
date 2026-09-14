@@ -48,6 +48,18 @@ test("sanitizeSettings: passes through every allowed key", () => {
   assert.equal(Object.keys(out).length, Object.keys(input).length);
 });
 
+test("sanitizeSettings: radarSite is coerced to its 3-letter IEM form or blank", () => {
+  // Accepts IEM (LWX) and ICAO (KLWX) spellings in any case; anything
+  // else becomes "" (automatic) so a typo can never pin the layer on a
+  // site that does not exist.
+  assert.equal(sanitizeSettings({ radarSite: "lwx" }).radarSite, "LWX");
+  assert.equal(sanitizeSettings({ radarSite: " KLWX " }).radarSite, "LWX");
+  assert.equal(sanitizeSettings({ radarSite: "" }).radarSite, "");
+  assert.equal(sanitizeSettings({ radarSite: "LW" }).radarSite, "");
+  assert.equal(sanitizeSettings({ radarSite: "L-WX" }).radarSite, "");
+  assert.equal(sanitizeSettings({ radarSite: 42 }).radarSite, "");
+});
+
 test("sanitizeSettings: drops unknown keys silently", () => {
   const out = sanitizeSettings({
     weatherApiKey: "kept",

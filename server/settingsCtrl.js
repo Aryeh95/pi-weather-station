@@ -49,6 +49,11 @@ const ALLOWED_KEYS = new Set([
   // NOT opaque like the two above: its shape is validated by
   // sanitizeFavorites below (see VALUE_SANITIZERS).
   "favorites",
+  // Manual NEXRAD site override for the single-site radar layer. Empty
+  // string = automatic (nearest site to the map location). Validated by
+  // sanitizeRadarSite: 3-letter IEM form, with a 4-letter ICAO id
+  // (KLWX) accepted and trimmed to its IEM form (LWX).
+  "radarSite",
 ]);
 
 const API_KEY_FIELDS = new Set([
@@ -151,8 +156,26 @@ function sanitizeFavorites(val) {
 // the server actually depends on, this answers "is the value well-formed?".
 // Keys absent from this table keep their value verbatim (the opaque
 // sub-objects, `advanced` and `indoorTemperature`, deliberately stay that way).
+/**
+ * Coerce a radar-site override to its 3-letter IEM form, or "" for
+ * "automatic". Accepts `lwx`, `LWX` or `KLWX`; anything else is treated
+ * as blank rather than rejected, so a typo can never wedge the layer on
+ * a site that does not exist — the auto path just takes over.
+ *
+ * @param {*} val incoming value
+ * @returns {string} "LWX"-style id, or ""
+ */
+function sanitizeRadarSite(val) {
+  if (typeof val !== "string") return "";
+  const up = val.trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(up)) return up;
+  if (/^[A-Z]{4}$/.test(up)) return up.slice(1);
+  return "";
+}
+
 const VALUE_SANITIZERS = {
   favorites: sanitizeFavorites,
+  radarSite: sanitizeRadarSite,
 };
 
 /**

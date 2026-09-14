@@ -771,6 +771,7 @@ const WeatherMap = ({ zoom, dark }) => {
   const {
     mapApiKey,
     followLocation,
+    radarSite,
     mobileRadarMaximized,
     desktopRadarMaximized,
     piRadarMaximized,
@@ -977,6 +978,7 @@ const WeatherMap = ({ zoom, dark }) => {
     longitude: radarQueryPoint ? radarQueryPoint.lon : null,
     enabled: true,
     paused: pollingPaused,
+    siteOverride: radarSite,
   });
 
   // Which single-site product the raw-radial pipeline renders. The
