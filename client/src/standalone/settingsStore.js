@@ -20,6 +20,11 @@ const STORAGE_KEY = "sweep.app.settings.v1";
 const ALLOWED_KEYS = new Set([
   "advanced",
   "favorites",
+  // The manual NEXRAD site override. It DOES mean something without a
+  // server: the app cannot read settings.json, so the frames hook sends
+  // the override along as the `site` query instead — but it still has to
+  // be stored, or the site picker's pin reverts on the next hydrate.
+  "radarSite",
   "startingLat",
   "startingLon",
 ]);
