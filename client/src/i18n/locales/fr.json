@@ -411,7 +411,21 @@
     "cellHailShort": "grêle {{size}}",
     "cellHailUnavailable": "Grêle (MRMS MESH) : indisponible",
     "cellHailPeak": "Grêle (MRMS MESH) : {{size}} maintenant · max {{peak}} sur 30 min",
-    "cellHailPeakOnly": "Grêle (MRMS MESH) : aucune maintenant · max {{peak}} sur 30 min"
+    "cellHailPeakOnly": "Grêle (MRMS MESH) : aucune maintenant · max {{peak}} sur 30 min",
+    "legendPrecipType": "Type de précipitations",
+    "ptypeRain": "Pluie",
+    "ptypeSnow": "Neige",
+    "ptypeMix": "Mélange / neige mouillée",
+    "ptypeGraupel": "Grésil",
+    "ptypeHail": "Grêle",
+    "ptypeLight": "faible",
+    "ptypeHeavy": "forte",
+    "legendPtypeSite": "Radar double polarisation · en altitude, site 0,5°",
+    "legendPtypeMosaic": "MRMS · au sol",
+    "legendPtypeUnavailable": "Ce radar ne publie pas de classification",
+    "legendPtypeNoHistory": "La mosaïque de type n'affiche que la dernière image",
+    "agePrecipType": "TYPE",
+    "ageMosaicPrecip": "Mosaïque de type"
   },
   "controls": {
     "resetMapPosition": "Recentrer la carte sur la position de départ",
@@ -472,7 +486,9 @@
     "hideRail": "Masquer la barre",
     "showRail": "Afficher la barre",
     "drawerTitle": "Commandes",
-    "drawerClose": "Fermer les commandes"
+    "drawerClose": "Fermer les commandes",
+    "precipTypeOn": "Afficher le type de précipitations",
+    "precipTypeOff": "Afficher la réflectivité"
   },
   "toasts": {
     "mapRecentered": "Carte recentrée",
@@ -518,7 +534,9 @@
     "velocityOn": "Mode vitesse activé",
     "velocityOff": "Mode vitesse désactivé",
     "followStarted": "Suivi de votre position",
-    "followStopped": "Suivi arrêté"
+    "followStopped": "Suivi arrêté",
+    "precipTypeOn": "Type de précipitations activé",
+    "precipTypeOff": "Type de précipitations désactivé"
   },
   "health": {
     "title": "État des services",

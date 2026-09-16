@@ -229,7 +229,7 @@ gate-level picture, not IEM's pre-smoothed raster of it.
 | Parameter | Default | Description |
 |---|---|---|
 | `site` | — | 3-letter NEXRAD id (required) |
-| `product` | `N0B` | `N0B` super-res base reflectivity (product 153) or `N0G` super-res base velocity (product 154) |
+| `product` | `N0B` | `N0B` super-res base reflectivity (product 153), `N0G` super-res base velocity (product 154), or `PTYPE` precipitation type (N0H classification × N0B intensity, see below) |
 | `stamp` | — | `YYYYMMDDHHMM` UTC frame stamp: the historical scan matching that IEM frame instead of the newest (sharp loop playback) |
 | `clean` | — | `1` blanks the gates the scan's dual-pol classification calls non-meteorological (reflectivity only; ignored for `N0G`) |
 
@@ -287,10 +287,79 @@ Decode contract: level L ≥ 2 is `scaling.min + L × scaling.increment` in
 0.25 by product spec — the packet's `rangeScale` is a display factor, not
 the bin size. Reflectivity: 1840 bins = 460 km. Velocity: 1200 bins = 300 km.
 
+- **`product=PTYPE`** (precipitation type, added 2026-09-16): the same
+  `SSS_N0H_*` hydrometeor classification the clean mask reads, kept instead
+  of reduced to a mask, and paired with the SAME volume scan's N0B for
+  intensity. Each level is one byte: class index (N0H code / 10) in the
+  high nibble, a 5 dBZ intensity tier (1–15) in the low nibble; level 0 is
+  nothing drawn. Non-weather classes (biological, clutter, unknown, range
+  folded) and gates with no reflectivity are encoded as 0, so the picture
+  is inherently clean. The grid is the classification's — 1200 bins =
+  300 km. Paired from the classification side for the newest frame (the
+  newest N0H always has its N0B; the reverse is not true for ~40 s after
+  every scan), so the frame is "the newest scan that can be typed", with
+  its own honest `scanTime`. `kind: "precip"`, `units: "class"`, a `precip`
+  block naming both source keys and `drawn`; `clean` is ignored. Encoding
+  and colour table: `server/precipType.js` (the client imports the same
+  file). `{"available": false, "reason": "no-recent-classification"}` at a
+  site that publishes no N0H (DIX, verified 2026-09-16).
 - **Errors:** HTTP 400 on a bad `site`, `product` or `stamp`; HTTP 503 on
   upstream failure; `{"available": false}` (200) when no matching product
   exists — the client falls back to IEM tiles (reflectivity) or shows no
-  site layer for that frame (velocity).
+  site layer for that frame (velocity, precipitation type).
+
+### `GET /api/radar/precip-mosaic`
+
+MRMS surface precipitation type over CONUS — the low-zoom half of
+precipitation-type mode, replacing the N0Q reflectivity mosaic while the
+mode is on.
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:** none. The whole grid ships; the client paints only its
+  viewport from it (`PrecipMosaicLayer`).
+- **Source:** `CONUS/PrecipFlag_00.00` (surface type: uses model temperature
+  profiles, so it answers "rain or snow at the ground", unlike N0H's verdict
+  aloft) and `CONUS/PrecipRate_00.00` (intensity) on the public
+  `noaa-mrms-pds` bucket, one file each every 2 min, decoded through the
+  hail controller's GRIB2 PNG path unchanged (flag: 8-bit, `value = X − 3`;
+  rate: 16-bit, `mm/h = (X − 30) / 10`). Flag values: 0 none, 1 warm
+  stratiform, 3 snow, 6 convective, 7 hail, 10 cool stratiform, 91 / 96
+  tropical, −3 no coverage — mapped onto the N0H class vocabulary
+  (1/10/91 → rain, 6/96 → heavy rain, 3 → dry snow, 7 → hail). The rate is
+  put on the same 5 dBZ tiers via Marshall–Palmer (`dBZ = 23 + 16·log10 R`).
+  MRMS has no sleet / freezing-rain flag.
+- **Grid:** the 0.01° source subsampled 2× (0.02°, ~2 km; 3500 × 1750), each
+  output cell taking its most intense typed input cell. `grid.lat0` /
+  `grid.lon0` are the first cell's CENTRE, lon in −180..180, rows north →
+  south. `data` is base64 of run-length pairs `(value, run ≤ 255)` over the
+  row-major cells — ~290 KB with widespread rain (851 KB at 1 km, hence
+  the subsample).
+- **Cached:** per file pair (a built payload is immutable); the newest-key
+  listing 60 s. Cold build ≈ 2.3 s (two CONUS decodes); a repeat request
+  ≈ 1 ms.
+
+```json
+{
+  "available": true,
+  "source": "MRMS",
+  "validTime": "2026-09-16T01:20:00.000Z",
+  "key": "MRMS_PrecipFlag_00.00_20260916-012000.grib2.gz",
+  "rate": { "available": true, "validTime": "2026-09-16T01:18:00.000Z", "unknownTier": null },
+  "grid": { "ni": 3500, "nj": 1750, "lat0": 54.99, "lon0": -129.99, "dLat": 0.02, "dLon": 0.02 },
+  "tierDbz": 5,
+  "encoding": "rle8",
+  "drawn": 188882,
+  "data": "<base64>"
+}
+```
+
+- **Rate missing or more than 6 min from the flag:** the type still ships,
+  every drawn cell at `rate.unknownTier` (5, a moderate shade) and
+  `rate.available: false`, so an outage of one product does not read as
+  drizzle everywhere or as no precipitation.
+- **Errors:** HTTP 503 on upstream failure; `{"available": false, "reason":
+  "no-recent-product"}` (200) when the bucket has no PrecipFlag for today or
+  yesterday.
 
 ### `GET /api/storm-tracks?site=DIX`
 

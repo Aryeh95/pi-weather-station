@@ -24,6 +24,9 @@ const path = require("node:path");
 
 const { packRadials, NUM_BUCKETS, BIN_KM } = require("../server/radarRadialCtrl");
 const parseLevel3 = require("nexrad-level-3-data");
+// The precipitation-type table the copied buildLevelLut delegates to lives
+// with the server (the client imports the same file).
+const { buildPrecipLut } = require("../server/precipType");
 
 const FIXTURE = path.join(__dirname, "fixtures", "DIX_N0B_2026_08_12_00_37_12.bin");
 // Super-res base velocity from the same site — one volume scan, live
@@ -106,6 +109,7 @@ function colorForVelocity(ms) {
 const NOISE_FILTER_MIN_DBZ = 15;
 
 function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
+  if (kind === "precip") return buildPrecipLut(minDbz);
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
   if (velocity) {

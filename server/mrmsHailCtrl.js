@@ -273,6 +273,26 @@ function hailPoints(g, samples, minMm = MIN_REPORT_MM) {
 }
 
 /**
+ * Fetch and decode one MRMS object into its grid description and samples.
+ *
+ * NOT cached: a decoded CONUS field is 24.5 M samples (49 MB as Uint16),
+ * so every caller reduces it to something small at once and drops it.
+ * Shared with the precipitation-type mosaic (mrmsPrecipTypeCtrl).
+ *
+ * @param {String} key bucket key
+ * @param {String} [counter] requestCounter label for the fetch
+ * @returns {Promise<{g: Object, samples: Uint16Array, key: String, validTime: String|null}>}
+ */
+async function fetchGrid(key, counter = "grid") {
+  const res = await axios.get(`${BUCKET_BASE}/${key}`, { responseType: "arraybuffer", timeout: API_TIMEOUT_MS });
+  increment("mrms", counter);
+  const grib = zlib.gunzipSync(Buffer.from(res.data));
+  const g = parseGrib2(grib);
+  const samples = decodePng16(g.png, g.ni, g.nj);
+  return { g, samples, key, validTime: keyValidTime(key) };
+}
+
+/**
  * Fetch, decode and reduce the newest field of a product. Cached per file.
  *
  * @param {String} product bucket prefix (see PRODUCTS)
@@ -284,11 +304,7 @@ async function fetchField(product) {
   const cached = fieldCache.get(product);
   if (cached && cached.key === key && cached.expires > Date.now()) return cached.value;
   return inflight(key, async () => {
-    const res = await axios.get(`${BUCKET_BASE}/${key}`, { responseType: "arraybuffer", timeout: API_TIMEOUT_MS });
-    increment("mrms", "mesh");
-    const grib = zlib.gunzipSync(Buffer.from(res.data));
-    const g = parseGrib2(grib);
-    const samples = decodePng16(g.png, g.ni, g.nj);
+    const { g, samples } = await fetchGrid(key, "mesh");
     const points = hailPoints(g, samples);
     const value = { points, validTime: keyValidTime(key), key };
     fieldCache.set(product, { key, value, expires: Date.now() + FIELD_TTL_MS });
@@ -373,6 +389,9 @@ async function attachHail(cells) {
 
 module.exports = {
   attachHail,
+  // Shared with mrmsPrecipTypeCtrl.
+  latestKey,
+  fetchGrid,
   // Exported for tests.
   parseGrib2,
   decodePng16,

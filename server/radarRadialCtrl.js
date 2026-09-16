@@ -49,6 +49,7 @@ const { recordServiceCall } = require("./serviceStatus");
 const { increment } = require("./requestCounter");
 const { BoundedMap } = require("./boundedCache");
 const { newestKey, listHourKeys, l3KeyEpoch, fetchObject } = require("./nexradBucket");
+const precipType = require("./precipType");
 
 const SERVICE_NAME = "NEXRAD L3 (radial)";
 
@@ -93,6 +94,11 @@ const PRODUCTS = {
 const DEFAULT_PRODUCT = "N0B";
 // The classification the dual-pol clean mode reads its verdict from.
 const CLASS_PRODUCT = "N0H";
+// Virtual product: the precipitation-type picture, N0H's class per gate
+// combined with N0B's intensity for the same volume scan (see
+// fetchPrecipType). Not a bucket product — deliberately outside PRODUCTS
+// so the shim loop below never registers it with the parser.
+const PRECIP_PRODUCT = "PTYPE";
 
 // Register the shims once. Mutating the library's exported tables is
 // blunt but deliberate — it is exactly how the library's own products
@@ -538,6 +544,188 @@ async function fetchRadialAtStamp(site, stamp, product = DEFAULT_PRODUCT, clean 
   return value;
 }
 
+// ── Precipitation type ────────────────────────────────────────────────
+// The same N0H classification dual-pol clean reads for its verdict names
+// the precipitation itself: rain, heavy rain, big drops, dry snow, wet
+// snow, ice crystals, graupel, hail. Here it is kept rather than reduced
+// to a mask, and paired with N0B for intensity, into the one-byte-per-
+// gate encoding in ./precipType (class in the high nibble, 5 dBZ tier in
+// the low). The payload is the SAME shape as the other radial products —
+// numBuckets × numBins raw levels — so the client renders it through the
+// existing canvas pipeline with a different lookup table.
+//
+// The grid is the classification's (1200 bins = 300 km, exactly the
+// renderer's display clip); reflectivity beyond it has no verdict and is
+// not drawn. Non-weather classes (biological, clutter, unknown, range
+// folded) are encoded as nothing, so the picture is inherently clean.
+
+/**
+ * Merge a reflectivity scan and its classification into encoded gates.
+ *
+ * @param {Object} refl decoded N0B payload
+ * @param {Object} cls decoded N0H payload, same volume scan, same grid
+ * @returns {{bins: Buffer, drawn: Number}} encoded levels on the classification's grid
+ */
+function mergePrecipType(refl, cls) {
+  const rbins = Buffer.from(refl.bins, "base64");
+  const cbins = Buffer.from(cls.bins, "base64");
+  const out = Buffer.alloc(cbins.length);
+  // Level → tier once per level, not per gate.
+  const tierOfLevel = new Uint8Array(256);
+  for (let level = refl.reservedLevels; level < 256; level += 1) {
+    tierOfLevel[level] = precipType.tierForDbz(refl.scaling.min + level * refl.scaling.increment);
+  }
+  const idxOfCode = new Uint8Array(256);
+  for (let code = 0; code < 256; code += 1) {
+    const idx = precipType.hcaClassIndex(code);
+    idxOfCode[code] = precipType.isDrawnClass(idx) ? idx : 0;
+  }
+  let drawn = 0;
+  const rnb = refl.numBins;
+  const cnb = cls.numBins;
+  const span = Math.min(rnb, cnb);
+  const buckets = Math.min(refl.numBuckets, cls.numBuckets);
+  for (let a = 0; a < buckets; a += 1) {
+    const rowR = a * rnb;
+    const rowC = a * cnb;
+    for (let b = 0; b < span; b += 1) {
+      const idx = idxOfCode[cbins[rowC + b]];
+      if (!idx) continue;
+      // A class with no reflectivity behind it is not drawn either: the
+      // intensity is what says "how much", and N0B's threshold is far
+      // below anything the classifier would call precipitation.
+      const tier = tierOfLevel[rbins[rowR + b]];
+      if (!tier) continue;
+      out[rowC + b] = precipType.encodeGate(idx, tier);
+      drawn += 1;
+    }
+  }
+  return { bins: out, drawn };
+}
+
+/**
+ * The precipitation-type payload for one classification + reflectivity pair.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {Object} refl decoded N0B payload
+ * @param {Object} cls decoded N0H payload
+ * @returns {Object} available:true payload, `kind: "precip"`
+ */
+function precipPayload(site, refl, cls) {
+  const { bins, drawn } = mergePrecipType(refl, cls);
+  recordServiceCall(SERVICE_NAME, 200, `${drawn} typed gates for ${site}`);
+  return {
+    available: true,
+    site,
+    product: PRECIP_PRODUCT,
+    kind: "precip",
+    units: "class",
+    key: cls.key,
+    scanTime: cls.scanTime,
+    radar: cls.radar,
+    elevationAngle: cls.elevationAngle,
+    // Level 0 is "nothing drawn"; every other level is an encoded gate,
+    // not a linear scale — the `scaling` block is nominal.
+    reservedLevels: 1,
+    scaling: { min: 0, increment: 1, levels: 255 },
+    numBuckets: cls.numBuckets,
+    bucketDeg: cls.bucketDeg,
+    numBins: cls.numBins,
+    firstBinKm: cls.firstBinKm,
+    binKm: cls.binKm,
+    bins: bins.toString("base64"),
+    precip: {
+      tierDbz: precipType.TIER_DBZ,
+      classification: { product: CLASS_PRODUCT, key: cls.key, scanTime: cls.scanTime },
+      reflectivity: { product: DEFAULT_PRODUCT, key: refl.key, scanTime: refl.scanTime },
+      drawn,
+    },
+  };
+}
+
+/**
+ * Newest precipitation-type frame for a site.
+ *
+ * Paired from the CLASSIFICATION side on purpose: N0H lands 30-45 s after
+ * the N0B of the same scan, so "newest N0B, then its N0H" would come back
+ * empty for most of a minute after every scan and the layer would blink.
+ * The newest N0H always has its N0B already in the bucket, so the frame
+ * is simply the newest scan that CAN be typed — one scan older for those
+ * seconds, with its own honest scanTime.
+ *
+ * @param {String} site 3-letter radar id
+ * @returns {Promise<Object>} payload for /api/radar/radial?product=PTYPE
+ */
+async function fetchPrecipType(site) {
+  const cacheKey = `${site}:${PRECIP_PRODUCT}`;
+  const hit = radialCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  const soft = (reason, ttl = RADIAL_TTL_MS) => {
+    const empty = { available: false, site, product: PRECIP_PRODUCT, reason };
+    radialCache.set(cacheKey, { value: empty, expires: Date.now() + ttl });
+    recordServiceCall(SERVICE_NAME, 200, `no precip type for ${site}: ${reason}`);
+    return empty;
+  };
+
+  const clsKey = await newestKey(site, CLASS_PRODUCT);
+  increment("nexrad-l3", "radial-list");
+  if (!clsKey) return soft("no-recent-classification");
+  const cls = await decodeKey(site, CLASS_PRODUCT, clsKey);
+  const scanEpoch = Date.parse(cls.scanTime || "");
+  if (!Number.isFinite(scanEpoch)) return soft("no-scan-time");
+  const reflKey = await keyForEpoch(site, DEFAULT_PRODUCT, scanEpoch);
+  increment("nexrad-l3", "radial-list");
+  // Reflectivity is published first, so a missing one is a transient
+  // listing artefact at worst — short TTL.
+  if (!reflKey) return soft("no-reflectivity", CLEAN_PENDING_TTL_MS);
+  const refl = await decodeKey(site, DEFAULT_PRODUCT, reflKey);
+  if (!gridsAlign(refl, cls)) return soft("grid-mismatch");
+
+  const value = precipPayload(site, refl, cls);
+  radialCache.set(cacheKey, { value, expires: Date.now() + RADIAL_TTL_MS });
+  return value;
+}
+
+/**
+ * Precipitation-type frame matching an IEM frame stamp (loop playback).
+ *
+ * @param {String} site 3-letter radar id
+ * @param {String} stamp "YYYYMMDDHHMM" UTC
+ * @returns {Promise<Object>} payload for /api/radar/radial?product=PTYPE&stamp=
+ */
+async function fetchPrecipTypeAtStamp(site, stamp) {
+  const cacheKey = `${site}:${PRECIP_PRODUCT}:${stamp}`;
+  const hit = historyCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  const soft = (reason, ttl) => {
+    const empty = { available: false, site, product: PRECIP_PRODUCT, stamp, reason };
+    historyCache.set(cacheKey, { value: empty, expires: Date.now() + ttl });
+    recordServiceCall(SERVICE_NAME, 200, `no precip type for ${site}@${stamp}: ${reason}`);
+    return empty;
+  };
+
+  const reflKey = await keyForStamp(site, DEFAULT_PRODUCT, stamp);
+  increment("nexrad-l3", "radial-list");
+  if (!reflKey) return soft("no-matching-product", HISTORY_MISS_TTL_MS);
+  const refl = await decodeKey(site, DEFAULT_PRODUCT, reflKey);
+  const scanEpoch = Date.parse(refl.scanTime || "");
+  if (!Number.isFinite(scanEpoch)) return soft("no-scan-time", HISTORY_TTL_MS);
+  const clsKey = await keyForEpoch(site, CLASS_PRODUCT, scanEpoch);
+  increment("nexrad-l3", "radial-list");
+  // The classification may simply not have landed yet for the newest
+  // stamps in the loop — the same gap the clean path retries across.
+  if (!clsKey) return soft("no-classification", CLEAN_PENDING_TTL_MS);
+  const cls = await decodeKey(site, CLASS_PRODUCT, clsKey);
+  if (!gridsAlign(refl, cls)) return soft("grid-mismatch", HISTORY_TTL_MS);
+
+  const value = precipPayload(site, refl, cls);
+  value.stamp = stamp;
+  historyCache.set(cacheKey, { value, expires: Date.now() + HISTORY_TTL_MS });
+  return value;
+}
+
 /**
  * Should this request be cleaned?
  *
@@ -581,7 +769,7 @@ async function getRadarRadial(req, res) {
     return res.status(400).json("Invalid or missing site").end();
   }
   const product = String(req.query.product || DEFAULT_PRODUCT).trim().toUpperCase();
-  if (!PRODUCTS[product]) {
+  if (!PRODUCTS[product] && product !== PRECIP_PRODUCT) {
     return res.status(400).json("Invalid product").end();
   }
   const stamp = req.query.stamp !== undefined ? String(req.query.stamp).trim() : null;
@@ -590,9 +778,16 @@ async function getRadarRadial(req, res) {
   }
   const clean = wantsClean(req.query.clean, product);
   try {
-    const payload = stamp
-      ? await fetchRadialAtStamp(site, stamp, product, clean)
-      : await fetchRadial(site, product, clean);
+    let payload;
+    if (product === PRECIP_PRODUCT) {
+      // `clean` is meaningless here — the non-weather classes are never
+      // drawn — and wantsClean already answers false for it.
+      payload = stamp ? await fetchPrecipTypeAtStamp(site, stamp) : await fetchPrecipType(site);
+    } else {
+      payload = stamp
+        ? await fetchRadialAtStamp(site, stamp, product, clean)
+        : await fetchRadial(site, product, clean);
+    }
     return res.status(200).json(payload).end();
   } catch (err) {
     const status = err?.response?.status || 500;
@@ -615,6 +810,11 @@ module.exports = {
   applyClassMask,
   gridsAlign,
   cleanRadial,
+  mergePrecipType,
+  precipPayload,
+  fetchPrecipType,
+  fetchPrecipTypeAtStamp,
+  PRECIP_PRODUCT,
   MASK_CLASSES,
   BIG_DROPS_RAIN_MIN_DBZ,
   CLASS_PRODUCT,

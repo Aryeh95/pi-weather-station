@@ -32,6 +32,9 @@ import dualPolCleanIcon from "@iconify/icons-carbon/clean";
 /* Velocity mode: opposed horizontal arrows read as "toward / away from
  * the radar" — the one thing a base-velocity field shows. */
 import velocityIcon from "@iconify/icons-carbon/arrows-horizontal";
+/* Precipitation type: rain and hail falling together — the one glyph in
+ * the set that says "what kind" rather than "how much". */
+import precipTypeIcon from "@iconify/icons-carbon/mixed-rain-hail";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -119,6 +122,7 @@ const ControlButtons = ({ labelled = false }) => {
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
+    toggleRadarPrecipType,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -153,6 +157,7 @@ const ControlButtons = ({ labelled = false }) => {
     showLightning,
     radarNoiseMode,
     radarVelocity,
+    radarPrecipType,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -673,6 +678,35 @@ const ControlButtons = ({ labelled = false }) => {
       <InlineIcon icon={velocityIcon} />
     </div>
   );
+  // Precipitation type — rain / snow / mix / hail. The dual-pol
+  // classification (N0H) paired with reflectivity at high zoom, MRMS's
+  // surface type paired with its rate at low zoom; both through one colour
+  // vocabulary. Exclusive with velocity: they are two pictures of the same
+  // scan, and AppContext releases one when the other is pressed.
+  const btnPrecipType = (
+    <div
+      key="precipType"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleRadarPrecipType();
+        notify(radarPrecipType ? "toasts.precipTypeOff" : "toasts.precipTypeOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${radarPrecipType && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarPrecipType ? "controls.precipTypeOff" : "controls.precipTypeOn")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarPrecipType ? "controls.precipTypeOff" : "controls.precipTypeOn")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={precipTypeIcon} />
+    </div>
+  );
   const btnContrast = (
     <div
       key="contrast"
@@ -884,6 +918,7 @@ const ControlButtons = ({ labelled = false }) => {
         {withLabel(btnLightning)}
         {withLabel(btnNoiseFilter)}
         {withLabel(btnVelocity)}
+        {withLabel(btnPrecipType)}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

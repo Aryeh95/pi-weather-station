@@ -67,6 +67,7 @@ function registerKnownServices() {
     "IEM (radar)",
     "NEXRAD L3 (radial)",
     "NEXRAD L3 (storm tracks)",
+    "MRMS (precip type)",
     "GOES GLM (lightning)",
     "NWS (severe weather alerts)",
     "Environment Canada (severe weather alerts)",
@@ -733,6 +734,13 @@ app.get("/api/storm-tracks",        apiLimiter, getStormTracks);
 // volume scan, cached 60 s; the client polls once a minute.
 const { getRadarRadial } = require("./radarRadialCtrl");
 app.get("/api/radar/radial",        apiLimiter, getRadarRadial);
+
+// MRMS surface precipitation type (rain / snow / hail) over CONUS for the
+// precipitation-type mode's low-zoom mosaic — 2 km cells, run-length
+// encoded, ~290 KB, one new frame every 2 min. The high-zoom half of that
+// mode is `/api/radar/radial?product=PTYPE` above.
+const { getPrecipMosaic } = require("./mrmsPrecipTypeCtrl");
+app.get("/api/radar/precip-mosaic", apiLimiter, getPrecipMosaic);
 
 // GOES GLM lightning — total-lightning flash positions (in-cloud included,
 // which shows electrification minutes before the first CG strike) from the

@@ -22,6 +22,11 @@
 // equirectangular step, whose error over a 300 km disc is far below one
 // gate.
 
+// The precipitation-type encoding (class ‹‹ 4 | intensity tier) and its
+// lookup table live with the server, which is what produces it — one copy
+// for the kiosk, the app and the tests. Plain CommonJS, no Node built-ins.
+import { buildPrecipLut } from "../../../../server/precipType";
+
 // Display clip. N0B data reaches 460 km, but rendering the full disc at
 // gate resolution would need a ~7000 px canvas; 300 km at 2560 px gives
 // ~234 m/px — at the 250 m range-gate size, effectively lossless — and
@@ -146,12 +151,17 @@ export function colorForVelocity(ms) {
  * "weak echo" axis on a velocity field, and the RF level (1) is painted
  * in VEL_RF_COLOR because a folded gate is information, not absence.
  *
+ * Precipitation type ("precip") is not a linear scale at all — each level
+ * is a class + tier byte — so it takes its whole table from precipType,
+ * where the noise floor becomes a minimum tier.
+ *
  * @param {{min: Number, increment: Number}} scaling from /api/radar/radial
  * @param {Number} [minDbz] hide reflectivity below this value
- * @param {String} [kind] "reflectivity" (default) or "velocity"
+ * @param {String} [kind] "reflectivity" (default), "velocity" or "precip"
  * @returns {Uint8ClampedArray} 256 × 4 RGBA entries
  */
 export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
+  if (kind === "precip") return buildPrecipLut(minDbz);
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
   if (velocity) {
@@ -209,10 +219,12 @@ export function renderRadialImage(data, bins, minDbz) {
   const size = RADIAL_CANVAS_PX;
   const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling, kind } = data;
   const velocity = kind === "velocity";
-  const lut = buildLevelLut(scaling, minDbz, velocity ? "velocity" : "reflectivity");
+  const precip = kind === "precip";
+  const lut = buildLevelLut(scaling, minDbz, precip ? "precip" : (velocity ? "velocity" : "reflectivity"));
   // Reflectivity skips the two reserved levels outright; velocity keeps
-  // level 1 (range folded) because the LUT paints it.
-  const minLevel = velocity ? 1 : 2;
+  // level 1 (range folded) because the LUT paints it; precipitation type
+  // has only level 0 reserved and lets the LUT decide the rest.
+  const minLevel = (velocity || precip) ? 1 : 2;
   const lut32 = new Uint32Array(lut.buffer);
   // (xm0 is only needed for the bounds themselves — the column loop is
   // symmetric around the site, so it works in offsets.)

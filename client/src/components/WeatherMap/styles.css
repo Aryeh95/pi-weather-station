@@ -197,6 +197,36 @@
   color: var(--rc-ink-3);
 }
 
+/* Precipitation-type key: one ramp per group (rain, snow, mix, graupel,
+ * hail), shaded light → heavy like the map. */
+.ptype-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ptype-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(9.5px * var(--c-font-scale, 1));
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.ptype-ramp {
+  display: flex;
+  width: 54px;
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+  flex: none;
+}
+
+.ptype-ramp span {
+  flex: 1;
+}
+
 .alert-tiers {
   display: flex;
   flex-wrap: wrap;

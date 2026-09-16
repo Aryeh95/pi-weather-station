@@ -7,6 +7,15 @@ import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
 import { DBZ_STOPS, VEL_STOPS } from "./radialRender";
+import { GROUPS as PTYPE_GROUPS, colorForGate, encodeGate } from "../../../../server/precipType";
+
+// Tiers sampled for each precipitation-type ramp in the legend: 7.5 to
+// 62.5 dBZ mid-points, light → heavy, from the same table the map uses.
+const PTYPE_TIERS = [2, 4, 6, 8, 10, 13];
+// Mid-intensity swatch for the compact strip / chip key.
+const PTYPE_STRIP_TIER = 7;
+
+const rgba = ([r, g, b, a]) => `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 
 // Warning-family rows, RadarScope convention (the map overlay is
 // warnings-only and coloured by event type): tornado red, severe
@@ -27,6 +36,44 @@ const PrecipScale = () => (
   <span className={styles.precipScale} aria-hidden="true">
     {DBZ_STOPS.map(([dbz, r, g, b]) => (
       <span key={dbz} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />
+    ))}
+  </span>
+);
+
+/**
+ * Precipitation-type ramps, one row per group (rain, snow, mix, graupel,
+ * hail), each shaded light → heavy exactly as the map colours them.
+ *
+ * @returns {JSX.Element} Rows of swatch ramps with labels
+ */
+const PrecipTypeRows = () => {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.ptypeRows}>
+      {PTYPE_GROUPS.map((g) => (
+        <span key={g.key} className={styles.ptypeRow}>
+          <span className={styles.ptypeRamp} aria-hidden="true">
+            {PTYPE_TIERS.map((tier) => (
+              <span key={tier} style={{ backgroundColor: rgba(colorForGate(encodeGate(g.sampleClass, tier))) }} />
+            ))}
+          </span>
+          {t(`radar.ptype${g.key.charAt(0).toUpperCase()}${g.key.slice(1)}`)}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+/**
+ * One swatch per precipitation-type group — the compact key for the chip
+ * and the mobile strip while the mode is on.
+ *
+ * @returns {JSX.Element} Scale bar
+ */
+const PrecipTypeScale = () => (
+  <span className={styles.precipScale} aria-hidden="true">
+    {PTYPE_GROUPS.map((g) => (
+      <span key={g.key} style={{ backgroundColor: rgba(colorForGate(encodeGate(g.sampleClass, PTYPE_STRIP_TIER))) }} />
     ))}
   </span>
 );
@@ -69,11 +116,12 @@ const VelocityScale = () => (
  * @param {boolean} [props.velocity] Show the base-velocity colour bar (velocity mode on, site layer in view)
  * @param {boolean|null} [props.cleanApplied] Dual-pol clean: true applied, false the scan had no classification, null not asked for
  * @param {boolean} [props.holdingClean] The frame on screen is an older CLEAN scan, held because the newest one has no classification yet
+ * @param {object|null} [props.precip] Precipitation-type mode state, null when the mode is off: `siteInView` (single-site band showing), `siteUnavailable` (this radar publishes no classification), `mosaicInView`, `historyHidden` (playhead on a past frame, so the type mosaic is hidden)
  * @returns {JSX.Element} Legend overlay
  */
 const RadarLegend = ({
   dark, chipMode, lightningCount = null, velocity = false,
-  cleanApplied = null, holdingClean = false,
+  cleanApplied = null, holdingClean = false, precip = null,
 }) => {
   const { t } = useTranslation();
   const {
@@ -112,30 +160,60 @@ const RadarLegend = ({
   // from the ambient tokens and have dedicated LayoutMobile rules.
   const variantClass = dark ? styles.radarLegendDark : styles.radarLegendLight;
 
+  // Which source is drawing the precipitation type right now, and any
+  // reason it is not: the radar's own classification is a verdict ALOFT
+  // (the 0.5° beam), MRMS's a surface one, and the two can disagree in a
+  // melting layer — the legend says which one the colours mean.
+  let precipNote = null;
+  if (precip) {
+    if (precip.siteInView) {
+      precipNote = precip.siteUnavailable ? "radar.legendPtypeUnavailable" : "radar.legendPtypeSite";
+    } else if (precip.mosaicInView) {
+      precipNote = "radar.legendPtypeMosaic";
+    }
+  }
+
   const sections = (
     <>
-      <div className={styles.legendSection}>
-        <div className={styles.legendTitle}>{t("radar.legendPrecip")}</div>
-        <PrecipScale />
-        <div className={styles.scaleLabels}>
-          <span>0</span>
-          <span>20</span>
-          <span>40</span>
-          <span>60</span>
-          <span>75 dBZ</span>
-        </div>
-        {/* Dual-pol clean is the one filter setting that can be on and
-          * doing nothing — the mask needs the scan's classification, and
-          * not every scan has one published. Say which, here, where the
-          * question "what am I looking at" is already being answered. */}
-        {radarNoiseMode === "clean" ? (
-          <div className={styles.alertCount}>
-            {t(cleanApplied === false
-              ? "radar.legendCleanUnavailable"
-              : (holdingClean ? "radar.legendCleanHolding" : "radar.legendClean"))}
+      {precip ? (
+        <div className={styles.legendSection}>
+          <div className={styles.legendTitle}>{t("radar.legendPrecipType")}</div>
+          <PrecipTypeRows />
+          <div className={styles.scaleLabels}>
+            <span>{t("radar.ptypeLight")}</span>
+            <span>{t("radar.ptypeHeavy")}</span>
           </div>
-        ) : null}
-      </div>
+          {precipNote ? <div className={styles.alertCount}>{t(precipNote)}</div> : null}
+          {precip.historyHidden ? <div className={styles.alertCount}>{t("radar.legendPtypeNoHistory")}</div> : null}
+        </div>
+      ) : (
+        <div className={styles.legendSection}>
+          <div className={styles.legendTitle}>{t("radar.legendPrecip")}</div>
+          <PrecipScale />
+          <div className={styles.scaleLabels}>
+            <span>0</span>
+            <span>20</span>
+            <span>40</span>
+            <span>60</span>
+            <span>75 dBZ</span>
+          </div>
+          {/* Dual-pol clean is the one filter setting that can be on and
+            * doing nothing — the mask needs the scan's classification, and
+            * not every scan has one published. Say which, here, where the
+            * question "what am I looking at" is already being answered —
+            * but only while a raw-radial frame the mask applies to is what
+            * is drawn (`cleanApplied` is null at mosaic zoom and for
+            * velocity), so the line never describes a picture the mask
+            * never touched. */}
+          {radarNoiseMode === "clean" && cleanApplied !== null ? (
+            <div className={styles.alertCount}>
+              {t(cleanApplied === false
+                ? "radar.legendCleanUnavailable"
+                : (holdingClean ? "radar.legendCleanHolding" : "radar.legendClean"))}
+            </div>
+          ) : null}
+        </div>
+      )}
       {velocity ? (
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.legendVelocity")}</div>
@@ -192,7 +270,7 @@ const RadarLegend = ({
           title={t("radar.legendOpen")}
         >
           <span className={styles.legendChipI} aria-hidden="true">i</span>
-          <PrecipScale />
+          {precip ? <PrecipTypeScale /> : <PrecipScale />}
           {t("radar.legendTitle")}
         </button>
       ) : (
@@ -201,7 +279,7 @@ const RadarLegend = ({
         </div>
       )}
       <div className={styles.legendMobileStrip}>
-        <PrecipScale />
+        {precip ? <PrecipTypeScale /> : <PrecipScale />}
         {showWeatherAlerts && nearbyCount > 0 ? (
           <span className={styles.legendMobileAlert}>
             <svg viewBox="0 0 18 16" aria-hidden="true">
@@ -255,6 +333,12 @@ const RadarLegend = ({
 RadarLegend.propTypes = {
   cleanApplied: PropTypes.bool,
   holdingClean: PropTypes.bool,
+  precip: PropTypes.shape({
+    siteInView: PropTypes.bool,
+    siteUnavailable: PropTypes.bool,
+    mosaicInView: PropTypes.bool,
+    historyHidden: PropTypes.bool,
+  }),
   dark: PropTypes.bool,
   chipMode: PropTypes.bool,
   lightningCount: PropTypes.number,

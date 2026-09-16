@@ -411,7 +411,21 @@
     "cellHailShort": "hail {{size}}",
     "cellHailUnavailable": "Hail (MRMS MESH): unavailable",
     "cellHailPeak": "Hail (MRMS MESH): {{size}} now · {{peak}} peak in 30 min",
-    "cellHailPeakOnly": "Hail (MRMS MESH): none now · {{peak}} peak in 30 min"
+    "cellHailPeakOnly": "Hail (MRMS MESH): none now · {{peak}} peak in 30 min",
+    "legendPrecipType": "Precipitation type",
+    "ptypeRain": "Rain",
+    "ptypeSnow": "Snow",
+    "ptypeMix": "Mix / wet snow",
+    "ptypeGraupel": "Graupel",
+    "ptypeHail": "Hail",
+    "ptypeLight": "light",
+    "ptypeHeavy": "heavy",
+    "legendPtypeSite": "Radar dual-pol · aloft at the 0.5° tilt",
+    "legendPtypeMosaic": "MRMS · at the surface",
+    "legendPtypeUnavailable": "No classification published by this radar",
+    "legendPtypeNoHistory": "Type mosaic shows the newest frame only",
+    "agePrecipType": "TYPE",
+    "ageMosaicPrecip": "Type mosaic"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",
@@ -472,7 +486,9 @@
     "hideRail": "Hide toolbar",
     "showRail": "Show toolbar",
     "drawerTitle": "Controls",
-    "drawerClose": "Close controls"
+    "drawerClose": "Close controls",
+    "precipTypeOn": "Show precipitation type",
+    "precipTypeOff": "Show reflectivity"
   },
   "toasts": {
     "mapRecentered": "Map recentered",
@@ -518,7 +534,9 @@
     "velocityOn": "Velocity mode on",
     "velocityOff": "Velocity mode off",
     "followStarted": "Following your location",
-    "followStopped": "Stopped following"
+    "followStopped": "Stopped following",
+    "precipTypeOn": "Precipitation type on",
+    "precipTypeOff": "Precipitation type off"
   },
   "health": {
     "title": "Service health",

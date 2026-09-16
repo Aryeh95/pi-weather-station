@@ -81,6 +81,8 @@ import RadarSitePicker from "./RadarSitePicker";
 import { homeSiteCoversView } from "./radarSites";
 import StormTracks from "./StormTracks";
 import FilteredTileLayer from "./FilteredTileLayer";
+import usePrecipMosaic from "./usePrecipMosaic";
+import PrecipMosaicLayer from "./PrecipMosaicLayer";
 import { NOISE_FILTER_MIN_DBZ } from "./radialRender";
 import { noiseFloorOn, dualPolCleanOn } from "~/ui/radarNoise";
 import {
@@ -819,6 +821,7 @@ const WeatherMap = ({ zoom, dark }) => {
     showLightning,
     radarNoiseMode,
     radarVelocity,
+    radarPrecipType,
     showAlertRing,
     nearbyAlerts,
     alertRadiusKm,
@@ -999,7 +1002,9 @@ const WeatherMap = ({ zoom, dark }) => {
   // frame LIST always comes from N0B (IEM's tile product); velocity
   // scans share the same volume-scan timestamps, so the same stamps
   // resolve N0G files too.
-  const radialProduct = radarVelocity ? "N0G" : "N0B";
+  // Precipitation type is a third product of the same scan (N0H class ×
+  // N0B intensity, merged server-side) and rides the same pipeline.
+  const radialProduct = radarVelocity ? "N0G" : (radarPrecipType ? "PTYPE" : "N0B");
 
   // Mosaic frame list, recomputed whenever the single-site list
   // refreshes so both age displays advance together. The dependency on
@@ -1050,6 +1055,17 @@ const WeatherMap = ({ zoom, dark }) => {
   // band). The single-site layer additionally needs a resolved site and
   // at least one discovered frame before it has anything to show.
   const iemVisible = layerVisibility(currentMapZoom);
+
+  // Precipitation-type mode's LOW-zoom layer: MRMS surface type, one CONUS
+  // field every 2 min, painted by PrecipMosaicLayer for the viewport. It
+  // replaces the N0Q reflectivity mosaic while the mode is on — showing
+  // reflectivity colours under a type-coloured site layer would mislabel
+  // half the picture. Newest frame only: while the playhead is on a
+  // historical frame it hides rather than claim an age it does not have.
+  const precipMosaic = usePrecipMosaic({
+    enabled: radarPrecipType && iemVisible.mosaic,
+    paused: pollingPaused,
+  });
 
   // Raw-radial layer (RadarScope-parity path). Enabled whenever the
   // single-site band is in view; the expensive render only happens when
@@ -1155,7 +1171,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // A null current frame (playhead out past a layer's span) keeps the
   // stack mounted with every layer at opacity 0 — unmounting would
   // refetch the whole stack when the playhead comes back into range.
-  const mountedMosaicFrames = (iemVisible.mosaic && iemMosaicFrames.length)
+  const mountedMosaicFrames = (!radarPrecipType && iemVisible.mosaic && iemMosaicFrames.length)
     ? (loopActive ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
     : [];
   //
@@ -1164,7 +1180,9 @@ const WeatherMap = ({ zoom, dark }) => {
   // frame would mislabel the picture. Frames whose velocity radial has
   // not rendered yet show nothing at the site layer — honest, and the
   // loop warms in ~15 s.
-  const mountedSiteFrames = (!radarVelocity && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
+  //
+  // PRECIPITATION-TYPE MODE likewise: the tiles are reflectivity.
+  const mountedSiteFrames = (!radarVelocity && !radarPrecipType && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
     ? (loopActive ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
@@ -1200,8 +1218,13 @@ const WeatherMap = ({ zoom, dark }) => {
   // came through, approximate (schedule-derived, "~") otherwise. Storm
   // tracks report their product's scan time; lightning the newest flash.
   const siteRowShown = iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
-    && (radialShown || showIemSite || radarVelocity || currentLoopRadial);
-  const mosaicRowShown = iemVisible.mosaic && Boolean(currentMosaicFrame);
+    && (radialShown || showIemSite || radarVelocity || radarPrecipType || currentLoopRadial);
+  // In precipitation-type mode the mosaic row is the MRMS field's, and only
+  // while that field is what is drawn (playhead on "latest").
+  const precipMosaicShown = radarPrecipType && iemVisible.mosaic && Boolean(precipMosaic.field) && iemFromEnd === 0;
+  const mosaicRowShown = radarPrecipType
+    ? precipMosaicShown
+    : (iemVisible.mosaic && Boolean(currentMosaicFrame));
   const stormScanEpoch = stormScanTime ? Date.parse(stormScanTime) : NaN;
   const ageRows = [];
   if (siteRowShown) {
@@ -1213,15 +1236,26 @@ const WeatherMap = ({ zoom, dark }) => {
     const radialEpoch = radialShown && radial.scanTime
       ? Date.parse(radial.scanTime)
       : NaN;
+    let siteLabel = iemSite;
+    if (radarVelocity) siteLabel = `${iemSite} ${t("radar.ageVelocity")}`;
+    else if (radarPrecipType) siteLabel = `${iemSite} ${t("radar.agePrecipType")}`;
     ageRows.push({
       key: "site",
-      label: radarVelocity ? `${iemSite} ${t("radar.ageVelocity")}` : iemSite,
+      label: siteLabel,
       epoch: Number.isFinite(radialEpoch) ? radialEpoch : currentSiteFrame.epoch,
       approximate: false,
       sourceStale: iemStale,
     });
   }
-  if (mosaicRowShown) {
+  if (mosaicRowShown && radarPrecipType) {
+    ageRows.push({
+      key: "mosaic",
+      label: t("radar.ageMosaicPrecip"),
+      epoch: Date.parse(precipMosaic.field.validTime),
+      approximate: false,
+      sourceStale: precipMosaic.stale,
+    });
+  } else if (mosaicRowShown) {
     ageRows.push({
       key: "mosaic",
       label: t("radar.ageMosaic"),
@@ -1647,6 +1681,20 @@ const WeatherMap = ({ zoom, dark }) => {
             keepBuffer={2}
           />
         )))}
+        {/* Precipitation-type mosaic — MRMS surface type for the mosaic
+          * band, in place of the N0Q tiles above while the mode is on.
+          * Own pane between the tile pane (200) and the radial pane
+          * (250): above the basemap, below the site layer, which paints
+          * over it through the crossfade exactly as the tiles would. */}
+        <Pane name="precipMosaicPane" style={{ zIndex: 240 }}>
+          {radarPrecipType && iemVisible.mosaic && precipMosaic.field ? (
+            <PrecipMosaicLayer
+              field={precipMosaic.field}
+              opacity={iemFromEnd === 0 ? iemOpacity.mosaic : 0}
+              minDbz={noiseFloorOn(radarNoiseMode) ? NOISE_FILTER_MIN_DBZ : undefined}
+            />
+          ) : null}
+        </Pane>
         {/* ── Layer 2: single-site super-res (high zoom) ────────
           * N0B base reflectivity from the covering NEXRAD: 0.5°
           * tilt at 0.25 km gates, native radial data rather than a
@@ -1875,6 +1923,12 @@ const WeatherMap = ({ zoom, dark }) => {
           velocity={radarVelocity && iemVisible.site}
           cleanApplied={radial.cleanApplied}
           holdingClean={radial.holdingClean}
+          precip={radarPrecipType ? {
+            siteInView: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
+            siteUnavailable: !radial.url && Boolean(radial.unavailable),
+            mosaicInView: iemVisible.mosaic,
+            historyHidden: iemVisible.mosaic && iemFromEnd > 0,
+          } : null}
         />
       )}
       {timelineShown && (

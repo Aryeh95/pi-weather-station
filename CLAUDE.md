@@ -999,6 +999,95 @@ where it has data and is transparent where it does not.
   encoded the dip). Verified on the live layers at 0.3 base: z7.5 mosaic
   0.30 / site 0.15, z8 both 0.30, z8.5 mosaic 0.15 / site 0.30.
 
+### Precipitation type — rain / snow / mix / hail (2026-09-16)
+
+Motivating ask: "identify rain and snow". Built as a third radar PRODUCT
+(`radarProduct` = `N0B` | `N0G` | `PTYPE`, one localStorage key; the old
+`radarVelocity` boolean migrates on first read), dock button (carbon
+`mixed-rain-hail`), exclusive with velocity. Two upstreams, one vocabulary:
+
+- **High zoom: N0H × N0B, merged SERVER-SIDE** (`fetchPrecipType` in
+  `radarRadialCtrl.js`, `product=PTYPE`). The classification dual-pol clean
+  already downloads carries the precipitation itself (IC, DS, WS, RA, HR,
+  BD, GR, HA, LH, GH); it was being reduced to a mask and thrown away. Now
+  each gate is one byte — class index (N0H code / 10) in the high nibble,
+  a 5 dBZ intensity tier from the same scan's N0B in the low — so the
+  payload has the SAME shape as N0B/N0G and the renderer only swaps its
+  lookup table. Non-weather classes encode as 0: the picture is inherently
+  clean, and `clean=1` is ignored for it.
+- **Low zoom: MRMS `PrecipFlag_00.00` × `PrecipRate_00.00`**
+  (`server/mrmsPrecipTypeCtrl.js` → `/api/radar/precip-mosaic`), replacing
+  the N0Q mosaic while the mode is on. Both decode through the hail
+  controller's GRIB2 PNG path with zero changes (flag 8-bit `X − 3`, rate
+  16-bit `(X − 30)/10`). The flag histogram matched the documented table
+  exactly (0, 1, 3, 6, 7, 10, 91, 96, −3); the only snow in the
+  mid-September frame was four gates at 51°N 115.5°W — the high Canadian
+  Rockies near Banff — which is the regression check the test uses for
+  the grid geometry. MRMS has **no sleet / freezing-rain flag**; the mix
+  group only ever comes from N0H (WS).
+- **`server/precipType.js` is shared by BOTH ends.** Plain CommonJS, no Node
+  built-ins; the kiosk client imports it straight from `server/` (webpack
+  bundles CJS without babel — `include: [src]` on the babel rule is not a
+  block), the app already ran server code, and the tests require it. One
+  copy of the encoding, the ramps and the LUT, so no verbatim-copy drift
+  to police; the copied `buildLevelLut` in `test/radarRadial.test.js` only
+  gained the one delegating line.
+
+Things established on the way:
+
+- **Pair the newest frame from the CLASSIFICATION side.** N0H lands 30–45 s
+  after N0B, so "newest N0B, then its N0H" is empty for most of a minute
+  after every scan and the layer would blink (the dual-pol clean hold
+  exists to paper over exactly that). The newest N0H always has its N0B
+  already in the bucket, so the frame is simply "the newest scan that can
+  be typed" — one scan older for those seconds, with its own honest
+  `scanTime` on the age row. No hold, no retry needed. History stamps
+  pair N0B → N0H like `cleanRadial` does.
+- **DIX publishes no N0H at all** (`no-recent-classification`, verified
+  live). The hook now exposes `unavailable` (the server's reason) and the
+  legend says "No classification published by this radar" rather than
+  showing an empty map with no explanation. LWX, OKX do publish.
+- **Aloft vs surface is stated, not hidden.** N0H is the 0.5° beam's
+  verdict (~1.5 km up at 100 km); PrecipFlag folds in model temperature
+  profiles and is the surface answer. The two can disagree in a melting
+  layer. The legend names which source is drawing ("Radar dual-pol · aloft
+  at the 0.5° tilt" / "MRMS · at the surface").
+- **Intensity is put on common 5 dBZ tiers** so the two layers shade
+  alike: rate → dBZ via Marshall–Palmer (`23 + 16·log10 R`; 0.3 mm/h ≈
+  15 dBZ, 1 ≈ 23, 10 ≈ 39). The 15 dBZ clear-air floor becomes "tier ≥ 4"
+  in the LUT, so the noise-filter button still works in this mode. Rate
+  missing or > 6 min from the flag → every cell at tier 5 and
+  `rate.available: false`, never "drizzle everywhere" nor nothing.
+- **Mosaic grid is 2 km, run-length encoded.** Measured on a live frame
+  with widespread rain: 851 KB of base64 at 1 km, 286 KB at 2 km, 155 KB at
+  3 km. A type boundary is not a texture; 2 km it is. Cold build ≈ 2.3 s
+  (two CONUS decodes, ~49 MB of Uint16 each, dropped at once — `fetchGrid`
+  in the hail controller is deliberately uncached); repeat ≈ 1 ms.
+- **The mosaic client paints the VIEWPORT, not CONUS.** `PrecipMosaicLayer`
+  keeps the decoded 6 MB field and renders view + 50 % margin at ~2× screen
+  density (cap 3072 px) into an ImageOverlay, re-rendering only when the
+  view leaves the margin or zoom moves ≥ 0.75. Lookup-only inner loop
+  (mercator maths once per row/column) — tens of ms. A CONUS-wide canvas at
+  useful resolution would have been ~46 MB decoded and mostly off screen.
+- **Type mosaic is NEWEST-ONLY.** Scrubbing history at mosaic zoom hides it
+  (legend: "Type mosaic shows the newest frame only") rather than draw a
+  "now" frame under a "-30 min" playhead. Site-zoom history DOES work
+  (`PTYPE&stamp=` through the loop hook). Adding mosaic history means a
+  `stamp` lookup over the day listing plus a second loop cache — deferred.
+- **Legend clean line now needs `cleanApplied !== null`.** It used to say
+  "Dual-pol clean" at mosaic zoom and in velocity mode, where the mask does
+  not run; the hook now reports null for any non-reflectivity payload and
+  the line only appears over a raw-radial frame the mask applies to.
+- Verified in Playwright against the running server (dev bundle, sandbox
+  Chromium): site zoom 10 over LWX → `radial?product=PTYPE`, typed overlay
+  in the radial pane, age row "LWX TYPE · 2 min ago", dock label flips to
+  "Show reflectivity"; zoom 6 → `precip-mosaic`, 2560 × 1496 overlay in
+  its own pane, no IEM tiles mounted, "Type mosaic · 3 min ago".
+- **Not verified against real snow** — it is September. Rain, convective
+  and hail classes were checked live; snow rendering is pinned by fixtures
+  (LWX N0H, the Banff PrecipFlag frame) and should be eyeballed on the
+  kiosk at the first winter event.
+
 ### App Mapbox token (2026-09-04)
 
 Optional, per-device, `appMapboxToken` in localStorage — never in the APK.

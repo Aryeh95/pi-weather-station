@@ -32,6 +32,7 @@
 
 import { getRadarSite, getRadarFrames } from "../../../server/iemRadarCtrl";
 import { getRadarRadial } from "../../../server/radarRadialCtrl";
+import { getPrecipMosaic } from "../../../server/mrmsPrecipTypeCtrl";
 import { getStormTracks } from "../../../server/stormTracksCtrl";
 import { getLightning } from "../../../server/glmLightningCtrl";
 import { getWeatherAlerts, getNearbyAlerts } from "../../../server/govAlertsCtrl";
@@ -86,6 +87,7 @@ const ROUTES = {
   "GET /api/radar/site": getRadarSite,
   "GET /api/radar/frames": getRadarFrames,
   "GET /api/radar/radial": getRadarRadial,
+  "GET /api/radar/precip-mosaic": getPrecipMosaic,
   "GET /api/storm-tracks": getStormTracks,
   "GET /api/lightning": getLightning,
   "GET /api/weather-alerts": getWeatherAlerts,

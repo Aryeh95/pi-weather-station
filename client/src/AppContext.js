@@ -684,22 +684,36 @@ export function AppContextProvider({ children }) {
       return next;
     });
   }, []);
-  // Velocity mode for the single-site layer: raw N0G (super-res base
-  // velocity, product 154) instead of N0B reflectivity at high zoom. The
-  // low-zoom mosaic has no velocity counterpart and stays reflectivity.
-  // Per-device, OFF by default — reflectivity is the everyday picture;
-  // velocity is what you switch to when a cell is rotating.
-  const [radarVelocity, setRadarVelocity] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("radarVelocity") === "true";
+  // Which radar PRODUCT the map draws — one setting, three values, because
+  // the three are mutually exclusive pictures of the same volume scan:
+  //   "N0B"   reflectivity (default; the everyday picture)
+  //   "N0G"   base velocity — what you switch to when a cell is rotating;
+  //           the low-zoom mosaic has no velocity counterpart and stays
+  //           reflectivity
+  //   "PTYPE" precipitation type — rain / snow / mix / hail from the
+  //           dual-pol classification at high zoom and MRMS's surface type
+  //           at low zoom, shaded by intensity
+  // Per-device. The two dock buttons (velocity, precipitation type) each
+  // toggle their own value against N0B, so pressing one releases the
+  // other. Stored as `radarProduct`; the older boolean `radarVelocity`
+  // key migrates on first read so an upgrade changes nothing.
+  const [radarProduct, setRadarProduct] = useState(() => {
+    if (typeof window === "undefined") return "N0B";
+    const stored = window.localStorage.getItem("radarProduct");
+    if (stored === "N0B" || stored === "N0G" || stored === "PTYPE") return stored;
+    return window.localStorage.getItem("radarVelocity") === "true" ? "N0G" : "N0B";
   });
-  const toggleRadarVelocity = useCallback(() => {
-    setRadarVelocity((prev) => {
-      const next = !prev;
-      try { window.localStorage.setItem("radarVelocity", String(next)); } catch { /* localStorage may be unavailable */ }
+  const radarVelocity = radarProduct === "N0G";
+  const radarPrecipType = radarProduct === "PTYPE";
+  const flipRadarProduct = useCallback((product) => {
+    setRadarProduct((prev) => {
+      const next = prev === product ? "N0B" : product;
+      try { window.localStorage.setItem("radarProduct", next); } catch { /* localStorage may be unavailable */ }
       return next;
     });
   }, []);
+  const toggleRadarVelocity = useCallback(() => flipRadarProduct("N0G"), [flipRadarProduct]);
+  const toggleRadarPrecipType = useCallback(() => flipRadarProduct("PTYPE"), [flipRadarProduct]);
   // Whether the dashed radius ring is drawn alongside the nearby-alerts
   // layer. Per-device display preference (localStorage), DEFAULT ON so the
   // existing "polygons + ring" look is preserved; a user who wants the bare
@@ -2308,6 +2322,7 @@ export function AppContextProvider({ children }) {
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
+    toggleRadarPrecipType,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2380,6 +2395,7 @@ export function AppContextProvider({ children }) {
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
+    toggleRadarPrecipType,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2629,6 +2645,7 @@ export function AppContextProvider({ children }) {
     showLightning,
     radarNoiseMode,
     radarVelocity,
+    radarPrecipType,
     showAlertRing,
     alertRadiusKm,
   }), [
@@ -2644,6 +2661,7 @@ export function AppContextProvider({ children }) {
     showLightning,
     radarNoiseMode,
     radarVelocity,
+    radarPrecipType,
     showAlertRing,
     alertRadiusKm,
   ]);

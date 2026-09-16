@@ -45,20 +45,24 @@ const CLEAN_HOLD_MAX_MS = 10 * 60 * 1000;
  * @param {Boolean} params.enabled false pauses polling and clears the image
  * @param {Boolean} params.noiseFilter hide echoes below NOISE_FILTER_MIN_DBZ (reflectivity only)
  * @param {Boolean} [params.dualPolClean] also drop gates the scan's dual-pol classification calls non-meteorological (server side)
- * @param {String} [params.product] "N0B" (reflectivity, default) or "N0G" (velocity)
+ * @param {String} [params.product] "N0B" (reflectivity, default), "N0G" (velocity) or "PTYPE" (precipitation type)
  * @param {Boolean} [params.paused] true suspends polling but keeps the current image
- * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean, cleanApplied: Boolean|null, holdingClean: Boolean}}
- *   `cleanApplied` is null unless dual-pol clean was asked for: true when the
- *   scan's classification was found and used, false when it was not.
+ * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean, cleanApplied: Boolean|null, holdingClean: Boolean, unavailable: String|null}}
+ *   `cleanApplied` is null unless dual-pol clean was asked for AND the product
+ *   is one it applies to (reflectivity): true when the scan's classification
+ *   was found and used, false when it was not.
  *   `holdingClean` is true while an older clean frame is being kept on screen
  *   because the newest scan has no classification yet — `scanTime` is then the
  *   held frame's, not the newest scan's.
+ *   `unavailable` is the server's reason when the site has no frame of this
+ *   product to render (e.g. a radar that publishes no classification), null
+ *   while an image is up.
  */
 export default function useRadarRadial({
   site, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false,
 }) {
   const [state, setState] = useState({
-    url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false,
+    url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null,
   });
   const lastKeyRef = useRef(null);
   const urlRef = useRef(null);
@@ -71,12 +75,14 @@ export default function useRadarRadial({
   useEffect(() => {
     cancelledRef.current = false;
 
-    const publish = (url, bounds, scanTime, cleanApplied = null) => {
+    const publish = (url, bounds, scanTime, cleanApplied = null, unavailable = null) => {
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       urlRef.current = url;
       // What is on screen now is what a later "hold" would hold.
       cleanFrameRef.current = cleanApplied === true ? scanTime : null;
-      setState({ url, bounds, scanTime, stale: false, cleanApplied, holdingClean: false });
+      setState({
+        url, bounds, scanTime, stale: false, cleanApplied, holdingClean: false, unavailable,
+      });
     };
 
     if (!enabled || !site) {
@@ -87,7 +93,7 @@ export default function useRadarRadial({
       }
       cleanFrameRef.current = null;
       setState({
-        url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false,
+        url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null,
       });
       return () => { cancelledRef.current = true; };
     }
@@ -115,9 +121,11 @@ export default function useRadarRadial({
           if (cancelledRef.current) return;
           const d = res.data || {};
           if (!d.available) {
-            // No recent product — clear so the tile fallback shows.
+            // No recent product — clear so the tile fallback shows (or, for
+            // a product with no tiles, so the legend can say why nothing is
+            // drawn).
             lastKeyRef.current = null;
-            publish(null, null, null);
+            publish(null, null, null, null, d.reason || "unavailable");
             return;
           }
           // The render key carries the filter state too, so toggling the
@@ -125,8 +133,11 @@ export default function useRadarRadial({
           // for the next one. It uses whether the mask was APPLIED, not
           // whether it was asked for: a scan with no classification
           // available comes back unmasked, and that is the same picture
-          // the dBZ-only mode would have drawn.
-          const cleanApplied = dualPolClean ? Boolean(d.clean?.applied) : null;
+          // the dBZ-only mode would have drawn. Products the mask does not
+          // apply to (velocity, precipitation type) report null, so the
+          // legend does not call the mask "unavailable" over a picture it
+          // was never meant for.
+          const cleanApplied = (dualPolClean && d.kind === "reflectivity") ? Boolean(d.clean?.applied) : null;
           const pending = cleanApplied === false
             && d.clean?.reason === "no-classification";
           if (pending) {
@@ -166,8 +177,8 @@ export default function useRadarRadial({
             // Publishing it is what keeps the legend from claiming a mask
             // that did not run (seen on the kiosk 2026-09-06).
             setState((prev) => (
-              (prev.stale || prev.cleanApplied !== cleanApplied || prev.holdingClean)
-                ? { ...prev, stale: false, cleanApplied, holdingClean: false }
+              (prev.stale || prev.cleanApplied !== cleanApplied || prev.holdingClean || prev.unavailable)
+                ? { ...prev, stale: false, cleanApplied, holdingClean: false, unavailable: null }
                 : prev
             ));
             return;
