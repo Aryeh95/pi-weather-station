@@ -343,6 +343,39 @@ Result on the reported scan: **95.8% of the drawn speckle removed**, and
 of the 368 gates ≥ 40 dBZ only 7 went — 5 of them ground clutter inside
 12 km of the radar. Payload size unchanged.
 
+### Class-aware floor in clean mode (2026-09-22)
+
+User report: with clean on by default, light rain was being hidden. True,
+and measurable — at 04:00 Z on 2026-09-22, three radars with drizzle:
+
+| radar | rain-classified gates < 15 dBZ | ≥ 15 dBZ |
+|---|---|---|
+| LWX | 51 056 | 56 089 |
+| OKX | 43 223 | 44 651 |
+| DIX | 44 870 | 46 177 |
+
+The 15 dBZ floor was removing about half of every gate the classifier
+called rain. And the floor is redundant where a verdict exists: at radars
+with NO rain that night (FFC, GRR, ILN, BOX) the sub-15 dBZ echo was
+100 000+ biological gates each but only **49–144** rain-classified gates,
+so the classifier almost never mislabels bloom as rain at low dBZ.
+
+Fix: in clean mode the floor moved SERVER-SIDE into `applyClassMask` and
+applies only to gates with no verdict (ND, RF, and everything beyond the
+classification's 300 km where N0B still has 160 km of data — those used
+to be "left alone", which would have become unfiltered speckle once the
+client stopped flooring). Reported as `clean.floorDbz` / `clean.floored`.
+The client's `floorFor(payload, noiseFilter, dualPolClean)` returns no
+floor when the payload's mask carried one, keeps the plain floor for tiles
+/ velocity / unmasked scans, and for precipitation type (verdicts end to
+end) drops the tier floor under the clean setting. The render key now
+carries the resolved floor rather than the filter flag, so switching
+dbz ↔ clean re-renders the current scan.
+
+`CLEAN_FLOOR_DBZ` (server) must equal `NOISE_FILTER_MIN_DBZ` (client);
+`test/dualPolClean.test.js` pins both to 15, and pins the 51 056 figure
+against the committed LWX 04:01:42 pair (`LWX_N0B_/N0H_2026_09_22_04_01_42`).
+
 ### The committed bundle can be a build of older source (2026-09-06)
 
 Shipped this way and cost a debugging round. The dual-pol commit ran

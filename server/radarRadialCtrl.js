@@ -360,6 +360,20 @@ const CLASS_UNKNOWN = 140;
 const MASK_CLASSES = new Set([CLASS_BIOLOGICAL, CLASS_GROUND_CLUTTER, CLASS_UNKNOWN]);
 // Masked only below this reflectivity.
 const BIG_DROPS_RAIN_MIN_DBZ = 30;
+// The clear-air floor, applied HERE in clean mode — but only to gates the
+// classifier has no verdict on (ND, range folded, and everything beyond
+// the classification's 300 km reach). A gate the classifier calls
+// precipitation draws at any intensity: measured 2026-09-22 at 04:00 Z,
+// LWX / OKX / DIX each had ~45 000 rain-classified gates UNDER 15 dBZ
+// against ~50 000 above it — the floor was hiding half the light rain —
+// while at radars with no rain (FFC, GRR, ILN) the classifier called only
+// 49–144 sub-15 dBZ gates rain out of ~200 000 echo gates. The verdict is
+// trustworthy at low reflectivity; the floor is redundant where it exists.
+// Must equal the client's NOISE_FILTER_MIN_DBZ (radialRender.js), which
+// still applies to tiles and to scans with no classification.
+const CLEAN_FLOOR_DBZ = 15;
+const CLASS_NO_DATA = 0;
+const CLASS_RANGE_FOLDED = 150;
 
 /**
  * Blank the gates a dual-pol classification calls non-meteorological.
@@ -370,47 +384,64 @@ const BIG_DROPS_RAIN_MIN_DBZ = 30;
  * but a mismatch would paint a stencil in the wrong place, so a
  * mismatch means no mask at all.
  *
- * Gates past the classification's range (it reaches 300 km against
- * reflectivity's 460) are left alone.
+ * The clear-air floor moves in here too: gates with NO verdict — class
+ * ND, range folded, or past the classification's 300 km reach where
+ * reflectivity still has 160 km of data — are dropped below `floorDbz`,
+ * so the client can skip its own floor and let classified light rain
+ * through. A verdict of precipitation is drawn at any intensity.
  *
  * @param {Object} refl decoded N0B payload
  * @param {Object} cls decoded N0H payload
- * @returns {{bins: Buffer, masked: Number, considered: Number}} `considered`
- *   counts only echo gates the classification had a verdict for, so
- *   `masked / considered` reads as "of what could be judged, how much was
- *   not weather" instead of being diluted by the unjudgeable outer ring.
+ * @param {Number} [floorDbz] floor for unclassified gates (CLEAN_FLOOR_DBZ)
+ * @returns {{bins: Buffer, masked: Number, considered: Number, floored: Number}}
+ *   `considered` counts only echo gates the classification had a verdict
+ *   for, so `masked / considered` reads as "of what could be judged, how
+ *   much was not weather" instead of being diluted by the unjudgeable
+ *   outer ring; `floored` counts the verdict-less gates the floor removed.
  */
-function applyClassMask(refl, cls) {
+function applyClassMask(refl, cls, floorDbz = CLEAN_FLOOR_DBZ) {
   const bins = Buffer.from(refl.bins, "base64");
   const cbins = Buffer.from(cls.bins, "base64");
   const out = Buffer.from(bins);
-  // Level → is this gate below the big-drops rain floor?
+  // Level → below the big-drops rain floor? below the clear-air floor?
   const weak = new Uint8Array(256);
+  const faint = new Uint8Array(256);
   for (let level = 0; level < 256; level += 1) {
     const dbz = refl.scaling.min + level * refl.scaling.increment;
     weak[level] = dbz < BIG_DROPS_RAIN_MIN_DBZ ? 1 : 0;
+    faint[level] = dbz < floorDbz ? 1 : 0;
   }
   let masked = 0;
   let considered = 0;
+  let floored = 0;
   const nb = refl.numBins;
   const cnb = cls.numBins;
   const buckets = Math.min(refl.numBuckets, cls.numBuckets);
+  const span = Math.min(nb, cnb);
   for (let a = 0; a < buckets; a += 1) {
     const rowR = a * nb;
     const rowC = a * cnb;
-    const span = Math.min(nb, cnb);
-    for (let b = 0; b < span; b += 1) {
+    for (let b = 0; b < nb; b += 1) {
       const level = bins[rowR + b];
       if (level < refl.reservedLevels) continue;
+      const code = b < span ? cbins[rowC + b] : CLASS_NO_DATA;
+      if (code === CLASS_NO_DATA || code === CLASS_RANGE_FOLDED) {
+        // No verdict: the plain clear-air floor, as the client would have
+        // applied before the mask learned to do it.
+        if (faint[level]) {
+          out[rowR + b] = 0;
+          floored += 1;
+        }
+        continue;
+      }
       considered += 1;
-      const code = cbins[rowC + b];
       if (MASK_CLASSES.has(code) || (code === CLASS_BIG_DROPS && weak[level])) {
         out[rowR + b] = 0;
         masked += 1;
       }
     }
   }
-  return { bins: out, masked, considered };
+  return { bins: out, masked, considered, floored };
 }
 
 /**
@@ -458,7 +489,7 @@ async function cleanRadial(refl) {
   if (!gridsAlign(refl, cls)) {
     return { ...refl, clean: { applied: false, reason: "grid-mismatch" } };
   }
-  const { bins, masked, considered } = applyClassMask(refl, cls);
+  const { bins, masked, considered, floored } = applyClassMask(refl, cls);
   return {
     ...refl,
     bins: bins.toString("base64"),
@@ -469,6 +500,10 @@ async function cleanRadial(refl) {
       scanTime: cls.scanTime,
       masked,
       considered,
+      // The floor has been applied server-side to verdict-less gates only;
+      // the client must NOT apply its own, or classified drizzle vanishes.
+      floorDbz: CLEAN_FLOOR_DBZ,
+      floored,
     },
   };
 }
@@ -817,6 +852,7 @@ module.exports = {
   PRECIP_PRODUCT,
   MASK_CLASSES,
   BIG_DROPS_RAIN_MIN_DBZ,
+  CLEAN_FLOOR_DBZ,
   CLASS_PRODUCT,
   PRODUCTS,
   BIN_KM,

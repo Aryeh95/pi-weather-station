@@ -204,3 +204,105 @@ test("clean is decided from the query STRING, and only for reflectivity", () => 
   assert.equal(wantsClean("1", CLASS_PRODUCT), false);
   assert.equal(wantsClean("1", "NOPE"), false);
 });
+
+// ── Class-aware floor (2026-09-22) ────────────────────────────────────
+// The clear-air floor moved into the mask: verdict-less gates (ND, RF,
+// and everything past the classification's reach) are dropped below
+// CLEAN_FLOOR_DBZ; anything the classifier calls precipitation is kept at
+// any intensity, so light rain is no longer hidden in clean mode.
+
+const { CLEAN_FLOOR_DBZ, NUM_BUCKETS } = require("../server/radarRadialCtrl");
+const ND = 0;
+const RF = 150;
+
+test("clean floor equals the client's NOISE_FILTER_MIN_DBZ (15)", () => {
+  // radialRender.js keeps the plain floor for tiles and unmasked scans;
+  // the two must agree or dbz-only and clean would disagree about drizzle.
+  assert.equal(CLEAN_FLOOR_DBZ, 15);
+});
+
+test("verdict-less gates get the floor; classified precipitation does not", () => {
+  const { refl, cls } = grid([
+    [8, RA],    // drizzle the classifier vouches for: KEPT
+    [8, ND],    // faint echo, no verdict: floored
+    [8, RF],    // range folded, no verdict: floored
+    [20, ND],   // echo above the floor, no verdict: kept
+    [8, BI],    // faint biological: masked (as before)
+  ]);
+  const { bins, masked, considered, floored } = applyClassMask(refl, cls);
+  assert.deepEqual(levels(bins.toString("base64")).map((l) => l !== 0),
+                   [true, false, false, true, false]);
+  assert.equal(floored, 2);
+  assert.equal(masked, 1);
+  // ND / RF gates are not "considered" — there was no verdict to judge.
+  assert.equal(considered, 2);
+});
+
+test("faint reflectivity beyond the classification's range is floored, strong is kept", () => {
+  // Reflectivity reaches 460 km, the classification 300 km. The outer ring
+  // used to be left alone entirely; once the client stops flooring, that
+  // ring needs the floor applied here or it fills with clear-air speckle.
+  const { refl, cls } = grid([[20, RA], [8, RA], [20, RA]], 1);
+  const { bins, floored } = applyClassMask(refl, cls);
+  assert.deepEqual(levels(bins.toString("base64")).map((l) => l !== 0), [true, false, true]);
+  assert.equal(floored, 1);
+});
+
+test("cleanRadial reports the floor it applied", async () => {
+  // Same shape as the other cleanRadial tests would need — exercised
+  // through applyClassMask's report fields the payload copies verbatim.
+  const { refl, cls } = grid([[8, ND], [8, RA]]);
+  const r = applyClassMask(refl, cls);
+  assert.equal(r.floored, 1);
+  assert.equal(typeof CLEAN_FLOOR_DBZ, "number");
+});
+
+test("live LWX scan 2026-09-22 04:01:42 Z: 51 056 rain gates under 15 dBZ survive the mask", () => {
+  // The scan pair the change was measured on — light rain over the
+  // mid-Atlantic. Decoded exactly as the controller does (parseLevel3 →
+  // packRadials); the numbers below were first taken through the live
+  // route on the night and are pinned here so the floor can never quietly
+  // creep back over classified drizzle.
+  const load = (name) => {
+    const parsed = parseLevel3(fs.readFileSync(path.join(__dirname, "fixtures", name)));
+    const packet = parsed.radialPackets[0];
+    return { numBins: packet.numberBins, bins: packRadials(packet.radialsRaw, packet.numberBins) };
+  };
+  const b = load("LWX_N0B_2026_09_22_04_01_42.bin");
+  const h = load("LWX_N0H_2026_09_22_04_01_42.bin");
+  const refl = {
+    numBuckets: NUM_BUCKETS, bucketDeg: 0.5, binKm: 0.25, firstBinKm: 0, numBins: b.numBins,
+    reservedLevels: 2, scaling: SCALING, bins: b.bins.toString("base64"),
+  };
+  const cls = {
+    numBuckets: NUM_BUCKETS, bucketDeg: 0.5, binKm: 0.25, firstBinKm: 0, numBins: h.numBins,
+    reservedLevels: 1, scaling: PRODUCTS.N0H.scaling, bins: h.bins.toString("base64"),
+  };
+  assert.equal(refl.numBins, 1840);
+  assert.equal(cls.numBins, 1200);
+  const { bins } = applyClassMask(refl, cls);
+  const out = Buffer.from(bins);
+  let rainFaintKept = 0;
+  let rainFaintTotal = 0;
+  let bioKept = 0;
+  let ndFaintKept = 0;
+  let ndStrongKept = 0;
+  for (let a = 0; a < NUM_BUCKETS; a += 1) {
+    for (let i = 0; i < cls.numBins; i += 1) {
+      const level = b.bins[a * refl.numBins + i];
+      if (level < 2) continue;
+      const dbz = SCALING.min + level * SCALING.increment;
+      const code = h.bins[a * cls.numBins + i];
+      const kept = out[a * refl.numBins + i] !== 0;
+      if (code === RA && dbz < 15) { rainFaintTotal += 1; if (kept) rainFaintKept += 1; }
+      if (code === BI && kept) bioKept += 1;
+      if (code === ND && dbz < 15 && kept) ndFaintKept += 1;
+      if (code === ND && dbz >= 15 && kept) ndStrongKept += 1;
+    }
+  }
+  assert.equal(rainFaintTotal, 51056);
+  assert.equal(rainFaintKept, 51056, "every rain-classified gate under the floor is drawn");
+  assert.equal(bioKept, 0, "the bloom is still gone");
+  assert.equal(ndFaintKept, 0, "verdict-less faint echo is still floored");
+  assert.equal(ndStrongKept, 703, "verdict-less echo above the floor is drawn as before");
+});

@@ -50,6 +50,34 @@ const EARTH_R_KM = 6371;
 // picture stays one dock toggle away.
 export const NOISE_FILTER_MIN_DBZ = 15;
 
+/**
+ * Which floor the renderer should apply to a radial payload.
+ *
+ * The floor is a stand-in for a verdict: it exists to drop clear-air
+ * return that a reflectivity value alone cannot tell from drizzle. When a
+ * real verdict is present it is redundant and costly — measured
+ * 2026-09-22, it was hiding about half of every rain-classified gate at
+ * three radars. So:
+ *   - a reflectivity frame the server's dual-pol mask has run on already
+ *     carries the floor for its verdict-less gates (`clean.floorDbz`), and
+ *     every classified gate draws at any intensity → no client floor;
+ *   - a precipitation-type frame is verdicts end to end → no floor under
+ *     the clean setting, the tier floor under the dBZ-only setting;
+ *   - anything else (dBZ-only mode, a scan with no classification, velocity
+ *     which ignores it anyway) → the plain floor when the filter is on.
+ *
+ * @param {Object} d /api/radar/radial payload
+ * @param {Boolean} noiseFilter the dBZ floor setting is on
+ * @param {Boolean} dualPolClean the clean setting is on
+ * @returns {Number|undefined} minimum dBZ, or undefined for none
+ */
+export function floorFor(d, noiseFilter, dualPolClean) {
+  if (!noiseFilter) return undefined;
+  if (d.clean && d.clean.applied && Number.isFinite(d.clean.floorDbz)) return undefined;
+  if (d.kind === "precip" && dualPolClean) return undefined;
+  return NOISE_FILTER_MIN_DBZ;
+}
+
 export const DBZ_STOPS = [
   [0, 90, 95, 115, 70],
   [5, 4, 233, 231, 190],

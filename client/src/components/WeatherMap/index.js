@@ -1691,7 +1691,7 @@ const WeatherMap = ({ zoom, dark }) => {
             <PrecipMosaicLayer
               field={precipMosaic.field}
               opacity={iemFromEnd === 0 ? iemOpacity.mosaic : 0}
-              minDbz={noiseFloorOn(radarNoiseMode) ? NOISE_FILTER_MIN_DBZ : undefined}
+              minDbz={noiseFloorOn(radarNoiseMode) && !dualPolCleanOn(radarNoiseMode) ? NOISE_FILTER_MIN_DBZ : undefined}
             />
           ) : null}
         </Pane>

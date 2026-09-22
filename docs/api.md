@@ -255,9 +255,25 @@ gate-level picture, not IEM's pre-smoothed raster of it.
   "key": "LWX_N0H_2026_09_06_01_29_38",
   "scanTime": "2026-09-06T01:29:38.000Z",
   "masked": 404803,
-  "considered": 446515
+  "considered": 446515,
+  "floorDbz": 15,
+  "floored": 37976
 }
 ```
+
+  **The clear-air floor is class-aware in clean mode (2026-09-22).** The
+  mask also applies the 15 dBZ floor (`floorDbz`) — but only to gates the
+  classifier has NO verdict on: class ND, range folded, and the 160 km of
+  reflectivity beyond the classification's 300 km reach (`floored` counts
+  them). A gate the classifier calls precipitation is kept at any
+  intensity. The client must therefore NOT apply its own floor to a
+  payload whose `clean.applied` is true (see `floorFor` in
+  `radialRender.js`); it still does for tiles, for velocity and for a scan
+  that came back unmasked. Measured on the scan that motivated this
+  (LWX 2026-09-22 04:01:42 Z, light rain): 51 056 rain-classified gates
+  under 15 dBZ that the plain floor had been hiding, against 56 089 above
+  it; at radars with no rain the classifier called only 49–144 sub-15 dBZ
+  gates rain, so little bloom comes back through the gap.
 - **Cached:** 60 s per site+product for the newest scan; historical scans
   30 min (immutable) / 2 min for a miss. Payload ~1.7 MB (N0B) / ~1.1 MB
   (N0G): base64 of 720 azimuth buckets × N range bins of raw byte levels.

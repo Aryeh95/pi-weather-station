@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { renderRadialImage, decodeBins, NOISE_FILTER_MIN_DBZ } from "./radialRender";
+import { renderRadialImage, decodeBins, floorFor } from "./radialRender";
 
 const POLL_INTERVAL_MS = 60 * 1000;
 // Dual-pol clean asked for, classification not published yet. The two
@@ -168,7 +168,10 @@ export default function useRadarRadial({
             // through and draw the newest scan, unmasked and labelled so.
             cleanFrameRef.current = null;
           }
-          const renderKey = `${d.key}|${d.kind}|nf:${Boolean(noiseFilter)}|dp:${Boolean(d.clean?.applied)}`;
+          // The floor is part of the key: which floor applies depends on
+          // whether the server's mask carried it (see floorFor).
+          const minDbz = floorFor(d, noiseFilter, dualPolClean);
+          const renderKey = `${d.key}|${d.kind}|floor:${minDbz ?? "none"}|dp:${Boolean(d.clean?.applied)}`;
           if (renderKey === lastKeyRef.current) {
             // Same pixels, so no re-render — but the CLEAN status under
             // them can still have changed, and an unmasked clean frame is
@@ -183,7 +186,6 @@ export default function useRadarRadial({
             ));
             return;
           }
-          const minDbz = noiseFilter ? NOISE_FILTER_MIN_DBZ : undefined;
           const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), minDbz);
           canvas.toBlob((blob) => {
             if (cancelledRef.current || !blob) return;

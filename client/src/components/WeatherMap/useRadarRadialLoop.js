@@ -23,7 +23,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { renderRadialImage, decodeBins, NOISE_FILTER_MIN_DBZ } from "./radialRender";
+import { renderRadialImage, decodeBins, floorFor } from "./radialRender";
 
 // How long a "no matching scan" result stands before the stamp is tried
 // again — matches the server's negative-cache TTL.
@@ -114,8 +114,7 @@ export default function useRadarRadialLoop({
           const d = res.data || {};
           if (cancelled || generationRef.current !== gen) return;
           if (d.available) {
-            const minDbz = noiseFilter ? NOISE_FILTER_MIN_DBZ : undefined;
-            const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), minDbz);
+            const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), floorFor(d, noiseFilter, dualPolClean));
             const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
             if (cancelled || generationRef.current !== gen) return;
             if (blob) {
