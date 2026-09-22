@@ -119,11 +119,19 @@ function speedInUnit(kt, unit) {
  * total, reused by every marker.
  *
  * @param {Boolean} nightRed night-vision palette active
- * @returns {{meso: import("leaflet").DivIcon, tvs: import("leaflet").DivIcon}} icon pair
+ * @returns {{meso: import("leaflet").DivIcon, tvs: import("leaflet").DivIcon, tds: import("leaflet").DivIcon}} icon set
  */
 function buildAttrIcons(nightRed) {
   const disc = nightRed ? "#2a0f0f" : "#ffffff";
   const glyph = nightRed ? "#e85858" : "#1a1a1a";
+  // Debris signature: the TVS glyph filled solid red inside a red ring.
+  // Debris is the one radar attribute that means "a tornado is on the
+  // ground right now", so it is the loudest mark on the map.
+  const debris = nightRed ? "#ff7a7a" : "#d91c1c";
+  const tdsHtml = `<svg width="24" height="24" viewBox="0 0 24 24">`
+    + `<circle cx="12" cy="12" r="11" fill="${disc}" stroke="${debris}" stroke-width="2.4"/>`
+    + `<path d="M6.5 6.5 H17.5 L13.2 13.5 L12.5 18 L11.5 13.5 Z" fill="${debris}"/>`
+    + `</svg>`;
   const mesoHtml = `<svg width="18" height="18" viewBox="0 0 18 18">`
     + `<circle cx="9" cy="9" r="8" fill="${disc}" stroke="${glyph}" stroke-width="1.6"/>`
     + `<circle cx="9" cy="9" r="3" fill="none" stroke="${glyph}" stroke-width="1.6"/>`
@@ -138,7 +146,7 @@ function buildAttrIcons(nightRed) {
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
-  return { meso: mk(mesoHtml, 18), tvs: mk(tvsHtml, 20) };
+  return { meso: mk(mesoHtml, 18), tvs: mk(tvsHtml, 20), tds: mk(tdsHtml, 24) };
 }
 
 /**
@@ -366,7 +374,7 @@ const StormTracks = ({
         <React.Fragment key={`meso-${m.id}-${m.lat.toFixed(3)}`}>
           <Marker
             position={[m.lat, m.lon]}
-            icon={m.tvs ? attrIcons.tvs : attrIcons.meso}
+            icon={(m.tds && m.tds.detected) ? attrIcons.tds : (m.tvs ? attrIcons.tvs : attrIcons.meso)}
             interactive={false}
             keyboard={false}
           />
@@ -376,7 +384,8 @@ const StormTracks = ({
             pathOptions={{ opacity: 0, fillOpacity: 0, bubblingMouseEvents: false }}
           >
             <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
-              {m.tvs ? "TVS" : "MESO"}
+              {(m.tds && m.tds.detected) ? "TDS · debris" : (m.tvs ? "TVS" : "MESO")}
+              {(m.tds && m.tds.detected && Number.isFinite(m.tds.minCc)) ? ` · CC ${m.tds.minCc.toFixed(2)}` : ""}
               {m.stormId ? ` · ${m.stormId}` : ""}
               {m.strengthRank ? ` · SR ${m.strengthRank}` : ""}
             </Tooltip>

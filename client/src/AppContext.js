@@ -701,11 +701,14 @@ export function AppContextProvider({ children }) {
   const [radarProduct, setRadarProduct] = useState(() => {
     if (typeof window === "undefined") return "N0B";
     const stored = window.localStorage.getItem("radarProduct");
-    if (stored === "N0B" || stored === "N0G" || stored === "PTYPE") return stored;
+    if (stored === "N0B" || stored === "N0G" || stored === "PTYPE" || stored === "N0C") return stored;
     return window.localStorage.getItem("radarVelocity") === "true" ? "N0G" : "N0B";
   });
   const radarVelocity = radarProduct === "N0G";
   const radarPrecipType = radarProduct === "PTYPE";
+  // Correlation coefficient (N0C) — RadarScope's "Super-Res Correlation
+  // Coefficient"; where the debris signature is read by eye.
+  const radarCorrelation = radarProduct === "N0C";
   const flipRadarProduct = useCallback((product) => {
     setRadarProduct((prev) => {
       const next = prev === product ? "N0B" : product;
@@ -715,6 +718,7 @@ export function AppContextProvider({ children }) {
   }, []);
   const toggleRadarVelocity = useCallback(() => flipRadarProduct("N0G"), [flipRadarProduct]);
   const toggleRadarPrecipType = useCallback(() => flipRadarProduct("PTYPE"), [flipRadarProduct]);
+  const toggleRadarCorrelation = useCallback(() => flipRadarProduct("N0C"), [flipRadarProduct]);
   // Reflectivity colour palette — RadarScope-style (default) or NWS classic.
   // Per-device; applies to the raw-radial layer, the IEM tiles (repainted
   // through their published colour table) and the legend bar alike.
@@ -2336,6 +2340,7 @@ export function AppContextProvider({ children }) {
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
+    toggleRadarCorrelation,
     setRadarPalette,
     setAlertRadiusKmLive,
     selectGovAlert,
@@ -2410,6 +2415,7 @@ export function AppContextProvider({ children }) {
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
+    toggleRadarCorrelation,
     setRadarPalette,
     setAlertRadiusKmLive,
     selectGovAlert,
@@ -2661,6 +2667,7 @@ export function AppContextProvider({ children }) {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarCorrelation,
     radarPalette,
     showAlertRing,
     alertRadiusKm,
@@ -2678,6 +2685,7 @@ export function AppContextProvider({ children }) {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarCorrelation,
     radarPalette,
     showAlertRing,
     alertRadiusKm,

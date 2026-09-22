@@ -35,6 +35,9 @@ import velocityIcon from "@iconify/icons-carbon/arrows-horizontal";
 /* Precipitation type: rain and hail falling together — the one glyph in
  * the set that says "what kind" rather than "how much". */
 import precipTypeIcon from "@iconify/icons-carbon/mixed-rain-hail";
+/* Correlation coefficient: a scatter of points reads as "how alike are the
+ * targets in this gate", which is what the product measures. */
+import correlationIcon from "@iconify/icons-carbon/chart-scatter";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -123,6 +126,7 @@ const ControlButtons = ({ labelled = false }) => {
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
+    toggleRadarCorrelation,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -158,6 +162,7 @@ const ControlButtons = ({ labelled = false }) => {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarCorrelation,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -707,6 +712,34 @@ const ControlButtons = ({ labelled = false }) => {
       <InlineIcon icon={precipTypeIcon} />
     </div>
   );
+  // Correlation coefficient — dual-pol N0C at high zoom. Uniform
+  // precipitation sits near 1; hail, the melting layer, biological
+  // scatter and lofted debris pull it down. Exclusive with the other two
+  // single-site products.
+  const btnCorrelation = (
+    <div
+      key="correlation"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleRadarCorrelation();
+        notify(radarCorrelation ? "toasts.correlationOff" : "toasts.correlationOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${radarCorrelation && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarCorrelation ? "controls.correlationOff" : "controls.correlationOn")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(radarCorrelation ? "controls.correlationOff" : "controls.correlationOn")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={correlationIcon} />
+    </div>
+  );
   const btnContrast = (
     <div
       key="contrast"
@@ -919,6 +952,7 @@ const ControlButtons = ({ labelled = false }) => {
         {withLabel(btnNoiseFilter)}
         {withLabel(btnVelocity)}
         {withLabel(btnPrecipType)}
+        {withLabel(btnCorrelation)}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

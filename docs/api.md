@@ -229,7 +229,7 @@ gate-level picture, not IEM's pre-smoothed raster of it.
 | Parameter | Default | Description |
 |---|---|---|
 | `site` | — | 3-letter NEXRAD id (required) |
-| `product` | `N0B` | `N0B` super-res base reflectivity (product 153), `N0G` super-res base velocity (product 154), or `PTYPE` precipitation type (N0H classification × N0B intensity, see below) |
+| `product` | `N0B` | `N0B` super-res base reflectivity (product 153), `N0G` super-res base velocity (product 154), `N0C` correlation coefficient (product 161, see below), or `PTYPE` precipitation type (N0H classification × N0B intensity, see below) |
 | `stamp` | — | `YYYYMMDDHHMM` UTC frame stamp: the historical scan matching that IEM frame instead of the newest (sharp loop playback) |
 | `clean` | — | `1` blanks the gates the scan's dual-pol classification calls non-meteorological (reflectivity only; ignored for `N0G`) |
 
@@ -303,6 +303,19 @@ Decode contract: level L ≥ 2 is `scaling.min + L × scaling.increment` in
 0.25 by product spec — the packet's `rangeScale` is a display factor, not
 the bin size. Reflectivity: 1840 bins = 460 km. Velocity: 1200 bins = 300 km.
 
+- **`product=N0C`** (correlation coefficient, added 2026-09-22): dual-pol
+  ρHV, unitless 0.2–1.05. Decodes through the same product-94-layout shim
+  as 153/154 (1° × 1200 bins live), but its scaling is NOT in the 94
+  `plot` fields (they read `min 1730.2 / increment 0` for this product):
+  the dual-pol products carry a float **scale** at halfwords 31–32 and
+  **offset** at 33–34, `value = (level − offset) / scale` — 300 / −60.5
+  live, so the modal rain level 238 is 0.995. Exposed in the standard
+  contract (`scaling.min = −offset/scale`, `increment = 1/scale`) plus a
+  `scaling.dualPol {scale, offset}` block. `kind: "correlation"`, level 1
+  range folded, no clear-air floor. Many radars publish no N0C
+  (`no-recent-product`); LWX does. Uniform precipitation sits near 1;
+  hail, the melting layer, biological scatter and lofted debris pull it
+  down.
 - **`product=PTYPE`** (precipitation type, added 2026-09-16): the same
   `SSS_N0H_*` hydrometeor classification the clean mask reads, kept instead
   of reduced to a mask, and paired with the SAME volume scan's N0B for
@@ -378,6 +391,19 @@ mode is on.
   yesterday.
 
 ### `GET /api/storm-tracks?site=DIX`
+
+**Tornado debris signature (added 2026-09-22).** Each NMD circulation in
+`mesos` may carry `tds: {gates, minCc, detected, sampled}` — the count of
+gates within 3 km whose reflectivity is ≥ 30 dBZ AND correlation
+coefficient < 0.8, from the newest N0B + N0C pair of the SAME volume scan;
+`detected` at ≥ 10 such gates. The search runs only around reported
+circulations (biological scatter and the melting layer also lower CC, but
+not inside a mesocyclone with a 30+ dBZ core). Payload-level `debris:
+{available, scanTime, reason?}` says whether the check ran; `reason` is
+`no-correlation` at a radar that publishes no N0C, `scan-mismatch` when the
+two products are from different scans. Never fatal. The client draws a
+detected circulation as a red-filled TVS glyph with a "TDS · debris"
+tooltip.
 
 NEXRAD Level III storm tracks (STI, product 58) and mesocyclone features
 (NMD, product 141) for one radar.

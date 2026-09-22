@@ -425,7 +425,11 @@
     "legendPtypeUnavailable": "Este radar no publica clasificación",
     "legendPtypeNoHistory": "El mosaico de tipo solo muestra el fotograma más reciente",
     "agePrecipType": "TIPO",
-    "ageMosaicPrecip": "Mosaico de tipo"
+    "ageMosaicPrecip": "Mosaico de tipo",
+    "legendCorrelation": "Coeficiente de correlación",
+    "legendCorrelationNote": "Cerca de 1 precipitación uniforme · bajo dentro de una rotación: escombros",
+    "legendCorrelationUnavailable": "Este radar no publica el producto de correlación",
+    "ageCorrelation": "CC"
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",
@@ -488,7 +492,9 @@
     "drawerTitle": "Controles",
     "drawerClose": "Cerrar los controles",
     "precipTypeOn": "Mostrar tipo de precipitación",
-    "precipTypeOff": "Mostrar reflectividad"
+    "precipTypeOff": "Mostrar reflectividad",
+    "correlationOn": "Mostrar coeficiente de correlación",
+    "correlationOff": "Mostrar reflectividad"
   },
   "toasts": {
     "mapRecentered": "Mapa recentrado",
@@ -536,7 +542,9 @@
     "followStarted": "Siguiendo tu ubicación",
     "followStopped": "Seguimiento detenido",
     "precipTypeOn": "Tipo de precipitación activado",
-    "precipTypeOff": "Tipo de precipitación desactivado"
+    "precipTypeOff": "Tipo de precipitación desactivado",
+    "correlationOn": "Coeficiente de correlación activado",
+    "correlationOff": "Coeficiente de correlación desactivado"
   },
   "health": {
     "title": "Estado de los servicios",

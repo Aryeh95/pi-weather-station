@@ -159,6 +159,55 @@ export const VEL_STOPS = [
 ];
 export const VEL_RF_COLOR = [170, 0, 190, 255];
 
+// RadarScope-style velocity: the same toward-green / away-red convention,
+// but both sides BRIGHTEN with speed towards near-white extremes instead
+// of shifting hue (cyan / yellow), so a strong couplet reads as two bright
+// lobes either side of a dark seam. Approximated from the published bar.
+export const VEL_STOPS_SCOPE = [
+  [-64, 220, 255, 235, 255],
+  [-45, 120, 255, 140, 255],
+  [-30, 30, 210, 60, 255],
+  [-15, 10, 140, 40, 255],
+  [-3, 60, 95, 70, 235],
+  [0, 118, 118, 118, 220],
+  [3, 100, 60, 60, 235],
+  [15, 150, 20, 20, 255],
+  [30, 220, 30, 30, 255],
+  [45, 255, 110, 140, 255],
+  [64, 255, 225, 235, 255],
+];
+
+/**
+ * The velocity stop table for a palette id.
+ *
+ * @param {String} [palette] "nws" or "scope" (default)
+ * @returns {Array<Array<Number>>} [m/s, r, g, b, a] rows
+ */
+export function velocityStopsForPalette(palette) {
+  return palette === "nws" ? VEL_STOPS : VEL_STOPS_SCOPE;
+}
+
+// Correlation coefficient (N0C), unitless 0.2–1.05: [cc, r, g, b, a].
+// RadarScope-style: black through grey for the non-meteorological range,
+// purple and blue through the mixed / melting range, green → yellow →
+// orange → red → magenta for uniform precipitation (0.9+), white above 1
+// (noise). The tornado debris signature is the dark hole this ramp leaves
+// inside a bright storm core.
+export const CC_STOPS = [
+  [0.2, 0, 0, 0, 255],
+  [0.45, 110, 110, 110, 255],
+  [0.6, 170, 170, 175, 255],
+  [0.7, 110, 50, 170, 255],
+  [0.8, 40, 70, 225, 255],
+  [0.87, 40, 180, 220, 255],
+  [0.91, 50, 200, 60, 255],
+  [0.94, 235, 235, 40, 255],
+  [0.96, 250, 130, 0, 255],
+  [0.98, 225, 25, 25, 255],
+  [1.0, 220, 0, 200, 255],
+  [1.05, 255, 255, 255, 255],
+];
+
 /**
  * RGBA for a value interpolated along a stop table.
  *
@@ -201,13 +250,24 @@ export function colorForDbz(dbz, palette = "nws") {
 }
 
 /**
- * RGBA for a radial velocity, interpolated along VEL_STOPS.
+ * RGBA for a radial velocity, interpolated along the palette's stops.
  *
  * @param {Number} ms radial velocity in m/s (negative = toward the radar)
+ * @param {String} [palette] "nws" or "scope"
  * @returns {[Number, Number, Number, Number]} [r, g, b, a] 0-255
  */
-export function colorForVelocity(ms) {
-  return colorForValue(VEL_STOPS, ms);
+export function colorForVelocity(ms, palette = "nws") {
+  return colorForValue(velocityStopsForPalette(palette), ms);
+}
+
+/**
+ * RGBA for a correlation coefficient, interpolated along CC_STOPS.
+ *
+ * @param {Number} cc correlation coefficient (0.2–1.05)
+ * @returns {[Number, Number, Number, Number]} [r, g, b, a] 0-255
+ */
+export function colorForCorrelation(cc) {
+  return colorForValue(CC_STOPS, cc);
 }
 
 /**
@@ -228,21 +288,29 @@ export function colorForVelocity(ms) {
  *
  * @param {{min: Number, increment: Number}} scaling from /api/radar/radial
  * @param {Number} [minDbz] hide reflectivity below this value
- * @param {String} [kind] "reflectivity" (default), "velocity" or "precip"
- * @param {String} [palette] reflectivity palette id (see ui/radarPalette.js)
+ * Correlation coefficient ("correlation") is unitless: no floor, and its
+ * level 1 is range folded like velocity's.
+ *
+ * @param {String} [kind] "reflectivity" (default), "velocity", "correlation" or "precip"
+ * @param {String} [palette] palette id (see ui/radarPalette.js); reflectivity and velocity follow it
  * @returns {Uint8ClampedArray} 256 × 4 RGBA entries
  */
 export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity", palette = "nws") {
   if (kind === "precip") return buildPrecipLut(minDbz);
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
-  if (velocity) {
+  const correlation = kind === "correlation";
+  if (velocity || correlation) {
     lut.set(VEL_RF_COLOR, 4);
   }
   for (let level = 2; level < 256; level += 1) {
     const v = scaling.min + level * scaling.increment;
-    if (!velocity && v < minDbz) continue;
-    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v, palette);
+    if (!velocity && !correlation && v < minDbz) continue;
+    let rgba;
+    if (velocity) rgba = colorForVelocity(v, palette);
+    else if (correlation) rgba = colorForCorrelation(v);
+    else rgba = colorForDbz(v, palette);
+    const [r, g, b, a] = rgba;
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -291,13 +359,12 @@ export function radialBounds(lat, lon) {
 export function renderRadialImage(data, bins, minDbz, palette = "nws") {
   const size = RADIAL_CANVAS_PX;
   const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling, kind } = data;
-  const velocity = kind === "velocity";
-  const precip = kind === "precip";
-  const lut = buildLevelLut(scaling, minDbz, precip ? "precip" : (velocity ? "velocity" : "reflectivity"), palette);
-  // Reflectivity skips the two reserved levels outright; velocity keeps
-  // level 1 (range folded) because the LUT paints it; precipitation type
-  // has only level 0 reserved and lets the LUT decide the rest.
-  const minLevel = (velocity || precip) ? 1 : 2;
+  const lutKind = ["velocity", "precip", "correlation"].includes(kind) ? kind : "reflectivity";
+  const lut = buildLevelLut(scaling, minDbz, lutKind, palette);
+  // Reflectivity skips the two reserved levels outright; velocity and
+  // correlation keep level 1 (range folded) because the LUT paints it;
+  // precipitation type has only level 0 reserved and lets the LUT decide.
+  const minLevel = lutKind === "reflectivity" ? 2 : 1;
   const lut32 = new Uint32Array(lut.buffer);
   // (xm0 is only needed for the bounds themselves — the column loop is
   // symmetric around the site, so it works in offsets.)

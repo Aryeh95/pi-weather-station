@@ -409,6 +409,37 @@ dark red, magenta, purple, cyan, brown; transparent below −30.
 - The render keys in both radial hooks carry the palette, so switching it
   re-renders the current scan and resets the loop cache.
 
+### Correlation coefficient + debris marker, velocity palette (2026-09-22)
+
+User shared a RadarScope CC screenshot as the reference, so CC became a
+viewable fourth PRODUCT (`radarProduct: "N0C"`, dock glyph carbon
+`chart-scatter`), not only a marker.
+
+- **Product 161 decodes through the 94-layout shim but its scaling does
+  NOT come from the 94 `plot` fields** — they read `min 1730.2 / increment
+  0 / levels −15758`. The dual-pol products (159 ZDR, 161 CC, 163 KDP)
+  carry a float scale at halfwords 31–32 and offset at 33–34; `value =
+  (level − offset) / scale`. Live LWX: 300 / −60.5 → level 238 = 0.995.
+  `dualPolScaling(buf, code)` finds the message start (the object begins
+  with a 30-byte WMO header, `SDUS81 KLWX …`) by the product-code
+  halfword and reads the floats from byte 60 / 64 of the message. Pinned
+  by the committed `LWX_N0C_2026_09_22_06_31_39.bin`.
+- Level 1 is range folded for CC too (leading flags = 2 live) and is
+  painted purple like velocity's. No clear-air floor: unitless.
+- **Debris signature** (`debrisSignature` / `attachDebris` in
+  `radarRadialCtrl.js`, called from `fetchTracks`): gates within 3 km of an
+  NMD circulation with dBZ ≥ 30 AND CC < 0.8, from N0B + N0C of the SAME
+  scan; detected at ≥ 10 gates. Gated on NMD circulations on purpose —
+  13.8 % of LWX's echo gates were below 0.8 CC on an ordinary drizzly night
+  (bloom + melting layer), so a whole-disc search would be all false
+  positives. Rendered as a red-filled TVS glyph, tooltip "TDS · debris ·
+  CC 0.6". **Not verified on a real tornado** — synthetic test only;
+  watch the first outbreak.
+- **Velocity follows the palette setting** now: `VEL_STOPS_SCOPE` brightens
+  both sides toward near-white extremes (RadarScope) vs the NWS ramp's
+  cyan / yellow extremes. Same toward-green / away-red / grey-zero in both;
+  RF purple in both.
+
 ### The committed bundle can be a build of older source (2026-09-06)
 
 Shipped this way and cost a debugging round. The dual-pol commit ran

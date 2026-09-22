@@ -75,6 +75,23 @@ const PRODUCTS = {
     // 0 = below threshold, 1 = range folded (drawn as RF, not skipped).
     reservedLevels: 2,
   },
+  // Dual-pol correlation coefficient — RadarScope's "Super-Res Correlation
+  // Coefficient". Product 161 shares 94's radial layout (the shim decodes
+  // it: verified live LWX 2026-09-22, 360 radials × 1°, 1200 bins × 0.25
+  // km), but NOT its scaling halfwords: the dual-pol products carry a
+  // float SCALE and OFFSET at halfwords 31-34 (read 300 / −60.5 live), so
+  // value = (level − offset) / scale, and the 94-layout `plot` fields read
+  // garbage for it (`min 1730.2, increment 0`). See dualPolScaling().
+  N0C: {
+    code: 161,
+    kind: "correlation",
+    units: "ratio",
+    abbreviations: ["N0C", "N1C", "N2C", "N3C"],
+    description: "Digital Correlation Coefficient",
+    // 0 = below threshold, 1 = range folded (drawn as RF, not skipped).
+    reservedLevels: 2,
+    dualPolScaling: true,
+  },
   // Dual-pol hydrometeor classification. Not a shim: the library ships a
   // definition for 165, so this entry only names the product for the
   // route and the cleaner. Levels are CLASS CODES, not a linear scale —
@@ -283,6 +300,39 @@ async function keyForEpoch(site, product, target) {
  * @param {String} key bucket object key
  * @returns {Promise<Object>} available:true payload
  */
+/**
+ * Scaling for the dual-pol products (159 ZDR, 161 CC, 163 KDP), whose
+ * product description carries a float scale at halfwords 31-32 and a float
+ * offset at 33-34: value = (level − offset) / scale. Expressed in this
+ * route's `min + level × increment` contract.
+ *
+ * The bucket object may start with a WMO / AWIPS text header ("SDUS81 KLWX
+ * 220631\r\r\nN0CLWX\r\r\n", 30 bytes live), so the message start is found
+ * by its own first halfword: the product code, followed by a plausible
+ * modified-Julian date.
+ *
+ * @param {Buffer} buf the raw bucket object
+ * @param {Number} code product code (e.g. 161)
+ * @returns {{min: Number, increment: Number, levels: Number, dualPol: {scale: Number, offset: Number}}}
+ */
+function dualPolScaling(buf, code) {
+  let start = -1;
+  for (let i = 0; i + 68 <= buf.length && i < 256; i += 1) {
+    if (buf.readUInt16BE(i) !== code) continue;
+    const date = buf.readUInt16BE(i + 2);
+    if (date > 10000 && date < 40000) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) throw new Error("dual-pol message start not found");
+  // Halfword n sits (n − 1) × 2 bytes into the message.
+  const scale = buf.readFloatBE(start + 60);
+  const offset = buf.readFloatBE(start + 64);
+  if (!(scale > 0) || !Number.isFinite(offset)) throw new Error(`dual-pol scaling unreadable (${scale}, ${offset})`);
+  return { min: -offset / scale, increment: 1 / scale, levels: 254, dualPol: { scale, offset } };
+}
+
 async function decodeKey(site, product, key) {
   const def = PRODUCTS[product];
   const buf = await fetchObject(key);
@@ -315,11 +365,11 @@ async function decodeKey(site, product, key) {
     // (velocity); level L ≥ 2 is `min + L × increment` in `units` — the
     // same table the parser builds internally for its scaled view.
     reservedLevels: def.reservedLevels,
-    scaling: def.scaling || {
+    scaling: def.scaling || (def.dualPolScaling ? dualPolScaling(buf, def.code) : {
       min: pd.plot ? pd.plot.minimumDataValue : (def.kind === "velocity" ? -63.5 : -32),
       increment: pd.plot ? pd.plot.dataIncrement : 0.5,
       levels: pd.plot ? pd.plot.dataLevels : 254,
-    },
+    }),
     numBuckets: NUM_BUCKETS,
     bucketDeg: BUCKET_DEG,
     numBins,
@@ -761,6 +811,116 @@ async function fetchPrecipTypeAtStamp(site, stamp) {
   return value;
 }
 
+// ── Tornado debris signature ──────────────────────────────────────────
+// Lofted debris is non-uniform in size and shape, so its correlation
+// coefficient collapses (< 0.8) while reflectivity stays high (≥ 30 dBZ)
+// — inside a rotation. The operational recipe (NWS WDTD) is exactly that
+// triple, and the rotation gate is what keeps it honest: biological
+// scatter and the melting layer also drop CC, but not inside a
+// mesocyclone with a 30+ dBZ core. So the search runs ONLY around the
+// circulations the NMD product already reports, never over the whole disc.
+const TDS_MAX_CC = 0.8;
+const TDS_MIN_DBZ = 30;
+const TDS_MIN_GATES = 10;
+const TDS_RADIUS_KM = 3;
+const KM_PER_DEG_LAT = 110.574;
+const KM_PER_DEG_LON_EQUATOR = 111.32;
+
+/**
+ * Count debris-signature gates within `radiusKm` of a point.
+ *
+ * @param {Object} refl decoded N0B payload (available:true)
+ * @param {Object} cc decoded N0C payload, same volume scan
+ * @param {Number} lat circulation latitude
+ * @param {Number} lon circulation longitude
+ * @param {Number} [radiusKm] search radius
+ * @returns {{gates: Number, minCc: Number|null, detected: Boolean, sampled: Number}}
+ */
+function debrisSignature(refl, cc, lat, lon, radiusKm = TDS_RADIUS_KM) {
+  const rbins = Buffer.from(refl.bins, "base64");
+  const cbins = Buffer.from(cc.bins, "base64");
+  const lat0 = (refl.radar.lat * Math.PI) / 180;
+  const dy = (lat - refl.radar.lat) * KM_PER_DEG_LAT;
+  const dx = (lon - refl.radar.lon) * KM_PER_DEG_LON_EQUATOR * Math.cos(lat0);
+  const range = Math.hypot(dx, dy);
+  if (!(range > radiusKm)) return { gates: 0, minCc: null, detected: false, sampled: 0 };
+  let az = (Math.atan2(dx, dy) * 180) / Math.PI;
+  if (az < 0) az += 360;
+  const halfDeg = (Math.asin(radiusKm / range) * 180) / Math.PI;
+  const nb = refl.numBins;
+  const cnb = cc.numBins;
+  const span = Math.min(nb, cnb);
+  const binLo = Math.max(0, Math.floor((range - radiusKm - refl.firstBinKm) / refl.binKm));
+  const binHi = Math.min(span - 1, Math.ceil((range + radiusKm - refl.firstBinKm) / refl.binKm));
+  const bucketLo = Math.floor((az - halfDeg) / refl.bucketDeg);
+  const bucketHi = Math.ceil((az + halfDeg) / refl.bucketDeg);
+  let gates = 0;
+  let sampled = 0;
+  let minCc = null;
+  for (let a = bucketLo; a <= bucketHi; a += 1) {
+    const bucket = ((a % refl.numBuckets) + refl.numBuckets) % refl.numBuckets;
+    for (let b = binLo; b <= binHi; b += 1) {
+      const rl = rbins[bucket * nb + b];
+      const cl = cbins[bucket * cnb + b];
+      if (rl < refl.reservedLevels || cl < cc.reservedLevels) continue;
+      sampled += 1;
+      const dbz = refl.scaling.min + rl * refl.scaling.increment;
+      const rho = cc.scaling.min + cl * cc.scaling.increment;
+      if (dbz >= TDS_MIN_DBZ && rho < TDS_MAX_CC) {
+        gates += 1;
+        if (minCc === null || rho < minCc) minCc = rho;
+      }
+    }
+  }
+  return {
+    gates,
+    minCc: minCc === null ? null : Math.round(minCc * 1000) / 1000,
+    detected: gates >= TDS_MIN_GATES,
+    sampled,
+  };
+}
+
+/**
+ * Attach a `tds` verdict to each circulation (mutates the mesos) from the
+ * newest N0B + N0C pair of the same volume scan. Never throws: with either
+ * product missing (many sites publish no N0C) the mesos are left alone and
+ * the returned metadata says so.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {Array<Object>} mesos NMD circulations with lat/lon
+ * @returns {Promise<{available: Boolean, scanTime: String|null, reason?: String}>}
+ */
+async function attachDebris(site, mesos) {
+  const meta = { available: false, scanTime: null };
+  if (!Array.isArray(mesos) || !mesos.length) return meta;
+  try {
+    const [refl, cc] = await Promise.all([fetchRadial(site, DEFAULT_PRODUCT), fetchRadial(site, "N0C")]);
+    if (!refl.available || !cc.available) {
+      meta.reason = cc.available ? "no-reflectivity" : "no-correlation";
+      return meta;
+    }
+    if (refl.scanTime !== cc.scanTime) {
+      // Different volume scans would pair a core with someone else's hole.
+      meta.reason = "scan-mismatch";
+      return meta;
+    }
+    if (!gridsAlign(refl, cc)) {
+      meta.reason = "grid-mismatch";
+      return meta;
+    }
+    for (const m of mesos) {
+      if (!Number.isFinite(m.lat) || !Number.isFinite(m.lon)) continue;
+      m.tds = debrisSignature(refl, cc, m.lat, m.lon);
+    }
+    meta.available = true;
+    meta.scanTime = cc.scanTime;
+  } catch (err) {
+    meta.reason = String(err && err.message ? err.message : err).slice(0, 120);
+    recordServiceCall(SERVICE_NAME, err?.response?.status || 500, `debris check failed for ${site}: ${meta.reason}`);
+  }
+  return meta;
+}
+
 /**
  * Should this request be cleaned?
  *
@@ -850,6 +1010,13 @@ module.exports = {
   fetchPrecipType,
   fetchPrecipTypeAtStamp,
   PRECIP_PRODUCT,
+  dualPolScaling,
+  debrisSignature,
+  attachDebris,
+  TDS_MAX_CC,
+  TDS_MIN_DBZ,
+  TDS_MIN_GATES,
+  TDS_RADIUS_KM,
   MASK_CLASSES,
   BIG_DROPS_RAIN_MIN_DBZ,
   CLEAN_FLOOR_DBZ,

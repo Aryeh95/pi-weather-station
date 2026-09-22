@@ -6,7 +6,7 @@ import { AlertsContext, UiPrefsContext } from "~/AppContext";
 import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
-import { VEL_STOPS, colorForDbz } from "./radialRender";
+import { colorForDbz, colorForVelocity, colorForCorrelation } from "./radialRender";
 import { GROUPS as PTYPE_GROUPS, colorForGate, encodeGate } from "../../../../server/precipType";
 
 // Tiers sampled for each precipitation-type ramp in the legend: 7.5 to
@@ -88,17 +88,41 @@ const PrecipTypeScale = () => (
   </span>
 );
 
+// Velocity bar: −64 … +64 m/s in 8 m/s steps (17 swatches, zero centred).
+const VEL_SCALE_MS = Array.from({ length: 17 }, (_, i) => -64 + i * 8);
+// Correlation bar: 0.2 … 1.05 sampled where the ramp changes.
+const CC_SCALE = [0.2, 0.35, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.99, 1.0, 1.05];
+
 /**
- * Velocity colour bar matching VEL_STOPS in radialRender.js — toward
- * the radar on the left (greens), away on the right (reds).
+ * Velocity colour bar in the active palette — toward the radar on the
+ * left (greens), away on the right (reds).
+ *
+ * @param {object} props
+ * @param {string} props.palette palette id
+ * @returns {JSX.Element} Scale bar
+ */
+const VelocityScale = ({ palette }) => (
+  <span className={styles.precipScale} aria-hidden="true">
+    {VEL_SCALE_MS.map((v) => {
+      const [r, g, b] = colorForVelocity(v, palette);
+      return <span key={v} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />;
+    })}
+  </span>
+);
+
+VelocityScale.propTypes = { palette: PropTypes.string };
+
+/**
+ * Correlation-coefficient colour bar (CC_STOPS in radialRender.js).
  *
  * @returns {JSX.Element} Scale bar
  */
-const VelocityScale = () => (
+const CorrelationScale = () => (
   <span className={styles.precipScale} aria-hidden="true">
-    {VEL_STOPS.map(([v, r, g, b]) => (
-      <span key={v} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />
-    ))}
+    {CC_SCALE.map((cc) => {
+      const [r, g, b] = colorForCorrelation(cc);
+      return <span key={cc} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />;
+    })}
   </span>
 );
 
@@ -124,6 +148,8 @@ const VelocityScale = () => (
  * @param {boolean} props.chipMode Render the compact chip instead of the card (short screens with the timeline open)
  * @param {number|null} [props.lightningCount] GLM flash count for the lightning section (null hides it)
  * @param {boolean} [props.velocity] Show the base-velocity colour bar (velocity mode on, site layer in view)
+ * @param {boolean} [props.correlation] Show the correlation-coefficient bar (CC mode on, site layer in view)
+ * @param {boolean} [props.correlationUnavailable] CC mode on but this radar publishes no N0C
  * @param {boolean|null} [props.cleanApplied] Dual-pol clean: true applied, false the scan had no classification, null not asked for
  * @param {boolean} [props.holdingClean] The frame on screen is an older CLEAN scan, held because the newest one has no classification yet
  * @param {object|null} [props.precip] Precipitation-type mode state, null when the mode is off: `siteInView` (single-site band showing), `siteUnavailable` (this radar publishes no classification), `mosaicInView`, `historyHidden` (playhead on a past frame, so the type mosaic is hidden)
@@ -131,6 +157,7 @@ const VelocityScale = () => (
  */
 const RadarLegend = ({
   dark, chipMode, lightningCount = null, velocity = false,
+  correlation = false, correlationUnavailable = false,
   cleanApplied = null, holdingClean = false, precip = null,
 }) => {
   const { t } = useTranslation();
@@ -228,11 +255,26 @@ const RadarLegend = ({
       {velocity ? (
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.legendVelocity")}</div>
-          <VelocityScale />
+          <VelocityScale palette={radarPalette} />
           <div className={styles.scaleLabels}>
             <span>{t("radar.legendToward")}</span>
             <span>0</span>
             <span>{t("radar.legendAway")}</span>
+          </div>
+        </div>
+      ) : null}
+      {correlation ? (
+        <div className={styles.legendSection}>
+          <div className={styles.legendTitle}>{t("radar.legendCorrelation")}</div>
+          <CorrelationScale />
+          <div className={styles.scaleLabels}>
+            <span>0.2</span>
+            <span>0.7</span>
+            <span>0.9</span>
+            <span>1.0</span>
+          </div>
+          <div className={styles.alertCount}>
+            {t(correlationUnavailable ? "radar.legendCorrelationUnavailable" : "radar.legendCorrelationNote")}
           </div>
         </div>
       ) : null}
@@ -354,6 +396,8 @@ RadarLegend.propTypes = {
   chipMode: PropTypes.bool,
   lightningCount: PropTypes.number,
   velocity: PropTypes.bool,
+  correlation: PropTypes.bool,
+  correlationUnavailable: PropTypes.bool,
 };
 
 export default RadarLegend;

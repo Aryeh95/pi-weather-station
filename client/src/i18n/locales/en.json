@@ -425,7 +425,11 @@
     "legendPtypeUnavailable": "No classification published by this radar",
     "legendPtypeNoHistory": "Type mosaic shows the newest frame only",
     "agePrecipType": "TYPE",
-    "ageMosaicPrecip": "Type mosaic"
+    "ageMosaicPrecip": "Type mosaic",
+    "legendCorrelation": "Correlation coefficient",
+    "legendCorrelationNote": "Near 1 uniform precipitation · low inside a rotation: debris",
+    "legendCorrelationUnavailable": "No correlation product published by this radar",
+    "ageCorrelation": "CC"
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",
@@ -488,7 +492,9 @@
     "drawerTitle": "Controls",
     "drawerClose": "Close controls",
     "precipTypeOn": "Show precipitation type",
-    "precipTypeOff": "Show reflectivity"
+    "precipTypeOff": "Show reflectivity",
+    "correlationOn": "Show correlation coefficient",
+    "correlationOff": "Show reflectivity"
   },
   "toasts": {
     "mapRecentered": "Map recentered",
@@ -536,7 +542,9 @@
     "followStarted": "Following your location",
     "followStopped": "Stopped following",
     "precipTypeOn": "Precipitation type on",
-    "precipTypeOff": "Precipitation type off"
+    "precipTypeOff": "Precipitation type off",
+    "correlationOn": "Correlation coefficient on",
+    "correlationOff": "Correlation coefficient off"
   },
   "health": {
     "title": "Service health",

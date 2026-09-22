@@ -822,6 +822,7 @@ const WeatherMap = ({ zoom, dark }) => {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarCorrelation,
     radarPalette,
     showAlertRing,
     nearbyAlerts,
@@ -1005,7 +1006,10 @@ const WeatherMap = ({ zoom, dark }) => {
   // resolve N0G files too.
   // Precipitation type is a third product of the same scan (N0H class ×
   // N0B intensity, merged server-side) and rides the same pipeline.
-  const radialProduct = radarVelocity ? "N0G" : (radarPrecipType ? "PTYPE" : "N0B");
+  let radialProduct = "N0B";
+  if (radarVelocity) radialProduct = "N0G";
+  else if (radarPrecipType) radialProduct = "PTYPE";
+  else if (radarCorrelation) radialProduct = "N0C";
 
   // Mosaic frame list, recomputed whenever the single-site list
   // refreshes so both age displays advance together. The dependency on
@@ -1191,7 +1195,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // loop warms in ~15 s.
   //
   // PRECIPITATION-TYPE MODE likewise: the tiles are reflectivity.
-  const mountedSiteFrames = (!radarVelocity && !radarPrecipType && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
+  const mountedSiteFrames = (!radarVelocity && !radarPrecipType && !radarCorrelation && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
     ? (loopActive ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
@@ -1227,7 +1231,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // came through, approximate (schedule-derived, "~") otherwise. Storm
   // tracks report their product's scan time; lightning the newest flash.
   const siteRowShown = iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
-    && (radialShown || showIemSite || radarVelocity || radarPrecipType || currentLoopRadial);
+    && (radialShown || showIemSite || radarVelocity || radarPrecipType || radarCorrelation || currentLoopRadial);
   // In precipitation-type mode the mosaic row is the MRMS field's, and only
   // while that field is what is drawn (playhead on "latest").
   const precipMosaicShown = radarPrecipType && iemVisible.mosaic && Boolean(precipMosaic.field) && iemFromEnd === 0;
@@ -1248,6 +1252,7 @@ const WeatherMap = ({ zoom, dark }) => {
     let siteLabel = iemSite;
     if (radarVelocity) siteLabel = `${iemSite} ${t("radar.ageVelocity")}`;
     else if (radarPrecipType) siteLabel = `${iemSite} ${t("radar.agePrecipType")}`;
+    else if (radarCorrelation) siteLabel = `${iemSite} ${t("radar.ageCorrelation")}`;
     ageRows.push({
       key: "site",
       label: siteLabel,
@@ -1932,6 +1937,8 @@ const WeatherMap = ({ zoom, dark }) => {
           chipMode={radarTimelineVisible && isSmallScreen}
           lightningCount={showLightning ? lightning.count : null}
           velocity={radarVelocity && iemVisible.site}
+          correlation={radarCorrelation && iemVisible.site}
+          correlationUnavailable={radarCorrelation && iemVisible.site && !radial.url && Boolean(radial.unavailable)}
           cleanApplied={radial.cleanApplied}
           holdingClean={radial.holdingClean}
           precip={radarPrecipType ? {

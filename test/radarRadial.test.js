@@ -103,6 +103,39 @@ const VEL_STOPS = [
 ];
 const VEL_RF_COLOR = [170, 0, 190, 255];
 
+const VEL_STOPS_SCOPE = [
+  [-64, 220, 255, 235, 255],
+  [-45, 120, 255, 140, 255],
+  [-30, 30, 210, 60, 255],
+  [-15, 10, 140, 40, 255],
+  [-3, 60, 95, 70, 235],
+  [0, 118, 118, 118, 220],
+  [3, 100, 60, 60, 235],
+  [15, 150, 20, 20, 255],
+  [30, 220, 30, 30, 255],
+  [45, 255, 110, 140, 255],
+  [64, 255, 225, 235, 255],
+];
+
+function velocityStopsForPalette(palette) {
+  return palette === "nws" ? VEL_STOPS : VEL_STOPS_SCOPE;
+}
+
+const CC_STOPS = [
+  [0.2, 0, 0, 0, 255],
+  [0.45, 110, 110, 110, 255],
+  [0.6, 170, 170, 175, 255],
+  [0.7, 110, 50, 170, 255],
+  [0.8, 40, 70, 225, 255],
+  [0.87, 40, 180, 220, 255],
+  [0.91, 50, 200, 60, 255],
+  [0.94, 235, 235, 40, 255],
+  [0.96, 250, 130, 0, 255],
+  [0.98, 225, 25, 25, 255],
+  [1.0, 220, 0, 200, 255],
+  [1.05, 255, 255, 255, 255],
+];
+
 function colorForValue(stops, v) {
   if (v < stops[0][0]) return [0, 0, 0, 0];
   const last = stops[stops.length - 1];
@@ -127,8 +160,12 @@ function colorForDbz(dbz, palette = "nws") {
   return colorForValue(stopsForPalette(palette), dbz);
 }
 
-function colorForVelocity(ms) {
-  return colorForValue(VEL_STOPS, ms);
+function colorForVelocity(ms, palette = "nws") {
+  return colorForValue(velocityStopsForPalette(palette), ms);
+}
+
+function colorForCorrelation(cc) {
+  return colorForValue(CC_STOPS, cc);
 }
 
 const NOISE_FILTER_MIN_DBZ = 15;
@@ -137,13 +174,18 @@ function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity", palet
   if (kind === "precip") return buildPrecipLut(minDbz);
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
-  if (velocity) {
+  const correlation = kind === "correlation";
+  if (velocity || correlation) {
     lut.set(VEL_RF_COLOR, 4);
   }
   for (let level = 2; level < 256; level += 1) {
     const v = scaling.min + level * scaling.increment;
-    if (!velocity && v < minDbz) continue;
-    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v, palette);
+    if (!velocity && !correlation && v < minDbz) continue;
+    let rgba;
+    if (velocity) rgba = colorForVelocity(v, palette);
+    else if (correlation) rgba = colorForCorrelation(v);
+    else rgba = colorForDbz(v, palette);
+    const [r, g, b, a] = rgba;
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -151,6 +193,7 @@ function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity", palet
   }
   return lut;
 }
+
 
 function radialBounds(lat, lon) {
   const lat0 = (lat * Math.PI) / 180;
@@ -446,7 +489,100 @@ test("buildLevelLut paints reflectivity in the requested palette and leaves velo
   assert.deepEqual(at(nws, 10), colorForDbz(10, "nws"));
   // The noise floor still applies on top of either palette.
   assert.equal(buildLevelLut(scaling, 15, "reflectivity", "scope")[level(10) * 4 + 3], 0);
-  const velA = buildLevelLut({ min: -63.5, increment: 0.5 }, -Infinity, "velocity", "nws");
-  const velB = buildLevelLut({ min: -63.5, increment: 0.5 }, -Infinity, "velocity", "scope");
-  assert.deepEqual([...velA], [...velB]);
+  // Velocity follows the palette too (2026-09-22): both keep toward-green /
+  // away-red and a grey zero, but the extremes differ (cyan / yellow vs
+  // near-white), and range folded stays purple in both.
+  const velScale = { min: -63.5, increment: 0.5 };
+  const velA = buildLevelLut(velScale, -Infinity, "velocity", "nws");
+  const velB = buildLevelLut(velScale, -Infinity, "velocity", "scope");
+  assert.notDeepEqual([...velA], [...velB]);
+  assert.deepEqual([...velA.slice(4, 8)], VEL_RF_COLOR);
+  assert.deepEqual([...velB.slice(4, 8)], VEL_RF_COLOR);
+  const vlevel = (ms) => Math.round((ms - velScale.min) / velScale.increment);
+  for (const lut of [velA, velB]) {
+    const inbound = [...lut.slice(vlevel(-30) * 4, vlevel(-30) * 4 + 3)];
+    const outbound = [...lut.slice(vlevel(30) * 4, vlevel(30) * 4 + 3)];
+    assert.ok(inbound[1] > inbound[0] && inbound[1] > inbound[2], "toward is green");
+    assert.ok(outbound[0] > outbound[1] && outbound[0] > outbound[2], "away is red");
+  }
+  // Correlation ignores the palette and the floor; level 1 is range folded.
+  const ccScale = { min: 60.5 / 300, increment: 1 / 300 };
+  const ccA = buildLevelLut(ccScale, 15, "correlation", "nws");
+  const ccB = buildLevelLut(ccScale, -Infinity, "correlation", "scope");
+  assert.deepEqual([...ccA], [...ccB]);
+  assert.deepEqual([...ccA.slice(4, 8)], VEL_RF_COLOR);
+  const clevel = (cc) => Math.round((cc - ccScale.min) / ccScale.increment);
+  const hi = [...ccA.slice(clevel(0.995) * 4, clevel(0.995) * 4 + 4)];
+  const lo = [...ccA.slice(clevel(0.5) * 4, clevel(0.5) * 4 + 4)];
+  assert.ok(hi[3] === 255 && lo[3] === 255);
+  assert.ok(hi[0] > 150 && hi[2] > 150 && hi[1] < 60, "uniform rain is magenta");
+  assert.ok(Math.max(...lo.slice(0, 3)) - Math.min(...lo.slice(0, 3)) < 10, "0.5 is grey");
+});
+
+
+// ── Correlation coefficient (N0C, product 161) ─────────────────────────
+
+test("N0C fixture: dual-pol scaling is read from halfwords 31-34, not the 94 layout", () => {
+  // LWX 2026-09-22 06:31:39 Z, live capture. The 94-layout `plot` fields
+  // read `min 1730.2 / increment 0 / levels −15758` for this product; the
+  // dual-pol scale / offset floats read 300 / −60.5, so CC = (level + 60.5)
+  // / 300 — level 238, the modal value in rain, is 0.995.
+  const { dualPolScaling, PRODUCTS: P2 } = require("../server/radarRadialCtrl");
+  const buf = fs.readFileSync(path.join(__dirname, "fixtures", "LWX_N0C_2026_09_22_06_31_39.bin"));
+  assert.equal(buf.toString("latin1", 0, 6), "SDUS81", "the object carries a WMO header the scan must skip");
+  const sc = dualPolScaling(buf, P2.N0C.code);
+  assert.equal(sc.dualPol.scale, 300);
+  assert.equal(sc.dualPol.offset, -60.5);
+  assert.ok(Math.abs(sc.min + 238 * sc.increment - 0.995) < 1e-9);
+  assert.ok(Math.abs(sc.min + 2 * sc.increment - 0.2083) < 1e-3);
+  assert.equal(P2.N0C.kind, "correlation");
+  assert.equal(P2.N0C.reservedLevels, 2);
+  // And the file decodes through the shim with the expected geometry.
+  const parsed = parseLevel3(buf);
+  const pk = parsed.radialPackets[0];
+  assert.equal(pk.numberBins, 1200);
+  assert.equal(pk.radialsRaw.length, 360);
+  assert.equal(parsed.productDescription.elevationAngle, 0.5);
+});
+
+test("debris signature: low CC inside a 30+ dBZ core counts, rain and bloom do not", () => {
+  const { debrisSignature, TDS_MIN_GATES, TDS_MAX_CC, TDS_MIN_DBZ } = require("../server/radarRadialCtrl");
+  const NB = 720;
+  const bins = 400; // 100 km
+  const radar = { lat: 39, lon: -77 };
+  const reflScale = { min: -32, increment: 0.5 };
+  const ccScale = { min: 60.5 / 300, increment: 1 / 300 };
+  const rl = (dbz) => Math.round((dbz - reflScale.min) / reflScale.increment);
+  const cl = (cc) => Math.round((cc - ccScale.min) / ccScale.increment);
+  const refl = new Uint8Array(NB * bins).fill(rl(20));   // light rain everywhere
+  const cc = new Uint8Array(NB * bins).fill(cl(0.98));    // uniform
+  // A 3 km wide core due north at 50 km: 45 dBZ, and CC collapsed to 0.6
+  // in its centre (the debris ball).
+  const az0 = 0; // buckets around 0° wrap
+  for (let a = -6; a <= 6; a += 1) {
+    const bucket = ((a % NB) + NB) % NB;
+    for (let b = 194; b <= 206; b += 1) {
+      refl[bucket * bins + b] = rl(45);
+      if (Math.abs(a) <= 2 && b >= 198 && b <= 202) cc[bucket * bins + b] = cl(0.6);
+    }
+  }
+  // A biological patch to the east at 50 km: CC 0.5 but only 12 dBZ.
+  for (let a = 176; a <= 184; a += 1) for (let b = 194; b <= 206; b += 1) cc[a * bins + b] = cl(0.5);
+  const payload = (arr, scaling) => ({
+    bins: Buffer.from(arr).toString("base64"), scaling, reservedLevels: 2, numBuckets: NB, bucketDeg: 0.5,
+    numBins: bins, binKm: 0.25, firstBinKm: 0, radar,
+  });
+  const R = payload(refl, reflScale);
+  const C = payload(cc, ccScale);
+  const north = debrisSignature(R, C, radar.lat + 50 / 110.574, radar.lon);
+  assert.ok(north.detected, `core with debris ball detected (${north.gates} gates)`);
+  assert.ok(north.gates >= TDS_MIN_GATES && north.gates <= 5 * 5 + 6, `gate count plausible: ${north.gates}`);
+  assert.ok(Math.abs(north.minCc - 0.6) < 0.01);
+  const east = debrisSignature(R, C, radar.lat, radar.lon + 50 / (111.32 * Math.cos((39 * Math.PI) / 180)));
+  assert.equal(east.detected, false, "low CC at 12 dBZ is bloom, not debris");
+  assert.equal(east.gates, 0);
+  const west = debrisSignature(R, C, radar.lat, radar.lon - 50 / (111.32 * Math.cos((39 * Math.PI) / 180)));
+  assert.equal(west.detected, false, "uniform rain has no signature");
+  assert.ok(west.sampled > 0);
+  assert.ok(TDS_MAX_CC < 1 && TDS_MIN_DBZ >= 30);
 });

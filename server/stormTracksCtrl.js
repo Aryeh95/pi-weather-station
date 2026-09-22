@@ -62,6 +62,7 @@ const SERVICE_NAME = "NEXRAD L3 (storm tracks)";
 // names are re-exported below so existing imports keep working.
 const { BUCKET_BASE, API_TIMEOUT_MS, newestKey, l3KeyEpoch } = require("./nexradBucket");
 const { attachHail } = require("./mrmsHailCtrl");
+const { attachDebris } = require("./radarRadialCtrl");
 
 // One volume scan per file (4-6 min). 60 s keeps the display close to the
 // radar's own cadence without re-listing the bucket for every client poll.
@@ -325,6 +326,10 @@ async function fetchTracks(site) {
   // longer archived). Never fatal — cells simply carry `hail: null`.
   const hail = await attachHail(cells);
 
+  // Tornado debris signature: low correlation coefficient inside a 30+ dBZ
+  // core, searched only around the circulations above. Never fatal.
+  const debris = await attachDebris(site, mesos);
+
   // Scan time: the product prints its volume-scan date as a Julian day
   // (days since 1970-01-01, 1-based) plus seconds past midnight UTC.
   let scanTime = null;
@@ -341,6 +346,7 @@ async function fetchTracks(site) {
     cells,
     mesos,
     hail,
+    debris,
     generatedAt: new Date().toISOString(),
   };
   tracksCache.set(site, { value, expires: Date.now() + TRACKS_TTL_MS });
