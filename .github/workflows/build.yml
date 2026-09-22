@@ -1,0 +1,180 @@
+# Build artefacts from source, on every push to master:
+#
+#   1. the kiosk bundle (client/dist). It is COMMITTED — every kiosk serves
+#      it straight from `git pull` — and until this workflow existed it was
+#      built by hand on the maintainer's machine, which shipped a stale
+#      bundle once (CLAUDE.md, "The committed bundle can be a build of older
+#      source"). Now CI rebuilds it after every source push and commits the
+#      result back when it differs, so the committed bundle is always the
+#      build of the committed source, on one platform (terser's mangling
+#      differs between macOS and Linux, which is why CI could never
+#      byte-compare a hand-built bundle).
+#
+#   2. the signed Android APK. The upload key used to live only on the
+#      machine that built the last APK; here it is decoded from repository
+#      secrets, so any push can produce an installable update that Android
+#      accepts as the same app. Uploaded as a workflow artefact on every
+#      run, and published as a GitHub Release the first time a new
+#      versionName appears in app/android/app/build.gradle.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   base64 of app/android/app/sweep-release.jks
+#   ANDROID_KEYSTORE_PASSWORD storePassword from keystore.properties
+#   ANDROID_KEY_ALIAS         keyAlias from keystore.properties
+#   ANDROID_KEY_PASSWORD      keyPassword from keystore.properties
+# Without them the APK job builds nothing and says so; the bundle job is
+# unaffected.
+
+name: Build
+
+on:
+  push:
+    branches: [master]
+    # The bundle job's own commit says [skip ci]; this is the belt to that
+    # brace, so a dist-only push can never start another build.
+    paths-ignore:
+      - "client/dist/**"
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: kiosk bundle (client/dist)
+    runs-on: ubuntu-latest
+    outputs:
+      dist_sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Push back with the workflow token; branch protection must allow
+          # it (or grant a PAT here instead).
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+        working-directory: client
+      - run: npm run prod
+        working-directory: client
+      - name: Commit the rebuilt bundle when it differs
+        id: commit
+        run: |
+          if git diff --quiet -- client/dist && [ -z "$(git status --porcelain -- client/dist)" ]; then
+            echo "client/dist already matches the source ✓"
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A client/dist
+          git commit -m "Rebuild client bundle from $(git rev-parse --short "$GITHUB_SHA") [skip ci]"
+          git push origin HEAD:master
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "::notice::client/dist rebuilt and committed"
+
+  apk:
+    name: signed Android APK
+    runs-on: ubuntu-latest
+    needs: bundle
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.bundle.outputs.dist_sha }}
+      - name: Check signing secrets
+        id: secrets
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — skipping the APK build. Add the four ANDROID_* secrets to enable it."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            client/package-lock.json
+            app/package-lock.json
+      - uses: actions/setup-java@v4
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build the app web bundle
+        if: steps.secrets.outputs.present == 'true'
+        working-directory: client
+        run: |
+          npm ci
+          npm run app:build
+      - name: Sync into the Android project
+        if: steps.secrets.outputs.present == 'true'
+        working-directory: app
+        run: |
+          npm ci
+          npx cap sync android
+      - name: Restore the signing key
+        if: steps.secrets.outputs.present == 'true'
+        working-directory: app/android/app
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > sweep-release.jks
+          {
+            echo "storeFile=sweep-release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+      - name: Build the release APK
+        if: steps.secrets.outputs.present == 'true'
+        working-directory: app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease -q
+          VERSION=$(sed -n 's/^[[:space:]]*versionName "\(.*\)"/\1/p' app/build.gradle | head -1)
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+          cp app/build/outputs/apk/release/app-release.apk "Sweep-${VERSION}.apk"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "Sweep-${VERSION}.apk" | grep -i "sha-256"
+      - name: Remove the signing key from the runner
+        if: always() && steps.secrets.outputs.present == 'true'
+        working-directory: app/android/app
+        run: rm -f sweep-release.jks keystore.properties
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          name: Sweep-${{ env.version }}
+          path: app/android/Sweep-${{ env.version }}.apk
+          if-no-files-found: error
+      - name: Publish a release for a new version
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: app/android
+        run: |
+          TAG="app-v${version}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists — replacing its APK with this build"
+            gh release upload "$TAG" "Sweep-${version}.apk" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "Sweep-${version}.apk" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Sweep ${version}" \
+              --notes "Signed release APK built from ${GITHUB_SHA} by the Build workflow." \
+              --target "${{ needs.bundle.outputs.dist_sha }}"
+          fi

@@ -440,9 +440,36 @@ viewable fourth PRODUCT (`radarProduct: "N0C"`, dock glyph carbon
   cyan / yellow extremes. Same toward-green / away-red / grey-zero in both;
   RF purple in both.
 
+### Build workflow: bundle and APK from CI (2026-09-22)
+
+`.github/workflows/build.yml`, on every push to master:
+
+- **`bundle`** rebuilds `client/dist` and, when it differs from what is
+  committed, commits it back (`Rebuild client bundle from <sha> [skip
+  ci]`, `paths-ignore: client/dist/**` as the second guard against a loop).
+  This closes the stale-bundle trap below for good: the committed bundle is
+  always CI's build of the committed source, on one platform. Hand-built
+  bundles may still be committed (this container builds on Linux with the
+  same Node major, so they normally match byte-for-byte); if one differs,
+  CI replaces it once. The rule "rebuild dist last" still avoids a needless
+  bot commit but no longer guards correctness.
+- **`apk`** builds the app bundle, syncs Capacitor, restores the signing key
+  from four repository secrets (`ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`),
+  runs `assembleRelease`, verifies the signer, uploads `Sweep-<version>.apk`
+  as an artefact and publishes it to a GitHub Release tagged
+  `app-v<versionName>` (created on first sight of a version, APK replaced
+  on later builds of the same version). Without the secrets the job logs a
+  warning and builds nothing. The key must be the SAME keystore the phone's
+  installed app was signed with, or Android refuses the update.
+- Needs `contents: write` (granted in the workflow) and branch protection
+  that lets `github-actions[bot]` push to master.
+
 ### The committed bundle can be a build of older source (2026-09-06)
 
-Shipped this way and cost a debugging round. The dual-pol commit ran
+Shipped this way and cost a debugging round. **Superseded 2026-09-22 by the
+Build workflow above, which rebuilds and commits the bundle in CI.** The
+history is kept because it explains why the CI check compares file sets. The dual-pol commit ran
 `npm run prod`, then edited `useRadarRadial.js` again, then committed —
 so `client/dist/bundle.min.js` was a build of the code BEFORE the retry
 was added. Every kiosk served that. The symptom on the kiosk was the
@@ -1166,11 +1193,19 @@ Things established on the way:
   view leaves the margin or zoom moves ≥ 0.75. Lookup-only inner loop
   (mercator maths once per row/column) — tens of ms. A CONUS-wide canvas at
   useful resolution would have been ~46 MB decoded and mostly off screen.
-- **Type mosaic is NEWEST-ONLY.** Scrubbing history at mosaic zoom hides it
-  (legend: "Type mosaic shows the newest frame only") rather than draw a
-  "now" frame under a "-30 min" playhead. Site-zoom history DOES work
-  (`PTYPE&stamp=` through the loop hook). Adding mosaic history means a
-  `stamp` lookup over the day listing plus a second loop cache — deferred.
+- ~~**Type mosaic is NEWEST-ONLY.**~~ **Closed 2026-09-22:**
+  `/api/radar/precip-mosaic?stamp=` answers with the MRMS pair nearest the
+  stamp (±3 min; `keyNearest` over the cached day listing, rate matched to
+  the FLAG's time within 6 min), built payloads cached per flag file
+  (`BoundedMap(24)`), one in-flight build per stamp. Client:
+  `usePrecipMosaicLoop` keeps frames RUN-LENGTH ENCODED (~215 KB each;
+  eleven decoded fields would be ~66 MB on a phone) and WeatherMap decodes
+  the one under the playhead with `useMemo` (~10–20 ms). `PrecipMosaicLayer`
+  caches its rendered PNG per field key for the current view (14 entries),
+  so a loop pass renders each frame once and replays are instant swaps; it
+  stays MOUNTED with `field: null` while a frame is missing so that cache
+  survives. The legend's "no type frame for this time yet" note now means
+  exactly that.
 - **Legend clean line now needs `cleanApplied !== null`.** It used to say
   "Dual-pol clean" at mosaic zoom and in velocity mode, where the mask does
   not run; the hook now reports null for any non-reflectivity payload and
