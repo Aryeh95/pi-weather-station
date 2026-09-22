@@ -28,6 +28,11 @@ export const MAX_PX = 3072;
 // the rendered pixels are visibly coarser (or wastefully finer) than the
 // screen's.
 export const REZOOM_DELTA = 0.75;
+// Rendered images kept per field key for the CURRENT view: the eleven
+// loop frames plus the newest. A loop pass renders each frame once (a
+// 2560 × 1600 PNG encode is a few hundred ms on a phone); every pass after
+// that is an instant swap, exactly like the tile stacks' opacity flips.
+export const RENDER_CACHE_MAX = 14;
 
 const toMerc = (latDeg) => Math.asinh(Math.tan((latDeg * Math.PI) / 180));
 const fromMerc = (ym) => (Math.atan(Math.sinh(ym)) * 180) / Math.PI;
@@ -100,7 +105,7 @@ export function renderCovers(rendered, view, zoom) {
  * The MRMS precipitation-type mosaic as a viewport-fitted ImageOverlay.
  *
  * @param {Object} props
- * @param {Object} props.field decoded field from usePrecipMosaic
+ * @param {Object|null} props.field decoded field from usePrecipMosaic, or null to draw nothing (the layer stays mounted so its render cache survives a loop frame that has not arrived yet)
  * @param {Number} props.opacity overlay opacity (0 hides without unmounting)
  * @param {Number} [props.minDbz] noise-filter floor
  * @returns {JSX.Element|null} the overlay once rendered
@@ -108,39 +113,72 @@ export function renderCovers(rendered, view, zoom) {
 const PrecipMosaicLayer = ({ field, opacity, minDbz }) => {
   const map = useMap();
   const [img, setImg] = useState(null);
+  // The view the cache was rendered for; a move outside it empties the cache.
   const renderedRef = useRef(null);
-  const urlRef = useRef(null);
+  // field.key|minDbz → {url, bounds}; insertion order is eviction order.
+  const cacheRef = useRef(new Map());
   const aliveRef = useRef(true);
 
+  const clearCache = useCallback(() => {
+    for (const v of cacheRef.current.values()) URL.revokeObjectURL(v.url);
+    cacheRef.current.clear();
+  }, []);
+
   const render = useCallback(() => {
+    if (!field) {
+      setImg(null);
+      return;
+    }
     const size = map.getSize();
     if (size.x < 1 || size.y < 1) return;
+    const cacheKey = `${field.key}|${minDbz ?? "none"}`;
     const view = map.getBounds();
-    const padLat = (view.getNorth() - view.getSouth()) * PAD;
-    const padLon = (view.getEast() - view.getWest()) * PAD;
-    const bounds = {
-      south: Math.max(-85, view.getSouth() - padLat),
-      north: Math.min(85, view.getNorth() + padLat),
-      west: view.getWest() - padLon,
-      east: view.getEast() + padLon,
-    };
-    const width = Math.min(MAX_PX, Math.ceil(size.x * (1 + 2 * PAD)));
-    const height = Math.min(MAX_PX, Math.ceil(size.y * (1 + 2 * PAD)));
     const zoom = map.getZoom();
+    // Same view as the cache was built for, and this frame already drawn?
+    if (renderCovers(renderedRef.current, view, zoom) && cacheRef.current.has(cacheKey)) {
+      const hit = cacheRef.current.get(cacheKey);
+      setImg({ url: hit.url, bounds: hit.leaflet });
+      return;
+    }
+    if (!renderCovers(renderedRef.current, view, zoom)) {
+      // New view → every cached image is for the wrong place or scale.
+      clearCache();
+      const padLat = (view.getNorth() - view.getSouth()) * PAD;
+      const padLon = (view.getEast() - view.getWest()) * PAD;
+      renderedRef.current = {
+        bounds: {
+          south: Math.max(-85, view.getSouth() - padLat),
+          north: Math.min(85, view.getNorth() + padLat),
+          west: view.getWest() - padLon,
+          east: view.getEast() + padLon,
+        },
+        zoom,
+        width: Math.min(MAX_PX, Math.ceil(size.x * (1 + 2 * PAD))),
+        height: Math.min(MAX_PX, Math.ceil(size.y * (1 + 2 * PAD))),
+      };
+    }
+    const { bounds, width, height } = renderedRef.current;
     const canvas = renderPrecipCanvas(field, bounds, width, height, minDbz);
     canvas.toBlob((blob) => {
       if (!blob || !aliveRef.current) return;
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      // The view may have moved while encoding; a stale render must not
+      // enter the cache for the new view.
+      if (renderedRef.current && renderedRef.current.bounds !== bounds) return;
       const url = URL.createObjectURL(blob);
-      urlRef.current = url;
-      renderedRef.current = { bounds, zoom };
-      setImg({ url, bounds: [[bounds.south, bounds.west], [bounds.north, bounds.east]] });
+      const leaflet = [[bounds.south, bounds.west], [bounds.north, bounds.east]];
+      cacheRef.current.set(cacheKey, { url, leaflet });
+      while (cacheRef.current.size > RENDER_CACHE_MAX) {
+        const oldest = cacheRef.current.keys().next().value;
+        URL.revokeObjectURL(cacheRef.current.get(oldest).url);
+        cacheRef.current.delete(oldest);
+      }
+      setImg({ url, bounds: leaflet });
     }, "image/png");
-  }, [map, field, minDbz]);
+  }, [map, field, minDbz, clearCache]);
 
-  // New field or filter state: always repaint.
+  // New field (a loop frame, a new scan) or filter state: paint it — from
+  // the cache when this view has seen it before.
   useEffect(() => {
-    renderedRef.current = null;
     render();
   }, [render]);
 
@@ -154,8 +192,8 @@ const PrecipMosaicLayer = ({ field, opacity, minDbz }) => {
 
   useEffect(() => () => {
     aliveRef.current = false;
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-  }, []);
+    clearCache();
+  }, [clearCache]);
 
   if (!img) return null;
   // Keyed on the URL so a repaint swaps the bitmap atomically rather than
@@ -167,8 +205,8 @@ PrecipMosaicLayer.propTypes = {
   field: PropTypes.shape({
     grid: PropTypes.object.isRequired,
     cells: PropTypes.instanceOf(Uint8Array).isRequired,
-    key: PropTypes.string,
-  }).isRequired,
+    key: PropTypes.string.isRequired,
+  }),
   opacity: PropTypes.number.isRequired,
   minDbz: PropTypes.number,
 };

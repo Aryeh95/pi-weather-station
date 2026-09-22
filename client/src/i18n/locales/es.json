@@ -423,7 +423,7 @@
     "legendPtypeSite": "Radar dual-pol · en altura, elevación 0,5°",
     "legendPtypeMosaic": "MRMS · en superficie",
     "legendPtypeUnavailable": "Este radar no publica clasificación",
-    "legendPtypeNoHistory": "El mosaico de tipo solo muestra el fotograma más reciente",
+    "legendPtypeNoHistory": "Aún no hay fotograma de tipo para esta hora",
     "agePrecipType": "TIPO",
     "ageMosaicPrecip": "Mosaico de tipo",
     "legendCorrelation": "Coeficiente de correlación",

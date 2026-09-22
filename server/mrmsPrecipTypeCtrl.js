@@ -28,7 +28,8 @@
 
 const { recordServiceCall } = require("./serviceStatus");
 const { increment } = require("./requestCounter");
-const { latestKey, fetchGrid } = require("./mrmsHailCtrl");
+const { latestKey, keyNearest, keyValidTime, fetchGrid } = require("./mrmsHailCtrl");
+const { BoundedMap } = require("./boundedCache");
 const precipType = require("./precipType");
 
 const SERVICE_NAME = "MRMS (precip type)";
@@ -48,9 +49,15 @@ const RATE_UNKNOWN_TIER = 5;
 // between the newest of each before calling the rate stale.
 const RATE_SKEW_MAX_MS = 6 * 60 * 1000;
 
-// Latest built payload, keyed by the flag file it came from.
-let payloadCache = null;
-let inflight = null;
+// A historical frame: the flag file nearest the requested stamp, within
+// this window. MRMS writes every 2 min, so a 3-min window always finds the
+// neighbour of an on-time stamp and refuses one that fell in an outage.
+const STAMP_WINDOW_MS = 3 * 60 * 1000;
+
+// Built payloads keyed by the flag file they came from — the newest one
+// and the loop's history frames (11 mosaic offsets) share this.
+const payloadCache = new BoundedMap(24);
+const inflight = new Map();
 
 /**
  * Reduce a PrecipFlag grid (+ optional PrecipRate grid) to encoded cells.
@@ -125,23 +132,24 @@ function buildCells(flag, rate, step = GRID_STEP) {
 }
 
 /**
- * Build the payload for the newest flag (+ rate) pair.
+ * Build the payload for one flag file (+ its nearest rate file).
  *
+ * @param {String} flagKey PrecipFlag bucket key
+ * @param {String|null} [stamp] the frame stamp this answers, echoed back
  * @returns {Promise<Object>} payload for /api/radar/precip-mosaic
  */
-async function buildPayload() {
-  const flagKey = await latestKey(PRODUCTS.flag);
-  if (!flagKey) {
-    recordServiceCall(SERVICE_NAME, 200, "no PrecipFlag in the bucket");
-    return { available: false, source: "MRMS", reason: "no-recent-product" };
-  }
-  if (payloadCache && payloadCache.flagKey === flagKey && payloadCache.expires > Date.now()) {
-    return payloadCache.value;
-  }
+async function buildPayloadFor(flagKey, stamp = null) {
+  const hit = payloadCache.get(flagKey);
+  if (hit && hit.expires > Date.now()) return stamp ? { ...hit.value, stamp } : hit.value;
+  const flagEpochFromKey = Date.parse(keyValidTime(flagKey) || "");
   const [flag, rate] = await Promise.all([
     fetchGrid(flagKey, "precip-flag"),
-    // The rate is the bonus: its failure must not take the type down.
-    latestKey(PRODUCTS.rate)
+    // The rate is the bonus: its failure must not take the type down. For
+    // the newest frame it is the newest rate file; for a historical one,
+    // the rate file nearest the flag's own time.
+    (Number.isFinite(flagEpochFromKey)
+      ? keyNearest(PRODUCTS.rate, flagEpochFromKey, RATE_SKEW_MAX_MS)
+      : latestKey(PRODUCTS.rate))
       .then((k) => (k ? fetchGrid(k, "precip-rate") : null))
       .catch((err) => {
         recordServiceCall(SERVICE_NAME, err?.response?.status || 500, `PrecipRate unavailable: ${err.message}`);
@@ -169,26 +177,69 @@ async function buildPayload() {
     drawn,
     data: Buffer.from(precipType.rleEncode(cells)).toString("base64"),
   };
-  payloadCache = { flagKey, value, expires: Date.now() + PAYLOAD_TTL_MS };
+  payloadCache.set(flagKey, { value, expires: Date.now() + PAYLOAD_TTL_MS });
   recordServiceCall(SERVICE_NAME, 200, `${drawn} typed cells in ${value.key}${rateUsable ? "" : " (no rate)"}`);
-  return value;
+  return stamp ? { ...value, stamp } : value;
 }
 
 /**
- * GET /api/radar/precip-mosaic
+ * Parse a "YYYYMMDDHHMM" UTC frame stamp.
  *
- * Newest MRMS surface precipitation type over CONUS, 2 km cells, one byte
- * per cell in the shared class/tier encoding, run-length encoded. No
- * parameters — the whole grid is small enough to ship and the client
- * paints only its viewport from it.
+ * @param {String} stamp 12 digits
+ * @returns {Number} epoch ms, NaN when malformed
+ */
+function stampEpoch(stamp) {
+  if (!/^\d{12}$/.test(stamp || "")) return NaN;
+  return Date.UTC(+stamp.slice(0, 4), +stamp.slice(4, 6) - 1, +stamp.slice(6, 8), +stamp.slice(8, 10), +stamp.slice(10, 12));
+}
+
+/**
+ * The payload for the newest frame, or for the frame nearest a stamp.
+ *
+ * @param {String|null} [stamp] "YYYYMMDDHHMM" UTC, or null for newest
+ * @returns {Promise<Object>} payload for /api/radar/precip-mosaic
+ */
+async function buildPayload(stamp = null) {
+  let flagKey;
+  if (stamp) {
+    flagKey = await keyNearest(PRODUCTS.flag, stampEpoch(stamp), STAMP_WINDOW_MS);
+    if (!flagKey) {
+      recordServiceCall(SERVICE_NAME, 200, `no PrecipFlag within ${STAMP_WINDOW_MS / 60000} min of ${stamp}`);
+      return { available: false, source: "MRMS", stamp, reason: "no-matching-frame" };
+    }
+  } else {
+    flagKey = await latestKey(PRODUCTS.flag);
+    if (!flagKey) {
+      recordServiceCall(SERVICE_NAME, 200, "no PrecipFlag in the bucket");
+      return { available: false, source: "MRMS", reason: "no-recent-product" };
+    }
+  }
+  return buildPayloadFor(flagKey, stamp);
+}
+
+/**
+ * GET /api/radar/precip-mosaic[?stamp=YYYYMMDDHHMM]
+ *
+ * MRMS surface precipitation type over CONUS, 2 km cells, one byte per
+ * cell in the shared class/tier encoding, run-length encoded. Without
+ * `stamp`, the newest frame; with it, the frame nearest that UTC minute
+ * (within 3 min) — how the low-zoom loop plays history. The whole grid is
+ * small enough to ship and the client paints only its viewport from it.
  *
  * @param {Object} req
  * @param {Object} res
  */
 async function getPrecipMosaic(req, res) {
+  const stamp = req.query.stamp !== undefined ? String(req.query.stamp).trim() : null;
+  if (stamp !== null && !Number.isFinite(stampEpoch(stamp))) {
+    return res.status(400).json("Invalid stamp").end();
+  }
+  const flightKey = stamp || "latest";
   try {
-    if (!inflight) inflight = buildPayload().finally(() => { inflight = null; });
-    const payload = await inflight;
+    if (!inflight.has(flightKey)) {
+      inflight.set(flightKey, buildPayload(stamp).finally(() => inflight.delete(flightKey)));
+    }
+    const payload = await inflight.get(flightKey);
     return res.status(200).json(payload).end();
   } catch (err) {
     const status = err?.response?.status || 500;
@@ -201,6 +252,8 @@ module.exports = {
   getPrecipMosaic,
   // Exported for tests.
   buildCells,
+  stampEpoch,
+  STAMP_WINDOW_MS,
   PRODUCTS,
   GRID_STEP,
   RATE_UNKNOWN_TIER,

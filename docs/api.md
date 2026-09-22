@@ -344,8 +344,15 @@ precipitation-type mode, replacing the N0Q reflectivity mosaic while the
 mode is on.
 
 - **Access:** 🌐 Public — rate limited
-- **Query params:** none. The whole grid ships; the client paints only its
-  viewport from it (`PrecipMosaicLayer`).
+- **Query params:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `stamp` | — | `YYYYMMDDHHMM` UTC: the frame nearest that minute (within 3 min) instead of the newest — how the low-zoom loop plays history (added 2026-09-22). Echoed back as `stamp`. |
+
+  The whole grid ships; the client paints only its viewport from it
+  (`PrecipMosaicLayer`). With `stamp`, the rate file is the one nearest the
+  FLAG file's own time (within 6 min), not the newest.
 - **Source:** `CONUS/PrecipFlag_00.00` (surface type: uses model temperature
   profiles, so it answers "rain or snow at the ground", unlike N0H's verdict
   aloft) and `CONUS/PrecipRate_00.00` (intensity) on the public
@@ -386,9 +393,10 @@ mode is on.
   every drawn cell at `rate.unknownTier` (5, a moderate shade) and
   `rate.available: false`, so an outage of one product does not read as
   drizzle everywhere or as no precipitation.
-- **Errors:** HTTP 503 on upstream failure; `{"available": false, "reason":
-  "no-recent-product"}` (200) when the bucket has no PrecipFlag for today or
-  yesterday.
+- **Errors:** HTTP 400 on a malformed `stamp`; HTTP 503 on upstream
+  failure; `{"available": false, "reason": "no-recent-product"}` (200) when
+  the bucket has no PrecipFlag for today or yesterday, `"no-matching-frame"`
+  when nothing lies within 3 min of a `stamp`.
 
 ### `GET /api/storm-tracks?site=DIX`
 

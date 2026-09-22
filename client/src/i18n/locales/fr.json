@@ -423,7 +423,7 @@
     "legendPtypeSite": "Radar double polarisation · en altitude, site 0,5°",
     "legendPtypeMosaic": "MRMS · au sol",
     "legendPtypeUnavailable": "Ce radar ne publie pas de classification",
-    "legendPtypeNoHistory": "La mosaïque de type n'affiche que la dernière image",
+    "legendPtypeNoHistory": "Pas encore d'image de type pour cet instant",
     "agePrecipType": "TYPE",
     "ageMosaicPrecip": "Mosaïque de type",
     "legendCorrelation": "Coefficient de corrélation",

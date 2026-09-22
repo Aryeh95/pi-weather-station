@@ -349,3 +349,31 @@ test("buildCells refuses a rate grid on a different geometry", () => {
   const rate = { g: { ...g, ni: 3 }, samples: new Uint16Array(6) };
   assert.throws(() => buildCells(flag, rate), /does not match/);
 });
+
+
+// ── History (stamp lookup), 2026-09-22 ─────────────────────────────────
+
+test("precip-mosaic stamp parsing: 12 UTC digits or nothing", () => {
+  const { stampEpoch, STAMP_WINDOW_MS } = require("../server/mrmsPrecipTypeCtrl");
+  assert.equal(stampEpoch("202609220614"), Date.UTC(2026, 8, 22, 6, 14));
+  assert.ok(Number.isNaN(stampEpoch("2026092206")));
+  assert.ok(Number.isNaN(stampEpoch("abc")));
+  assert.ok(Number.isNaN(stampEpoch(undefined)));
+  // MRMS writes every 2 min; the window must always reach the neighbour of
+  // an on-time stamp and must not reach across an outage.
+  assert.ok(STAMP_WINDOW_MS >= 2 * 60 * 1000 && STAMP_WINDOW_MS <= 5 * 60 * 1000);
+});
+
+test("precip-mosaic route rejects a malformed stamp before touching the bucket", async () => {
+  const { getPrecipMosaic } = require("../server/mrmsPrecipTypeCtrl");
+  const res = { status(s) { this.s = s; return this; }, json(b) { this.b = b; return this; }, end() { return this; } };
+  await getPrecipMosaic({ query: { stamp: "2026-09-22" } }, res);
+  assert.equal(res.s, 400);
+});
+
+test("MRMS key validity time parses for every product name shape", () => {
+  const { keyValidTime } = require("../server/mrmsHailCtrl");
+  assert.equal(keyValidTime("CONUS/PrecipFlag_00.00/20260922/MRMS_PrecipFlag_00.00_20260922-061400.grib2.gz"), "2026-09-22T06:14:00.000Z");
+  assert.equal(keyValidTime("CONUS/MESH_00.50/20260903/MRMS_MESH_00.50_20260903-133641.grib2.gz"), "2026-09-03T13:36:41.000Z");
+  assert.equal(keyValidTime("nonsense"), null);
+});

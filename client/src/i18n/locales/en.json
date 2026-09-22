@@ -423,7 +423,7 @@
     "legendPtypeSite": "Radar dual-pol · aloft at the 0.5° tilt",
     "legendPtypeMosaic": "MRMS · at the surface",
     "legendPtypeUnavailable": "No classification published by this radar",
-    "legendPtypeNoHistory": "Type mosaic shows the newest frame only",
+    "legendPtypeNoHistory": "No type frame for this time yet",
     "agePrecipType": "TYPE",
     "ageMosaicPrecip": "Type mosaic",
     "legendCorrelation": "Correlation coefficient",

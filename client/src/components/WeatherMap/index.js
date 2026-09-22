@@ -82,6 +82,8 @@ import { homeSiteCoversView } from "./radarSites";
 import StormTracks from "./StormTracks";
 import FilteredTileLayer from "./FilteredTileLayer";
 import usePrecipMosaic from "./usePrecipMosaic";
+import usePrecipMosaicLoop from "./usePrecipMosaicLoop";
+import { rleDecode } from "../../../../server/precipType";
 import PrecipMosaicLayer from "./PrecipMosaicLayer";
 import { NOISE_FILTER_MIN_DBZ } from "./radialRender";
 import { noiseFloorOn, dualPolCleanOn } from "~/ui/radarNoise";
@@ -1077,6 +1079,18 @@ const WeatherMap = ({ zoom, dark }) => {
     enabled: radarPrecipType && iemVisible.mosaic,
     paused: pollingPaused,
   });
+  // Frame stamps for the type mosaic's history — the same rule as the
+  // radial loop: PLAYING wants every mosaic frame but the newest (the live
+  // poll covers that one); SCRUBBING wants only the frame under the
+  // playhead. Each stamp is a mosaic frame's UTC minute; the server
+  // answers with the MRMS pair nearest it. Defined here, before the
+  // playhead maths below, so the hook's dependency list is stable.
+  const [precipLoopStamps, setPrecipLoopStamps] = useState([]);
+  const precipLoop = usePrecipMosaicLoop({
+    stamps: precipLoopStamps,
+    enabled: radarPrecipType && iemVisible.mosaic && radarTimelineVisible,
+    paused: pollingPaused,
+  });
 
   // Raw-radial layer (RadarScope-parity path). Enabled whenever the
   // single-site band is in view; the expensive render only happens when
@@ -1232,9 +1246,30 @@ const WeatherMap = ({ zoom, dark }) => {
   // tracks report their product's scan time; lightning the newest flash.
   const siteRowShown = iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
     && (radialShown || showIemSite || radarVelocity || radarPrecipType || radarCorrelation || currentLoopRadial);
-  // In precipitation-type mode the mosaic row is the MRMS field's, and only
-  // while that field is what is drawn (playhead on "latest").
-  const precipMosaicShown = radarPrecipType && iemVisible.mosaic && Boolean(precipMosaic.field) && iemFromEnd === 0;
+  // In precipitation-type mode the mosaic row is the MRMS field's — the
+  // live one on "latest", the loop frame nearest the playhead otherwise.
+  const stampOf = (epoch) => new Date(epoch).toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  const wantedPrecipStamps = useMemo(() => {
+    if (!radarPrecipType || !iemVisible.mosaic || !radarTimelineVisible) return [];
+    if (loopActive) return iemMosaicFrames.slice(0, -1).map((f) => stampOf(f.epoch)).reverse();
+    return (currentMosaicFrame && iemFromEnd > 0) ? [stampOf(currentMosaicFrame.epoch)] : [];
+  }, [radarPrecipType, iemVisible.mosaic, radarTimelineVisible, loopActive, iemMosaicFrames, currentMosaicFrame, iemFromEnd]);
+  useEffect(() => {
+    setPrecipLoopStamps((prev) => (prev.join(",") === wantedPrecipStamps.join(",") ? prev : wantedPrecipStamps));
+  }, [wantedPrecipStamps]);
+  const precipCurrentStamp = (iemFromEnd > 0 && currentMosaicFrame) ? stampOf(currentMosaicFrame.epoch) : null;
+  const precipLoopEntry = precipCurrentStamp ? precipLoop.byStamp[precipCurrentStamp] : null;
+  // Decoded on demand, one frame at a time (~6 MB), rather than keeping
+  // eleven decoded CONUS fields resident.
+  const precipLoopField = useMemo(() => (precipLoopEntry ? {
+    key: precipLoopEntry.key,
+    grid: precipLoopEntry.grid,
+    cells: rleDecode(precipLoopEntry.rle, precipLoopEntry.grid.ni * precipLoopEntry.grid.nj),
+    validTime: precipLoopEntry.validTime,
+    rateAvailable: precipLoopEntry.rateAvailable,
+  } : null), [precipLoopEntry]);
+  const precipDisplayField = iemFromEnd === 0 ? precipMosaic.field : precipLoopField;
+  const precipMosaicShown = radarPrecipType && iemVisible.mosaic && Boolean(precipDisplayField);
   const mosaicRowShown = radarPrecipType
     ? precipMosaicShown
     : (iemVisible.mosaic && Boolean(currentMosaicFrame));
@@ -1265,9 +1300,9 @@ const WeatherMap = ({ zoom, dark }) => {
     ageRows.push({
       key: "mosaic",
       label: t("radar.ageMosaicPrecip"),
-      epoch: Date.parse(precipMosaic.field.validTime),
+      epoch: Date.parse(precipDisplayField.validTime),
       approximate: false,
-      sourceStale: precipMosaic.stale,
+      sourceStale: iemFromEnd === 0 && precipMosaic.stale,
     });
   } else if (mosaicRowShown) {
     ageRows.push({
@@ -1702,10 +1737,10 @@ const WeatherMap = ({ zoom, dark }) => {
           * (250): above the basemap, below the site layer, which paints
           * over it through the crossfade exactly as the tiles would. */}
         <Pane name="precipMosaicPane" style={{ zIndex: 240 }}>
-          {radarPrecipType && iemVisible.mosaic && precipMosaic.field ? (
+          {radarPrecipType && iemVisible.mosaic ? (
             <PrecipMosaicLayer
-              field={precipMosaic.field}
-              opacity={iemFromEnd === 0 ? iemOpacity.mosaic : 0}
+              field={precipDisplayField}
+              opacity={iemOpacity.mosaic}
               minDbz={noiseFloorOn(radarNoiseMode) && !dualPolCleanOn(radarNoiseMode) ? NOISE_FILTER_MIN_DBZ : undefined}
             />
           ) : null}
@@ -1945,7 +1980,9 @@ const WeatherMap = ({ zoom, dark }) => {
             siteInView: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
             siteUnavailable: !radial.url && Boolean(radial.unavailable),
             mosaicInView: iemVisible.mosaic,
-            historyHidden: iemVisible.mosaic && iemFromEnd > 0,
+            // A past frame the loop has not fetched yet (or MRMS has no
+            // file for) draws nothing; say so rather than leave a blank.
+            historyHidden: iemVisible.mosaic && iemFromEnd > 0 && !precipLoopField,
           } : null}
         />
       )}

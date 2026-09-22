@@ -91,6 +91,30 @@ function keyValidTime(key) {
 }
 
 /**
+ * Every key in one UTC day folder of a product, in bucket (chronological)
+ * order. Cached briefly per product + day; a closed day is immutable but
+ * the cache is small enough that one TTL serves both.
+ *
+ * @param {String} product bucket prefix (see PRODUCTS)
+ * @param {Date} day any instant on the UTC day to list
+ * @returns {Promise<Array<String>>} keys, possibly empty
+ */
+async function listDayKeys(product, day) {
+  const cacheKey = `${product}/${dayFolder(day)}`;
+  const hit = listCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const res = await axios.get(BUCKET_BASE, {
+    params: { "list-type": 2, prefix: `${cacheKey}/`, "max-keys": 1000 },
+    timeout: API_TIMEOUT_MS,
+    responseType: "text",
+  });
+  increment("mrms", "list");
+  const keys = [...String(res.data).matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]);
+  listCache.set(cacheKey, { value: keys, expires: Date.now() + LIST_TTL_MS });
+  return keys;
+}
+
+/**
  * Newest key for a product, looking at today's folder and, around
  * midnight UTC, yesterday's.
  *
@@ -98,26 +122,46 @@ function keyValidTime(key) {
  * @returns {Promise<String|null>}
  */
 async function latestKey(product) {
-  const hit = listCache.get(product);
-  if (hit && hit.expires > Date.now()) return hit.value;
   const now = new Date();
-  let best = null;
   for (const d of [now, new Date(now.getTime() - 86_400_000)]) {
     // eslint-disable-next-line no-await-in-loop -- stop at the first day with data
-    const res = await axios.get(BUCKET_BASE, {
-      params: { "list-type": 2, prefix: `${product}/${dayFolder(d)}/`, "max-keys": 1000 },
-      timeout: API_TIMEOUT_MS,
-      responseType: "text",
-    });
-    increment("mrms", "list");
-    const keys = [...String(res.data).matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]);
-    if (keys.length) {
-      best = keys[keys.length - 1];
-      break;
+    const keys = await listDayKeys(product, d);
+    if (keys.length) return keys[keys.length - 1];
+  }
+  return null;
+}
+
+/**
+ * The key whose validity time is nearest to `epochMs`, within `windowMs`.
+ * Looks at the day folder of the instant and, near midnight UTC, at the
+ * neighbouring one.
+ *
+ * @param {String} product bucket prefix (see PRODUCTS)
+ * @param {Number} epochMs target instant
+ * @param {Number} windowMs largest |Δt| accepted
+ * @returns {Promise<String|null>}
+ */
+async function keyNearest(product, epochMs, windowMs) {
+  const days = [new Date(epochMs)];
+  const h = new Date(epochMs).getUTCHours();
+  if (h === 0) days.push(new Date(epochMs - 86_400_000));
+  if (h === 23) days.push(new Date(epochMs + 86_400_000));
+  let best = null;
+  let bestDt = Infinity;
+  for (const d of days) {
+    // eslint-disable-next-line no-await-in-loop -- at most two small listings
+    const keys = await listDayKeys(product, d);
+    for (const k of keys) {
+      const t = Date.parse(keyValidTime(k) || "");
+      if (!Number.isFinite(t)) continue;
+      const dt = Math.abs(t - epochMs);
+      if (dt < bestDt) {
+        best = k;
+        bestDt = dt;
+      }
     }
   }
-  listCache.set(product, { value: best, expires: Date.now() + LIST_TTL_MS });
-  return best;
+  return bestDt <= windowMs ? best : null;
 }
 
 /**
@@ -391,6 +435,8 @@ module.exports = {
   attachHail,
   // Shared with mrmsPrecipTypeCtrl.
   latestKey,
+  listDayKeys,
+  keyNearest,
   fetchGrid,
   // Exported for tests.
   parseGrib2,
