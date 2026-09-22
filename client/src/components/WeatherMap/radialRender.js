@@ -78,6 +78,11 @@ export function floorFor(d, noiseFilter, dualPolClean) {
   return NOISE_FILTER_MIN_DBZ;
 }
 
+// Palette ids live in ui/radarPalette.js; the ramps live here with the
+// renderer that paints them.
+//
+// NWS / IEM classic — also the palette IEM's tiles are pre-painted in, so
+// with this selected the tiles pass through untouched.
 export const DBZ_STOPS = [
   [0, 90, 95, 115, 70],
   [5, 4, 233, 231, 190],
@@ -96,6 +101,43 @@ export const DBZ_STOPS = [
   [70, 152, 84, 198, 255],
   [75, 253, 253, 253, 255],
 ];
+
+// RadarScope-style reflectivity. An approximation from the published scale
+// bar (2026-09-22), not RadarScope's own table: weak echo in whites and
+// greys that recede rather than shout, greens from 20 dBZ, then yellow →
+// orange → red → dark red → magenta → purple → cyan → brown. Below −30 dBZ
+// transparent; the faint white wash between −30 and 15 is what RadarScope
+// shows for clear-air return with no filter on.
+export const SCOPE_STOPS = [
+  [-30, 255, 255, 255, 30],
+  [-10, 235, 235, 235, 90],
+  [0, 215, 215, 215, 140],
+  [5, 190, 192, 198, 180],
+  [10, 160, 165, 180, 215],
+  [15, 125, 135, 165, 240],
+  [20, 45, 130, 45, 255],
+  [25, 40, 165, 40, 255],
+  [30, 70, 205, 60, 255],
+  [35, 240, 240, 30, 255],
+  [40, 255, 190, 0, 255],
+  [45, 255, 120, 0, 255],
+  [50, 230, 20, 20, 255],
+  [55, 160, 0, 0, 255],
+  [60, 225, 0, 225, 255],
+  [65, 140, 0, 210, 255],
+  [70, 0, 230, 240, 255],
+  [75, 110, 20, 20, 255],
+];
+
+/**
+ * The reflectivity stop table for a palette id.
+ *
+ * @param {String} [palette] "nws" or "scope" (anything else → scope, the default)
+ * @returns {Array<Array<Number>>} [dBZ, r, g, b, a] rows
+ */
+export function stopsForPalette(palette) {
+  return palette === "nws" ? DBZ_STOPS : SCOPE_STOPS;
+}
 
 // Base velocity ramp, m/s: [value, r, g, b, a]. Meteorological convention
 // — NEGATIVE is motion TOWARD the radar (greens, cooling to cyan at the
@@ -148,13 +190,14 @@ export function colorForValue(stops, v) {
 }
 
 /**
- * RGBA for a reflectivity value, interpolated along DBZ_STOPS.
+ * RGBA for a reflectivity value, interpolated along the palette's stops.
  *
  * @param {Number} dbz reflectivity
+ * @param {String} [palette] "nws" or "scope"
  * @returns {[Number, Number, Number, Number]} [r, g, b, a] 0-255
  */
-export function colorForDbz(dbz) {
-  return colorForValue(DBZ_STOPS, dbz);
+export function colorForDbz(dbz, palette = "nws") {
+  return colorForValue(stopsForPalette(palette), dbz);
 }
 
 /**
@@ -186,9 +229,10 @@ export function colorForVelocity(ms) {
  * @param {{min: Number, increment: Number}} scaling from /api/radar/radial
  * @param {Number} [minDbz] hide reflectivity below this value
  * @param {String} [kind] "reflectivity" (default), "velocity" or "precip"
+ * @param {String} [palette] reflectivity palette id (see ui/radarPalette.js)
  * @returns {Uint8ClampedArray} 256 × 4 RGBA entries
  */
-export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
+export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity", palette = "nws") {
   if (kind === "precip") return buildPrecipLut(minDbz);
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
@@ -198,7 +242,7 @@ export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity"
   for (let level = 2; level < 256; level += 1) {
     const v = scaling.min + level * scaling.increment;
     if (!velocity && v < minDbz) continue;
-    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v);
+    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v, palette);
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -241,14 +285,15 @@ export function radialBounds(lat, lon) {
  * @param {Object} data /api/radar/radial payload (bins already decoded); `kind` picks the ramp
  * @param {Uint8Array} bins raw levels, numBuckets × numBins
  * @param {Number} [minDbz] noise-filter floor passed through to the LUT (reflectivity only)
+ * @param {String} [palette] reflectivity palette id (reflectivity only)
  * @returns {{canvas: HTMLCanvasElement, bounds: Array}} drawable + corners
  */
-export function renderRadialImage(data, bins, minDbz) {
+export function renderRadialImage(data, bins, minDbz, palette = "nws") {
   const size = RADIAL_CANVAS_PX;
   const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling, kind } = data;
   const velocity = kind === "velocity";
   const precip = kind === "precip";
-  const lut = buildLevelLut(scaling, minDbz, precip ? "precip" : (velocity ? "velocity" : "reflectivity"));
+  const lut = buildLevelLut(scaling, minDbz, precip ? "precip" : (velocity ? "velocity" : "reflectivity"), palette);
   // Reflectivity skips the two reserved levels outright; velocity keeps
   // level 1 (range folded) because the LUT paints it; precipitation type
   // has only level 0 reserved and lets the LUT decide the rest.

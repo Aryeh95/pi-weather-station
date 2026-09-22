@@ -6,7 +6,7 @@ import { AlertsContext, UiPrefsContext } from "~/AppContext";
 import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
-import { DBZ_STOPS, VEL_STOPS } from "./radialRender";
+import { VEL_STOPS, colorForDbz } from "./radialRender";
 import { GROUPS as PTYPE_GROUPS, colorForGate, encodeGate } from "../../../../server/precipType";
 
 // Tiers sampled for each precipitation-type ramp in the legend: 7.5 to
@@ -27,18 +27,28 @@ const WARNING_KEY = [
   { swatch: "alertTierSwatchFfw", key: "legendFlood" },
 ];
 
+// The reflectivity bar samples the active palette every 5 dBZ from 0 to
+// 75, so the "0 · 20 · 40 · 60 · 75" labels under it line up whichever
+// palette is on (the RadarScope-style table starts at −30, the NWS one at 0).
+const SCALE_DBZ = Array.from({ length: 16 }, (_, i) => i * 5);
+
 /**
- * 16-segment reflectivity colour bar matching DBZ_STOPS in radialRender.js.
+ * 16-segment reflectivity colour bar in the active palette.
  *
+ * @param {object} props
+ * @param {string} props.palette reflectivity palette id
  * @returns {JSX.Element} Scale bar
  */
-const PrecipScale = () => (
+const PrecipScale = ({ palette }) => (
   <span className={styles.precipScale} aria-hidden="true">
-    {DBZ_STOPS.map(([dbz, r, g, b]) => (
-      <span key={dbz} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />
-    ))}
+    {SCALE_DBZ.map((dbz) => {
+      const [r, g, b] = colorForDbz(dbz, palette);
+      return <span key={dbz} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />;
+    })}
   </span>
 );
+
+PrecipScale.propTypes = { palette: PropTypes.string };
 
 /**
  * Precipitation-type ramps, one row per group (rain, snow, mix, graupel,
@@ -130,6 +140,7 @@ const RadarLegend = ({
     nearbyResidualCount,
     alertRadiusKm,
     radarNoiseMode,
+    radarPalette,
   } = useContext(AlertsContext);
   const { distanceUnit } = useContext(UiPrefsContext);
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -189,7 +200,7 @@ const RadarLegend = ({
       ) : (
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.legendPrecip")}</div>
-          <PrecipScale />
+          <PrecipScale palette={radarPalette} />
           <div className={styles.scaleLabels}>
             <span>0</span>
             <span>20</span>
@@ -270,7 +281,7 @@ const RadarLegend = ({
           title={t("radar.legendOpen")}
         >
           <span className={styles.legendChipI} aria-hidden="true">i</span>
-          {precip ? <PrecipTypeScale /> : <PrecipScale />}
+          {precip ? <PrecipTypeScale /> : <PrecipScale palette={radarPalette} />}
           {t("radar.legendTitle")}
         </button>
       ) : (
@@ -279,7 +290,7 @@ const RadarLegend = ({
         </div>
       )}
       <div className={styles.legendMobileStrip}>
-        {precip ? <PrecipTypeScale /> : <PrecipScale />}
+        {precip ? <PrecipTypeScale /> : <PrecipScale palette={radarPalette} />}
         {showWeatherAlerts && nearbyCount > 0 ? (
           <span className={styles.legendMobileAlert}>
             <svg viewBox="0 0 18 16" aria-hidden="true">

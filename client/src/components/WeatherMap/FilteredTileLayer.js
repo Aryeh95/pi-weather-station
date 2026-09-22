@@ -25,6 +25,7 @@
 import L from "leaflet";
 import { createLayerComponent, updateGridLayer } from "@react-leaflet/core";
 import palette from "./iemN0qPalette.json";
+import { colorForDbz } from "./radialRender";
 
 /**
  * Pack an RGB triple into one integer key.
@@ -41,25 +42,59 @@ function rgbKey(r, g, b) {
 // Colour → dBZ, built once from IEM's table.
 const DBZ_BY_COLOR = new Map(palette.map(([dbz, r, g, b]) => [rgbKey(r, g, b), dbz]));
 
+// Recolouring tables per palette id: IEM colour → this palette's RGBA for
+// the same dBZ. The tiles ARE the NWS palette, so "nws" needs no table and
+// the pixels pass through; any other palette is repainted through the same
+// exact colour → dBZ lookup the filter uses. Built lazily, once per id.
+const RECOLOR_BY_PALETTE = new Map();
+
 /**
- * Make every pixel below `minDbz` transparent, in place.
+ * The recolouring table for a palette id, or null when none is needed.
+ *
+ * @param {String} [paletteId] reflectivity palette id (ui/radarPalette.js)
+ * @returns {Map<Number, Array<Number>>|null} IEM colour key → [r, g, b, a]
+ */
+export function recolorTable(paletteId) {
+  if (!paletteId || paletteId === "nws") return null;
+  let table = RECOLOR_BY_PALETTE.get(paletteId);
+  if (!table) {
+    table = new Map(palette.map(([dbz, r, g, b]) => [rgbKey(r, g, b), colorForDbz(dbz, paletteId)]));
+    RECOLOR_BY_PALETTE.set(paletteId, table);
+  }
+  return table;
+}
+
+/**
+ * Make every pixel below `minDbz` transparent, and repaint the rest in
+ * another palette when one is given — in place.
  *
  * Exported for tests: pure function over an RGBA buffer.
  *
  * @param {Uint8ClampedArray} rgba canvas pixel data
- * @param {Number} minDbz threshold; pixels decoding below it are cleared
+ * @param {Number} minDbz threshold; pixels decoding below it are cleared (−Infinity clears none)
+ * @param {Map<Number, Array<Number>>|null} [recolor] IEM colour key → replacement RGBA (see recolorTable)
  * @returns {Number} how many pixels were cleared
  */
-export function filterPixels(rgba, minDbz) {
+export function filterPixels(rgba, minDbz, recolor = null) {
   let cleared = 0;
   // Most of a radar tile is transparent; the alpha check first keeps the
   // Map lookup off the hot path for those pixels.
   for (let i = 0; i < rgba.length; i += 4) {
     if (rgba[i + 3] === 0) continue;
-    const dbz = DBZ_BY_COLOR.get(rgbKey(rgba[i], rgba[i + 1], rgba[i + 2]));
-    if (dbz !== undefined && dbz < minDbz) {
+    const key = rgbKey(rgba[i], rgba[i + 1], rgba[i + 2]);
+    const dbz = DBZ_BY_COLOR.get(key);
+    if (dbz === undefined) continue;
+    if (dbz < minDbz) {
       rgba[i + 3] = 0;
       cleared += 1;
+    } else if (recolor) {
+      const c = recolor.get(key);
+      if (c) {
+        rgba[i] = c[0];
+        rgba[i + 1] = c[1];
+        rgba[i + 2] = c[2];
+        rgba[i + 3] = c[3];
+      }
     }
   }
   return cleared;
@@ -70,13 +105,14 @@ export function filterPixels(rgba, minDbz) {
  *
  * @param {HTMLCanvasElement} canvas tile canvas with the unfiltered image drawn
  * @param {Number} minDbz threshold
+ * @param {String} [paletteId] palette to repaint in
  */
-function filterCanvas(canvas, minDbz) {
+function filterCanvas(canvas, minDbz, paletteId) {
   if (canvas._sweepFiltered) return;
   const ctx = canvas.getContext("2d");
   try {
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    filterPixels(data.data, minDbz);
+    filterPixels(data.data, minDbz, recolorTable(paletteId));
     ctx.putImageData(data, 0, 0);
   } catch {
     // Tainted canvas (CORS) — the unfiltered image is already drawn.
@@ -102,7 +138,7 @@ const FilteredGridLayer = L.TileLayer.extend({
       // panning reported on 2026-09-03. Hidden frames now keep the raw
       // image and are filtered in place the moment they become visible
       // (setOpacity below), so a pan costs one layer's worth of filtering.
-      if (this.options.opacity > 0) filterCanvas(canvas, this.options.minDbz);
+      if (this.options.opacity > 0) filterCanvas(canvas, this.options.minDbz, this.options.palette);
       done(null, canvas);
     };
     img.onerror = () => done(new Error("tile load failed"), canvas);
@@ -119,27 +155,29 @@ const FilteredGridLayer = L.TileLayer.extend({
 
   /** Filter every loaded, not-yet-filtered tile in place (no redraw, no flicker). */
   _filterLoadedTiles() {
-    const minDbz = this.options.minDbz;
+    const { minDbz, palette: paletteId } = this.options;
     for (const key of Object.keys(this._tiles || {})) {
       const t = this._tiles[key];
-      if (t && t.loaded && t.el && t.el.tagName === "CANVAS") filterCanvas(t.el, minDbz);
+      if (t && t.loaded && t.el && t.el.tagName === "CANVAS") filterCanvas(t.el, minDbz, paletteId);
     }
   },
 });
 
 /**
- * react-leaflet component: same props as `<TileLayer>` plus `minDbz`.
+ * react-leaflet component: same props as `<TileLayer>` plus `minDbz` and
+ * `palette` (reflectivity palette id; "nws" leaves IEM's colours alone).
  */
 const FilteredTileLayer = createLayerComponent(
-  function createFilteredTileLayer({ url, minDbz, ...options }, ctx) {
-    const layer = new FilteredGridLayer(url, { ...options, minDbz });
+  function createFilteredTileLayer({ url, minDbz, palette: paletteId, ...options }, ctx) {
+    const layer = new FilteredGridLayer(url, { ...options, minDbz, palette: paletteId });
     return { instance: layer, context: { ...ctx, overlayContainer: layer } };
   },
   function updateFilteredTileLayer(layer, props, prevProps) {
     updateGridLayer(layer, props, prevProps);
     if (props.url !== prevProps.url) layer.setUrl(props.url);
-    if (props.minDbz !== prevProps.minDbz) {
+    if (props.minDbz !== prevProps.minDbz || props.palette !== prevProps.palette) {
       layer.options.minDbz = props.minDbz;
+      layer.options.palette = props.palette;
       layer.redraw();
     }
     // react-leaflet's updateGridLayer only forwards opacity/zIndex; the

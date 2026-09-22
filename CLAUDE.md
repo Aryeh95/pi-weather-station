@@ -376,6 +376,39 @@ dbz ↔ clean re-renders the current scan.
 `test/dualPolClean.test.js` pins both to 15, and pins the 51 056 figure
 against the committed LWX 04:01:42 pair (`LWX_N0B_/N0H_2026_09_22_04_01_42`).
 
+### Reflectivity palettes — RadarScope-style default (2026-09-22)
+
+User comparison, side by side over the same drizzle: Sweep painted 5–20 dBZ
+in vivid cyan and blue, RadarScope in a receding white-grey wash. Same
+echo, different palette — Sweep used the NWS / IEM "classic" ramp because
+that is what IEM's tiles are pre-painted in, and the raw-radial layer had
+been matched to the tiles so the crossfade did not change colour.
+
+Now a per-device setting, `radarPalette` (`client/src/ui/radarPalette.js`;
+Settings → Advanced → Display → "Radar palette"): **`scope`** (default —
+the user's preference) or `nws`. `SCOPE_STOPS` in `radialRender.js` is an
+approximation from RadarScope's published scale bar, not their table:
+white → grey → slate to 15 dBZ, greens from 20, then yellow, orange, red,
+dark red, magenta, purple, cyan, brown; transparent below −30.
+
+- It reaches three places, and all three must move together: the radial
+  LUT (`buildLevelLut(…, palette)`), the IEM tiles, and the legend bar.
+- **The tiles are repainted, not just filtered.** `FilteredTileLayer` was
+  already mapping every pixel to its dBZ through IEM's exact colour table
+  for the noise floor; `recolorTable(paletteId)` turns that into a colour
+  → colour map, so the tiles come out in the chosen palette pixel-exact.
+  With `nws` selected the tiles pass through untouched (they ARE that
+  palette). The layer is mounted whenever either the floor or a non-NWS
+  palette needs a pixel changed (`tileFiltered`); `minDbz: -Infinity`
+  means "recolour only".
+- The legend bar now SAMPLES the active palette every 5 dBZ from 0 to 75
+  instead of drawing one span per stop, so its "0 · 20 · 40 · 60 · 75"
+  labels stay aligned for a table that starts at −30.
+- Velocity and precipitation-type ramps are untouched; `buildLevelLut`
+  ignores the palette for them (pinned by test).
+- The render keys in both radial hooks carry the palette, so switching it
+  re-renders the current scan and resets the loop cache.
+
 ### The committed bundle can be a build of older source (2026-09-06)
 
 Shipped this way and cost a debugging round. The dual-pol commit ran

@@ -45,10 +45,11 @@ const PACE_MS = 150;
  * @param {Boolean} [params.dualPolClean] also drop gates the scan's dual-pol classification calls non-meteorological (server side)
  * @param {String} [params.product] "N0B" (reflectivity, default) or "N0G" (velocity)
  * @param {Boolean} [params.paused] true stops the warm-up pump but keeps rendered frames
+ * @param {String} [params.palette] reflectivity palette id (ui/radarPalette.js)
  * @returns {{byStamp: Object<String, {url: String, bounds: Array}>}} rendered frames
  */
 export default function useRadarRadialLoop({
-  site, stamps, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false,
+  site, stamps, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false, palette = "nws",
 }) {
   const [byStamp, setByStamp] = useState({});
   // stamp → {url, bounds} for rendered frames, {miss: true, at} for
@@ -72,7 +73,7 @@ export default function useRadarRadialLoop({
     generationRef.current += 1;
     revokeAll();
     setByStamp({});
-  }, [site, product, noiseFilter, dualPolClean, enabled]);
+  }, [site, product, noiseFilter, dualPolClean, enabled, palette]);
 
   useEffect(() => {
     if (!enabled || !site || !stamps || !stamps.length) return undefined;
@@ -114,7 +115,7 @@ export default function useRadarRadialLoop({
           const d = res.data || {};
           if (cancelled || generationRef.current !== gen) return;
           if (d.available) {
-            const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), floorFor(d, noiseFilter, dualPolClean));
+            const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), floorFor(d, noiseFilter, dualPolClean), palette);
             const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
             if (cancelled || generationRef.current !== gen) return;
             if (blob) {
@@ -138,7 +139,7 @@ export default function useRadarRadialLoop({
     pump();
 
     return () => { cancelled = true; };
-  }, [site, product, enabled, paused, noiseFilter, dualPolClean, stamps]);
+  }, [site, product, enabled, paused, noiseFilter, dualPolClean, stamps, palette]);
 
   // Revoke everything on unmount — each URL pins a blob for the life of
   // the page otherwise.

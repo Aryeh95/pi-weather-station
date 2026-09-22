@@ -15,6 +15,7 @@ import useFavoriteLocations from "~/hooks/useFavoriteLocations";
 import { placeLabelFromAddress } from "~/ui/placeLabel";
 import { RADAR_NOISE_MODES, RADAR_NOISE_DEFAULT } from "~/ui/radarNoise";
 import { eventProductType } from "~/ui/alertLogic";
+import { RADAR_PALETTE_DEFAULT, RADAR_PALETTE_STORAGE_KEY, normalizeRadarPalette } from "~/ui/radarPalette";
 import axios from "axios";
 import tzlookup from "tz-lookup";
 
@@ -714,6 +715,18 @@ export function AppContextProvider({ children }) {
   }, []);
   const toggleRadarVelocity = useCallback(() => flipRadarProduct("N0G"), [flipRadarProduct]);
   const toggleRadarPrecipType = useCallback(() => flipRadarProduct("PTYPE"), [flipRadarProduct]);
+  // Reflectivity colour palette — RadarScope-style (default) or NWS classic.
+  // Per-device; applies to the raw-radial layer, the IEM tiles (repainted
+  // through their published colour table) and the legend bar alike.
+  const [radarPalette, setRadarPaletteState] = useState(() => {
+    if (typeof window === "undefined") return RADAR_PALETTE_DEFAULT;
+    return normalizeRadarPalette(window.localStorage.getItem(RADAR_PALETTE_STORAGE_KEY));
+  });
+  const setRadarPalette = useCallback((next) => {
+    const value = normalizeRadarPalette(next);
+    setRadarPaletteState(value);
+    try { window.localStorage.setItem(RADAR_PALETTE_STORAGE_KEY, value); } catch { /* localStorage may be unavailable */ }
+  }, []);
   // Whether the dashed radius ring is drawn alongside the nearby-alerts
   // layer. Per-device display preference (localStorage), DEFAULT ON so the
   // existing "polygons + ring" look is preserved; a user who wants the bare
@@ -2323,6 +2336,7 @@ export function AppContextProvider({ children }) {
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
+    setRadarPalette,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2396,6 +2410,7 @@ export function AppContextProvider({ children }) {
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
+    setRadarPalette,
     setAlertRadiusKmLive,
     selectGovAlert,
     setGovAlertExpanded,
@@ -2646,6 +2661,7 @@ export function AppContextProvider({ children }) {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarPalette,
     showAlertRing,
     alertRadiusKm,
   }), [
@@ -2662,6 +2678,7 @@ export function AppContextProvider({ children }) {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarPalette,
     showAlertRing,
     alertRadiusKm,
   ]);

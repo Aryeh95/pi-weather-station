@@ -58,6 +58,31 @@ const DBZ_STOPS = [
   [75, 253, 253, 253, 255],
 ];
 
+const SCOPE_STOPS = [
+  [-30, 255, 255, 255, 30],
+  [-10, 235, 235, 235, 90],
+  [0, 215, 215, 215, 140],
+  [5, 190, 192, 198, 180],
+  [10, 160, 165, 180, 215],
+  [15, 125, 135, 165, 240],
+  [20, 45, 130, 45, 255],
+  [25, 40, 165, 40, 255],
+  [30, 70, 205, 60, 255],
+  [35, 240, 240, 30, 255],
+  [40, 255, 190, 0, 255],
+  [45, 255, 120, 0, 255],
+  [50, 230, 20, 20, 255],
+  [55, 160, 0, 0, 255],
+  [60, 225, 0, 225, 255],
+  [65, 140, 0, 210, 255],
+  [70, 0, 230, 240, 255],
+  [75, 110, 20, 20, 255],
+];
+
+function stopsForPalette(palette) {
+  return palette === "nws" ? DBZ_STOPS : SCOPE_STOPS;
+}
+
 // Base velocity ramp, m/s: [value, r, g, b, a]. Meteorological convention
 // — NEGATIVE is motion TOWARD the radar (greens, cooling to cyan at the
 // extreme), POSITIVE is AWAY (reds, warming to yellow). Near-zero is a
@@ -98,8 +123,8 @@ function colorForValue(stops, v) {
   return [0, 0, 0, 0];
 }
 
-function colorForDbz(dbz) {
-  return colorForValue(DBZ_STOPS, dbz);
+function colorForDbz(dbz, palette = "nws") {
+  return colorForValue(stopsForPalette(palette), dbz);
 }
 
 function colorForVelocity(ms) {
@@ -108,7 +133,7 @@ function colorForVelocity(ms) {
 
 const NOISE_FILTER_MIN_DBZ = 15;
 
-function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
+function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity", palette = "nws") {
   if (kind === "precip") return buildPrecipLut(minDbz);
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
@@ -118,7 +143,7 @@ function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity") {
   for (let level = 2; level < 256; level += 1) {
     const v = scaling.min + level * scaling.increment;
     if (!velocity && v < minDbz) continue;
-    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v);
+    const [r, g, b, a] = velocity ? colorForVelocity(v) : colorForDbz(v, palette);
     lut[level * 4] = r;
     lut[level * 4 + 1] = g;
     lut[level * 4 + 2] = b;
@@ -384,4 +409,44 @@ test("reflectivity LUT is unchanged by the kind default", () => {
   assert.deepEqual(Array.from(a), Array.from(b));
   // Level 1 stays transparent for reflectivity.
   assert.equal(a[7], 0);
+});
+
+// ── Palettes (2026-09-22) ──────────────────────────────────────────────
+
+test("RadarScope-style palette: weak echo is grey, not blue; strong echo matches the NWS hues", () => {
+  // The reason the palette exists: 5-15 dBZ drizzle read as vivid cyan
+  // and blue on the NWS ramp and as a receding grey wash on RadarScope's.
+  for (const dbz of [0, 5, 10, 15]) {
+    const [r, g, b, a] = colorForDbz(dbz, "scope");
+    assert.ok(Math.max(r, g, b) - Math.min(r, g, b) < 50, `${dbz} dBZ is near-grey (${r},${g},${b})`);
+    assert.ok(a > 0 && a < 255, `${dbz} dBZ is translucent`);
+    const [nr, ng, nb] = colorForDbz(dbz, "nws");
+    assert.ok(nb > nr, `NWS ${dbz} dBZ is blue-dominant (${nr},${ng},${nb})`);
+  }
+  // From 20 dBZ both palettes agree on the hue family.
+  const greenish = ([r, g, b]) => g > r && g > b;
+  assert.ok(greenish(colorForDbz(25, "scope")) && greenish(colorForDbz(25, "nws")));
+  const reddish = ([r, g, b]) => r > g && r > b;
+  assert.ok(reddish(colorForDbz(50, "scope")) && reddish(colorForDbz(50, "nws")));
+  // Below −30 dBZ the RadarScope-style ramp draws nothing at all.
+  assert.deepEqual(colorForDbz(-31, "scope"), [0, 0, 0, 0]);
+  assert.equal(stopsForPalette("nws"), DBZ_STOPS);
+  assert.equal(stopsForPalette("scope"), SCOPE_STOPS);
+  assert.equal(stopsForPalette(undefined), SCOPE_STOPS, "unknown ids fall back to the default palette");
+});
+
+test("buildLevelLut paints reflectivity in the requested palette and leaves velocity alone", () => {
+  const scaling = { min: -32, increment: 0.5 };
+  const nws = buildLevelLut(scaling, -Infinity, "reflectivity", "nws");
+  const scope = buildLevelLut(scaling, -Infinity, "reflectivity", "scope");
+  const level = (dbz) => Math.round((dbz - scaling.min) / scaling.increment);
+  const at = (lut, dbz) => [...lut.slice(level(dbz) * 4, level(dbz) * 4 + 4)];
+  assert.notDeepEqual(at(nws, 10), at(scope, 10));
+  assert.deepEqual(at(scope, 10), colorForDbz(10, "scope"));
+  assert.deepEqual(at(nws, 10), colorForDbz(10, "nws"));
+  // The noise floor still applies on top of either palette.
+  assert.equal(buildLevelLut(scaling, 15, "reflectivity", "scope")[level(10) * 4 + 3], 0);
+  const velA = buildLevelLut({ min: -63.5, increment: 0.5 }, -Infinity, "velocity", "nws");
+  const velB = buildLevelLut({ min: -63.5, increment: 0.5 }, -Infinity, "velocity", "scope");
+  assert.deepEqual([...velA], [...velB]);
 });

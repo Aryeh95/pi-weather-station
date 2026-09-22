@@ -47,6 +47,7 @@ const CLEAN_HOLD_MAX_MS = 10 * 60 * 1000;
  * @param {Boolean} [params.dualPolClean] also drop gates the scan's dual-pol classification calls non-meteorological (server side)
  * @param {String} [params.product] "N0B" (reflectivity, default), "N0G" (velocity) or "PTYPE" (precipitation type)
  * @param {Boolean} [params.paused] true suspends polling but keeps the current image
+ * @param {String} [params.palette] reflectivity palette id (ui/radarPalette.js)
  * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean, cleanApplied: Boolean|null, holdingClean: Boolean, unavailable: String|null}}
  *   `cleanApplied` is null unless dual-pol clean was asked for AND the product
  *   is one it applies to (reflectivity): true when the scan's classification
@@ -59,7 +60,7 @@ const CLEAN_HOLD_MAX_MS = 10 * 60 * 1000;
  *   while an image is up.
  */
 export default function useRadarRadial({
-  site, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false,
+  site, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false, palette = "nws",
 }) {
   const [state, setState] = useState({
     url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null,
@@ -171,7 +172,7 @@ export default function useRadarRadial({
           // The floor is part of the key: which floor applies depends on
           // whether the server's mask carried it (see floorFor).
           const minDbz = floorFor(d, noiseFilter, dualPolClean);
-          const renderKey = `${d.key}|${d.kind}|floor:${minDbz ?? "none"}|dp:${Boolean(d.clean?.applied)}`;
+          const renderKey = `${d.key}|${d.kind}|floor:${minDbz ?? "none"}|dp:${Boolean(d.clean?.applied)}|pal:${palette}`;
           if (renderKey === lastKeyRef.current) {
             // Same pixels, so no re-render — but the CLEAN status under
             // them can still have changed, and an unmasked clean frame is
@@ -186,7 +187,7 @@ export default function useRadarRadial({
             ));
             return;
           }
-          const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), minDbz);
+          const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), minDbz, palette);
           canvas.toBlob((blob) => {
             if (cancelledRef.current || !blob) return;
             lastKeyRef.current = renderKey;
@@ -208,7 +209,7 @@ export default function useRadarRadial({
       clearInterval(id);
       clearRetry();
     };
-  }, [site, enabled, noiseFilter, dualPolClean, product, paused]);
+  }, [site, enabled, noiseFilter, dualPolClean, product, paused, palette]);
 
   // Revoke the final URL when the consumer unmounts.
   useEffect(() => () => {

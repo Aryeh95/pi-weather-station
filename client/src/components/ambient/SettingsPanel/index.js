@@ -967,6 +967,8 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
     appMapboxToken,
     radarOpacityLight,
     radarOpacityDark,
+    radarPalette,
+    setRadarPalette,
     saveAdvancedDisplayFlag,
     setRadarOpacityLightLive,
     setRadarOpacityDarkLive,
@@ -1039,6 +1041,19 @@ const SectionAdvanced = ({ ctx, lang, remote }) => {
             />
               </>
             )}
+            {/* Reflectivity palette — per-device like the dock toggles, so
+              * it is NOT gated on `remote`: a phone viewing the kiosk picks
+              * its own colours. RadarScope-style quiets weak echo into
+              * greys; NWS classic is the palette IEM's tiles are painted in. */}
+            <Seg
+              label={lbl(lang, "Radar palette", "Palette radar", "Paleta del radar")}
+              options={[
+                { v: "scope", l: "RadarScope" },
+                { v: "nws", l: "NWS" },
+              ]}
+              value={radarPalette}
+              onChange={setRadarPalette}
+            />
             <RangeSlider
               label={lbl(lang, "Radar opacity · light", "Opacité radar · clair", "Opacidad radar · claro")}
               value={radarOpacityLight}

@@ -822,6 +822,7 @@ const WeatherMap = ({ zoom, dark }) => {
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
+    radarPalette,
     showAlertRing,
     nearbyAlerts,
     alertRadiusKm,
@@ -1056,6 +1057,12 @@ const WeatherMap = ({ zoom, dark }) => {
   // at least one discovered frame before it has anything to show.
   const iemVisible = layerVisibility(currentMapZoom);
 
+  // IEM tiles go through FilteredTileLayer whenever a pixel has to change:
+  // the clear-air floor, or a palette other than the NWS one the tiles are
+  // pre-painted in. Plain TileLayer otherwise (no per-pixel work at all).
+  const tileFiltered = noiseFloorOn(radarNoiseMode) || radarPalette !== "nws";
+  const tileMinDbz = noiseFloorOn(radarNoiseMode) ? NOISE_FILTER_MIN_DBZ : -Infinity;
+
   // Precipitation-type mode's LOW-zoom layer: MRMS surface type, one CONUS
   // field every 2 min, painted by PrecipMosaicLayer for the viewport. It
   // replaces the N0Q reflectivity mosaic while the mode is on — showing
@@ -1078,6 +1085,7 @@ const WeatherMap = ({ zoom, dark }) => {
     dualPolClean: dualPolCleanOn(radarNoiseMode),
     product: radialProduct,
     paused: pollingPaused,
+    palette: radarPalette,
   });
   // The latest radial image replaces the site TILES only when it exists
   // AND the playhead is on the newest frame; historical frames come from
@@ -1118,6 +1126,7 @@ const WeatherMap = ({ zoom, dark }) => {
     dualPolClean: dualPolCleanOn(radarNoiseMode),
     product: radialProduct,
     paused: pollingPaused,
+    palette: radarPalette,
   });
 
   // Which loop radials get a MOUNTED overlay: a sliding window around
@@ -1657,12 +1666,13 @@ const WeatherMap = ({ zoom, dark }) => {
           * Dual-pol clean cannot reach here: a pre-rendered PNG carries
           * no per-gate classification, so "clean" gets the dBZ floor on
           * the tiles and the full mask only on the raw-radial layer. */}
-        {mountedMosaicFrames.map((f) => (noiseFloorOn(radarNoiseMode) ? (
+        {mountedMosaicFrames.map((f) => (tileFiltered ? (
           <FilteredTileLayer
             key={`iem-mosaic-f-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
             url={f.url}
-            minDbz={NOISE_FILTER_MIN_DBZ}
+            minDbz={tileMinDbz}
+            palette={radarPalette}
             opacity={currentMosaicFrame && f.stamp === currentMosaicFrame.stamp ? iemOpacity.mosaic : 0}
             maxNativeZoom={MOSAIC_MAX_NATIVE_ZOOM}
             maxZoom={MOSAIC_MAX_ZOOM}
@@ -1706,12 +1716,13 @@ const WeatherMap = ({ zoom, dark }) => {
           * never the `-0` "latest" sentinel: `-0` would render but
           * gives no way to know how old the picture is, and making
           * frame age visible is the point of this work. */}
-        {mountedSiteFrames.map((f) => (noiseFloorOn(radarNoiseMode) ? (
+        {mountedSiteFrames.map((f) => (tileFiltered ? (
           <FilteredTileLayer
             key={`iem-site-f-${iemSite}-${f.stamp}`}
             attribution={IEM_ATTRIBUTION}
             url={siteTileUrl(iemSite, f.stamp)}
-            minDbz={NOISE_FILTER_MIN_DBZ}
+            minDbz={tileMinDbz}
+            palette={radarPalette}
             opacity={currentSiteFrame && f.stamp === currentSiteFrame.stamp && !radialShown && !currentLoopRadial ? iemOpacity.site : 0}
             maxNativeZoom={SITE_MAX_NATIVE_ZOOM}
             minZoom={SITE_MIN_ZOOM}
