@@ -93,6 +93,15 @@ const NEARBY_WARNING_BADGE = {
 // past the user's next intended tap.
 const TOAST_TIMEOUT = 2500;
 
+// Label hints: how long a mouse must rest on a button before its
+// description appears (short enough to feel responsive, long enough that
+// sweeping across the dock does not flash every label), how long a
+// touch must be held (past a tap, short of feeling stuck), and how long
+// a hover hint stays up if the pointer never leaves.
+const HINT_HOVER_DELAY_MS = 450;
+const HINT_PRESS_DELAY_MS = 500;
+const HINT_HOVER_HOLD_MS = 6000;
+
 /**
  * Buttons group component.
  *
@@ -282,7 +291,11 @@ const ControlButtons = ({ labelled = false }) => {
   // the tapped button (plus an 8 px gap), so the toast sits just above
   // the button regardless of where the dock lives in the layout.
   // Falls back to centred when no event is provided.
-  const notify = (key, e) => {
+  // Show a toast anchored to a button. `notify` is the i18n-keyed form
+  // every tap handler uses; the hover / long-press hints below pass the
+  // button's own label text through the same path so they look and
+  // position identically.
+  const showToast = (message, e, ms = TOAST_TIMEOUT) => {
     let x = null;
     let bottom = null;
     let fullWidth = false;
@@ -323,11 +336,80 @@ const ControlButtons = ({ labelled = false }) => {
     }
     toastIdRef.current += 1;
     const id = toastIdRef.current;
-    setToast({ id, message: t(key), x, bottom, fullWidth });
+    setToast({ id, message, x, bottom, fullWidth });
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     toastTimeoutRef.current = setTimeout(() => {
       setToast((prev) => (prev.id === id ? { ...prev, message: "" } : prev));
-    }, TOAST_TIMEOUT);
+    }, ms);
+  };
+  const notify = (key, e) => showToast(t(key), e);
+
+  // ── Label hints (kiosk / web, where the dock is icons only) ─────────
+  // Hovering a button with a mouse, or holding it on a touch screen,
+  // shows its description as a toast anchored to it — the same text the
+  // app drawer prints beside each icon. A long press must NOT also fire
+  // the tap: `hintSuppressRef` marks that the hold was consumed and the
+  // capture-phase click handler swallows the click that follows it.
+  // Android/Firefox may raise `contextmenu` on a long press instead;
+  // that is suppressed too while a hold is being consumed.
+  //
+  // The hint toast is tracked by id so leaving with the mouse dismisses
+  // only the hint, never a tap's own confirmation toast (which gets a
+  // fresh id and outlives the pointer).
+  const hintTimerRef = useRef(null);
+  const hintSuppressRef = useRef(false);
+  const hintToastIdRef = useRef(0);
+  const clearHintTimer = () => {
+    if (hintTimerRef.current) {
+      clearTimeout(hintTimerRef.current);
+      hintTimerRef.current = null;
+    }
+  };
+  const withHint = (node) => {
+    const label = node.props["aria-label"] || node.props.title;
+    if (!label) return node;
+    const show = (el, ms) => {
+      showToast(label, { currentTarget: el }, ms);
+      hintToastIdRef.current = toastIdRef.current;
+    };
+    const dismissHint = () => {
+      setToast((prev) => (prev.id === hintToastIdRef.current ? { ...prev, message: "" } : prev));
+    };
+    return React.cloneElement(node, {
+      onPointerEnter: (e) => {
+        if (e.pointerType !== "mouse") return;
+        const el = e.currentTarget;
+        clearHintTimer();
+        hintTimerRef.current = setTimeout(() => show(el, HINT_HOVER_HOLD_MS), HINT_HOVER_DELAY_MS);
+      },
+      onPointerLeave: (e) => {
+        clearHintTimer();
+        // Touch fires pointerleave right after pointerup — a long-press
+        // hint would vanish the instant the finger lifted.
+        if (e.pointerType === "mouse") dismissHint();
+      },
+      onPointerDown: (e) => {
+        if (e.pointerType === "mouse") return;
+        const el = e.currentTarget;
+        clearHintTimer();
+        hintSuppressRef.current = false;
+        hintTimerRef.current = setTimeout(() => {
+          hintSuppressRef.current = true;
+          show(el, TOAST_TIMEOUT);
+        }, HINT_PRESS_DELAY_MS);
+      },
+      onPointerUp: clearHintTimer,
+      onPointerCancel: clearHintTimer,
+      onContextMenu: (e) => {
+        if (hintSuppressRef.current) e.preventDefault();
+      },
+      onClickCapture: (e) => {
+        if (!hintSuppressRef.current) return;
+        hintSuppressRef.current = false;
+        e.stopPropagation();
+        e.preventDefault();
+      },
+    });
   };
 
   // Each button JSX is built once and assigned to a named key, so
@@ -957,7 +1039,8 @@ const ControlButtons = ({ labelled = false }) => {
    * @returns {object} the node, labelled when the drawer is rendering it
    */
   const withLabel = (node) => {
-    if (!labelled || !node) return node;
+    if (!node) return node;
+    if (!labelled) return withHint(node);
     return React.cloneElement(node, {}, (
       <>
         {node.props.children}

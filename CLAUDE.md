@@ -205,6 +205,21 @@ palette, so the IR container gets `filter: grayscale(1)` via Leaflet's
 `className` option; visible is grayscale already and goes black at
 night, which is why IR is the first state. Opacity 0.7.
 
+### Dock label hints (2026-09-25)
+
+The kiosk/web dock is icons only (the app drawer prints labels beside
+them). `withHint` in ControlButtons wraps every unlabelled button: a
+mouse resting 450 ms shows its `aria-label` as a toast anchored to the
+button (hidden on leave); a touch held 500 ms shows it and the capture-
+phase click handler swallows the click that follows, so a hold never
+toggles. `contextmenu` is suppressed during a consumed hold (Android /
+Firefox raise it on long press). The hint toast is tracked by id so
+leaving dismisses only the hint, never a tap's own confirmation. Chosen
+over a kiosk sidebar: the one-tap dock is the kiosk's strength, and the
+toast system already knew how to anchor text to a button. Verified with
+Playwright + CDP touch events: hover → label, leave → gone; hold →
+label and no toggle; quick tap → toggles with its normal toast.
+
 ### Server proxy
 
 Two JSON routes plus the frame-list poller. **Tiles are not proxied** — they are
