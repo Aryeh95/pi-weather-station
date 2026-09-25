@@ -172,6 +172,39 @@ server's settings.json read — the Android app runs the controller
 in-process with no file to read, so the query is how the pin reaches it
 there.
 
+### Satellite overlay — GOES-East via IEM (2026-09-25)
+
+Cloud deck under the radar, dock button cycling off → infrared → visible
+(`satelliteMode`, per-device, off by default; vocabulary in
+`client/src/ui/satellite.js`). Source choice, measured the same day:
+
+- **IEM `goes_east_conus_ch13` / `_ch02` XYZ tiles** — same host and
+  keyless scheme as the radar, 1 km detail through z10, CONUS scan every
+  5 min. Valid time from the per-channel sidecar
+  `data/gis/images/GOES/conus/channelNN/GOES-19_CNN.json` (measured:
+  valid 18:56:16Z, generated 19:01:09Z — **~5–8 min old on arrival**),
+  relayed by `/api/radar/frames` as `satellite.{ir,vis}` alongside the
+  mosaic time, so the age chip gets a "Satellite IR · N min ago" row.
+  The `GOES-19` in the filename is the East bird since April 2025; the
+  `GOES-16` files still exist but froze that day. When East changes
+  bird, `SATELLITE_META_URLS` is the one place to move.
+- **NASA GIBS** (`GOES-East_ABI_GeoColor`, `…Band13_Clean_Infrared`) was
+  the alternative: nicer GeoColor composite and a proper time dimension
+  (DescribeDomains), but **28–48 min behind real time** and capped at
+  zoom 7. Rejected for a layer whose whole point is "now".
+- My first guesses `goes_conus_ir` etc. all returned the SAME 20 229-byte
+  PNG for every tile at every zoom — IEM's "no such layer" image, not
+  data. A tile that never changes size across zooms is an error image.
+
+Rendering: the satellite shares the tile pane with the basemap and the
+radar tiles, so its place in the stack is Leaflet's per-layer `zIndex`
+(basemap default 1 < `SATELLITE_TILE_Z` 2 < `RADAR_TILE_Z` 3 on all four
+radar tile layers), not a Pane. IEM's channel-13 tiles carry a colour-
+enhanced ramp (green/purple cold tops) that fights the reflectivity
+palette, so the IR container gets `filter: grayscale(1)` via Leaflet's
+`className` option; visible is grayscale already and goes black at
+night, which is why IR is the first state. Opacity 0.7.
+
 ### Server proxy
 
 Two JSON routes plus the frame-list poller. **Tiles are not proxied** — they are

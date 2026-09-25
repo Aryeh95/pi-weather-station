@@ -1553,3 +1553,14 @@
   font-size: 0.7em;
   vertical-align: middle;
 }
+
+/* GOES-East satellite tile containers. Channel 13 arrives with IEM's
+ * colour-enhanced ramp (green / purple cold tops) — desaturated here so
+ * clouds read as brightness under the reflectivity palette instead of
+ * competing with it. Channel 02 is grayscale already. */
+.satellite-ir {
+  filter: grayscale(1);
+}
+.satellite-vis {
+  filter: none;
+}

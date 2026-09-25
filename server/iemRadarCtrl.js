@@ -88,6 +88,20 @@ const MOSAIC_META_URL = "https://mesonet.agron.iastate.edu/data/gis/images/4326/
 const MOSAIC_META_TTL_MS = 60 * 1000;
 let mosaicMetaCache = null;
 
+// GOES-East imagery valid times, one sidecar per channel, next to the
+// rasters IEM's `goes_east_conus_chNN` tile layers are cut from. The
+// satellite name is baked into the filename — GOES-19 has been GOES-East
+// since April 2025 (the GOES-16 files still exist but froze that day) —
+// so when the East slot changes bird again, this is the one line to
+// move. CONUS scans every 5 min; measured 2026-09-25: valid 18:56:16Z,
+// generated 19:01:09Z, so the picture is ~5-8 min old when it lands.
+const SATELLITE_META_URLS = {
+  ir: "https://mesonet.agron.iastate.edu/data/gis/images/GOES/conus/channel13/GOES-19_C13.json",
+  vis: "https://mesonet.agron.iastate.edu/data/gis/images/GOES/conus/channel02/GOES-19_C02.json",
+};
+const SATELLITE_META_TTL_MS = 60 * 1000;
+let satelliteMetaCache = null;
+
 // Site resolution is far more stable — the radar assigned to a point
 // only changes when the user moves the map somewhere else entirely.
 // Cache for a day, keyed on coarse coordinates.
@@ -333,6 +347,44 @@ function parseMosaicMeta(data) {
 }
 
 /**
+ * Valid time from one GOES channel sidecar (`{"meta": {"valid": ISO}}`).
+ *
+ * @param {Object} data parsed GOES-19_CNN.json body
+ * @returns {{valid: String, epoch: Number}|null} null when the file carries no usable time
+ */
+function parseSatelliteMeta(data) {
+  const meta = data && data.meta;
+  const valid = meta && typeof meta.valid === "string" ? meta.valid : null;
+  const epoch = valid ? Date.parse(valid) : NaN;
+  if (!Number.isFinite(epoch)) return null;
+  return { valid, epoch };
+}
+
+/**
+ * Current GOES-East valid time per channel, cached. Never throws and
+ * never blocks the frame list: a channel whose sidecar is unreachable
+ * reports null and the client's satellite age row simply stays hidden.
+ *
+ * @returns {Promise<{ir: Object|null, vis: Object|null}>}
+ */
+async function fetchSatelliteMeta() {
+  if (satelliteMetaCache && satelliteMetaCache.expires > Date.now()) return satelliteMetaCache.value;
+  const one = async (url) => {
+    try {
+      const res = await axios.get(url, { timeout: API_TIMEOUT_MS });
+      increment("iem", "satellite-meta");
+      return parseSatelliteMeta(res.data);
+    } catch {
+      return null;
+    }
+  };
+  const [ir, vis] = await Promise.all([one(SATELLITE_META_URLS.ir), one(SATELLITE_META_URLS.vis)]);
+  const value = { ir, vis };
+  satelliteMetaCache = { value, expires: Date.now() + SATELLITE_META_TTL_MS };
+  return value;
+}
+
+/**
  * Current mosaic frame time, cached. Never throws: the mosaic layer
  * works without it (the client falls back to schedule-derived times),
  * so a metadata hiccup must not fail the whole frame list.
@@ -443,16 +495,18 @@ async function getRadarFrames(req, res) {
     try {
       ({ site } = await resolveRadarSite(lat, lon));
     } catch {
-      const mosaic = await fetchMosaicMeta();
-      return res.status(200).json({ available: false, frames: [], reason: "no-radar-coverage", mosaic }).end();
+      const [mosaic, satellite] = await Promise.all([fetchMosaicMeta(), fetchSatelliteMeta()]);
+      return res.status(200).json({ available: false, frames: [], reason: "no-radar-coverage", mosaic, satellite }).end();
     }
   }
 
   try {
-    // The mosaic time rides along with every frame list so the client's
-    // single 60 s poll refreshes both layers' ages.
-    const [payload, mosaic] = await Promise.all([fetchFrames(site, product, count), fetchMosaicMeta()]);
-    return res.status(200).json({ available: true, ...payload, mosaic }).end();
+    // The mosaic and satellite times ride along with every frame list so
+    // the client's single 60 s poll refreshes every layer's age.
+    const [payload, mosaic, satellite] = await Promise.all([
+      fetchFrames(site, product, count), fetchMosaicMeta(), fetchSatelliteMeta(),
+    ]);
+    return res.status(200).json({ available: true, ...payload, mosaic, satellite }).end();
   } catch (err) {
     const status = err?.response?.status || 500;
     recordServiceCall(SERVICE_NAME, status, `frame list failed for ${site}`);
@@ -472,5 +526,6 @@ module.exports = {
   normalizeSiteId,
   resolveRadarSite,
   parseMosaicMeta,
+  parseSatelliteMeta,
   fetchMosaicMeta,
 };

@@ -75,6 +75,19 @@ test("normalizeSiteId rejects implausible ids", () => {
   }
 });
 
+test("parseSatelliteMeta: relays the GOES sidecar valid time, null without one", () => {
+  const { parseSatelliteMeta } = require("../server/iemRadarCtrl");
+  // Shape of GOES-19_C13.json as served 2026-09-25.
+  const live = {
+    generated_at: "2026-09-25T18:59:11Z",
+    meta: { valid: "2026-09-25T18:56:16Z", proj4str: "+proj=geos +h=35786023.0 +lon_0=-75.0 +sweep=x" },
+  };
+  assert.deepEqual(parseSatelliteMeta(live), { valid: "2026-09-25T18:56:16Z", epoch: Date.parse("2026-09-25T18:56:16Z") });
+  assert.equal(parseSatelliteMeta({ meta: {} }), null);
+  assert.equal(parseSatelliteMeta({ meta: { valid: "not a time" } }), null);
+  assert.equal(parseSatelliteMeta(null), null);
+});
+
 test("parseMosaicMeta: relays IEM's composite valid time, null without one", () => {
   const { parseMosaicMeta } = require("../server/iemRadarCtrl");
   const meta = parseMosaicMeta({

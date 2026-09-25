@@ -79,6 +79,7 @@ import useRadarRadial from "./useRadarRadial";
 import useRadarRadialLoop from "./useRadarRadialLoop";
 import RadarSitePicker from "./RadarSitePicker";
 import { homeSiteCoversView } from "./radarSites";
+import { satelliteTileUrl, SATELLITE_LAYERS } from "~/ui/satellite";
 import StormTracks from "./StormTracks";
 import FilteredTileLayer from "./FilteredTileLayer";
 import usePrecipMosaic from "./usePrecipMosaic";
@@ -412,6 +413,15 @@ const VIEW_SETTLE_MS = 900;
  * @param {Function} props.onChange called with {lat, lon} when the quantised centre changes
  * @returns {null} renders nothing
  */
+// Leaflet per-layer zIndex inside the shared tile pane (see the satellite
+// layer's comment in the JSX). The basemap keeps Leaflet's default 1.
+const SATELLITE_TILE_Z = 2;
+const RADAR_TILE_Z = 3;
+// Satellite opacity: enough to read the cloud deck, not so much that the
+// basemap's roads and labels vanish under overcast.
+const SATELLITE_OPACITY = 0.7;
+const SATELLITE_ATTRIBUTION = 'Satellite: <a href="https://mesonet.agron.iastate.edu/">IEM</a> / NOAA GOES-East';
+
 const MapViewTracker = ({ onChange }) => {
   const lastRef = useRef(null);
   const timerRef = useRef(null);
@@ -820,6 +830,7 @@ const WeatherMap = ({ zoom, dark }) => {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    satelliteMode,
     showLightning,
     radarNoiseMode,
     radarVelocity,
@@ -992,6 +1003,7 @@ const WeatherMap = ({ zoom, dark }) => {
     site: iemSite,
     frames: iemSiteFrames,
     mosaic: iemMosaicMeta,
+    satellite: iemSatelliteMeta,
     stale: iemStale,
     available: iemSiteAvailable,
   } = useIemRadarFrames({
@@ -1310,6 +1322,20 @@ const WeatherMap = ({ zoom, dark }) => {
       label: t("radar.ageMosaic"),
       epoch: currentMosaicFrame.epoch,
       approximate: Boolean(currentMosaicFrame.approximate),
+      sourceStale: iemStale,
+    });
+  }
+  // Satellite: the valid time of the channel being drawn, from IEM's
+  // sidecar. Missing metadata hides the row rather than guessing.
+  const satelliteEpoch = satelliteMode !== "off" && iemSatelliteMeta && iemSatelliteMeta[satelliteMode]
+    ? iemSatelliteMeta[satelliteMode].epoch
+    : null;
+  if (Number.isFinite(satelliteEpoch)) {
+    ageRows.push({
+      key: "satellite",
+      label: t(satelliteMode === "vis" ? "radar.ageSatelliteVis" : "radar.ageSatelliteIr"),
+      epoch: satelliteEpoch,
+      approximate: false,
       sourceStale: iemStale,
     });
   }
@@ -1682,6 +1708,33 @@ const WeatherMap = ({ zoom, dark }) => {
            * on Pi kiosk too. */
           updateWhenIdle={true}
         />
+        {/* ── Layer 0: GOES-East satellite (optional) ────────────
+          * Cloud deck under the radar. Sits in the tile pane with the
+          * basemap and the radar tiles, so its place in the stack is
+          * Leaflet's per-layer zIndex: basemap (default 1) < satellite
+          * (SATELLITE_TILE_Z) < radar tiles (RADAR_TILE_Z) < the radial
+          * pane. A separate Leaflet pane could not slot between two
+          * layers that share the tile pane.
+          *
+          * IEM's channel-13 tiles carry a colour-enhanced ramp (green /
+          * purple cold tops) that fights the reflectivity palette, so the
+          * infrared layer is desaturated by CSS on its own container —
+          * clouds read as brightness, the way RadarScope draws them.
+          * Visible is grayscale already. */}
+        {satelliteMode !== "off" && satelliteTileUrl(satelliteMode) ? (
+          <TileLayer
+            key={`satellite-${satelliteMode}`}
+            className={satelliteMode === "ir" ? styles.satelliteIr : styles.satelliteVis}
+            attribution={SATELLITE_ATTRIBUTION}
+            url={satelliteTileUrl(satelliteMode)}
+            opacity={SATELLITE_OPACITY}
+            zIndex={SATELLITE_TILE_Z}
+            maxNativeZoom={SATELLITE_LAYERS[satelliteMode].maxNativeZoom}
+            maxZoom={18}
+            updateWhenIdle={true}
+            keepBuffer={2}
+          />
+        ) : null}
         {/* ── Layer 1: composite mosaic (low zoom) ──────────────
           * IEM's national N0Q reflectivity mosaic — wide-area
           * situational awareness. Frames are addressed by fixed
@@ -1709,6 +1762,7 @@ const WeatherMap = ({ zoom, dark }) => {
         {mountedMosaicFrames.map((f) => (tileFiltered ? (
           <FilteredTileLayer
             key={`iem-mosaic-f-${f.stamp}`}
+            zIndex={RADAR_TILE_Z}
             attribution={IEM_ATTRIBUTION}
             url={f.url}
             minDbz={tileMinDbz}
@@ -1722,6 +1776,7 @@ const WeatherMap = ({ zoom, dark }) => {
         ) : (
           <TileLayer
             key={`iem-mosaic-${f.stamp}`}
+            zIndex={RADAR_TILE_Z}
             attribution={IEM_ATTRIBUTION}
             url={f.url}
             opacity={currentMosaicFrame && f.stamp === currentMosaicFrame.stamp ? iemOpacity.mosaic : 0}
@@ -1759,6 +1814,7 @@ const WeatherMap = ({ zoom, dark }) => {
         {mountedSiteFrames.map((f) => (tileFiltered ? (
           <FilteredTileLayer
             key={`iem-site-f-${iemSite}-${f.stamp}`}
+            zIndex={RADAR_TILE_Z}
             attribution={IEM_ATTRIBUTION}
             url={siteTileUrl(iemSite, f.stamp)}
             minDbz={tileMinDbz}
@@ -1772,6 +1828,7 @@ const WeatherMap = ({ zoom, dark }) => {
         ) : (
           <TileLayer
             key={`iem-site-${iemSite}-${f.stamp}`}
+            zIndex={RADAR_TILE_Z}
             attribution={IEM_ATTRIBUTION}
             url={siteTileUrl(iemSite, f.stamp)}
             opacity={currentSiteFrame && f.stamp === currentSiteFrame.stamp && !radialShown && !currentLoopRadial ? iemOpacity.site : 0}

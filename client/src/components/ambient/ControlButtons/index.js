@@ -26,6 +26,7 @@ import legendIcon from "@iconify/icons-carbon/legend";
 import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
 import radarSitesIcon from "@iconify/icons-carbon/radar-enhanced";
+import satelliteIcon from "@iconify/icons-carbon/cloud-satellite";
 import lightningIcon from "@iconify/icons-carbon/lightning";
 import noiseFilterIcon from "@iconify/icons-carbon/filter";
 import dualPolCleanIcon from "@iconify/icons-carbon/clean";
@@ -122,6 +123,7 @@ const ControlButtons = ({ labelled = false }) => {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleRadarSites,
+    cycleSatelliteMode,
     toggleLightning,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
@@ -158,6 +160,7 @@ const ControlButtons = ({ labelled = false }) => {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    satelliteMode,
     showLightning,
     radarNoiseMode,
     radarVelocity,
@@ -636,6 +639,37 @@ const ControlButtons = ({ labelled = false }) => {
   const noiseFilterLabel = radarOverlaysDisabled
     ? t("controls.radarOverlaysNeedMaximize")
     : t(noiseNext.label);
+  // GOES-East satellite: off → infrared → visible. Like the noise filter,
+  // two of the three states are "on", so the label names the NEXT step
+  // and the pressed styling only says "something is drawn".
+  const satNext = {
+    off: { toast: "toasts.satelliteIr", label: "controls.satelliteToIr" },
+    ir: { toast: "toasts.satelliteVis", label: "controls.satelliteToVis" },
+    vis: { toast: "toasts.satelliteOff", label: "controls.satelliteToOff" },
+  }[satelliteMode] || { toast: "toasts.satelliteIr", label: "controls.satelliteToIr" };
+  const satelliteLabel = radarOverlaysDisabled
+    ? t("controls.radarOverlaysNeedMaximize")
+    : t(satNext.label);
+  const btnSatellite = (
+    <div
+      key="satellite"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        cycleSatelliteMode();
+        notify(satNext.toast, e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${satelliteMode !== "off" && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={satelliteLabel}
+      aria-label={satelliteLabel}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={satelliteIcon} />
+    </div>
+  );
   const btnNoiseFilter = (
     <div
       key="noiseFilter"
@@ -948,6 +982,7 @@ const ControlButtons = ({ labelled = false }) => {
         {withLabel(btnWeatherAlerts)}
         {withLabel(btnStormTracks)}
         {withLabel(btnRadarSites)}
+        {withLabel(btnSatellite)}
         {withLabel(btnLightning)}
         {withLabel(btnNoiseFilter)}
         {withLabel(btnVelocity)}

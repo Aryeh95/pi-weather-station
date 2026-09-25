@@ -30,13 +30,14 @@ const COORD_EPSILON = 0.05;
  *   hook only refetches immediately when it changes
  * @param {Boolean} params.enabled false pauses polling entirely (layer hidden / other source selected)
  * @param {Boolean} [params.paused] true suspends polling but KEEPS the last list (screensaver up / tab hidden)
- * @returns {{site: String|null, frames: Array, mosaic: {epoch: Number, valid: String}|null, stale: Boolean, loading: Boolean, available: Boolean}} the resolved site, its recent frames, and the composite mosaic's current time
+ * @returns {{site: String|null, frames: Array, mosaic: {epoch: Number, valid: String}|null, satellite: {ir: Object|null, vis: Object|null}|null, stale: Boolean, loading: Boolean, available: Boolean}} the resolved site, its recent frames, the composite mosaic's current time, and the GOES-East valid times per channel
  */
 export default function useIemRadarFrames({ latitude, longitude, enabled, paused = false, siteOverride }) {
   const [state, setState] = useState({
     site: null,
     frames: [],
     mosaic: null,
+    satellite: null,
     stale: false,
     loading: false,
     available: true,
@@ -64,20 +65,22 @@ export default function useIemRadarFrames({ latitude, longitude, enabled, paused
       if (siteOverrideRef.current) params.site = siteOverrideRef.current;
       const res = await axios.get("/api/radar/frames", { params });
       if (cancelledRef.current) return;
-      const { available, site, frames, mosaic } = res.data || {};
+      const { available, site, frames, mosaic, satellite } = res.data || {};
+      const satelliteMeta = satellite && typeof satellite === "object" ? satellite : null;
       // The composite's current time rides along on every answer — even
       // a no-coverage one, since the mosaic is exactly what shows then.
       const mosaicMeta = mosaic && Number.isFinite(mosaic.epoch) ? mosaic : null;
       if (available === false) {
         // No NEXRAD coverage here (outside the US). Not an error — the
         // map simply stays on the mosaic layer.
-        setState({ site: null, frames: [], mosaic: mosaicMeta, stale: false, loading: false, available: false });
+        setState({ site: null, frames: [], mosaic: mosaicMeta, satellite: satelliteMeta, stale: false, loading: false, available: false });
         return;
       }
       setState({
         site: site || null,
         frames: Array.isArray(frames) ? frames : [],
         mosaic: mosaicMeta,
+        satellite: satelliteMeta,
         stale: false,
         loading: false,
         available: true,

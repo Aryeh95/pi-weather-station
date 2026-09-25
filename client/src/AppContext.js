@@ -13,6 +13,7 @@ import useIdleDetection from "~/hooks/useIdleDetection";
 import useDocumentVisible from "~/hooks/useDocumentVisible";
 import useFavoriteLocations from "~/hooks/useFavoriteLocations";
 import { placeLabelFromAddress } from "~/ui/placeLabel";
+import { SATELLITE_MODES, normalizeSatelliteMode } from "~/ui/satellite";
 import { RADAR_NOISE_MODES, RADAR_NOISE_DEFAULT } from "~/ui/radarNoise";
 import { eventProductType } from "~/ui/alertLogic";
 import { RADAR_PALETTE_DEFAULT, RADAR_PALETTE_STORAGE_KEY, normalizeRadarPalette } from "~/ui/radarPalette";
@@ -618,6 +619,22 @@ export function AppContextProvider({ children }) {
     setShowStormTracks((prev) => {
       const next = !prev;
       try { window.localStorage.setItem("showStormTracks", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
+
+  // GOES-East satellite overlay under the radar: off → infrared → visible.
+  // Per-device display pref, OFF by default (radar is the product; the
+  // satellite is context you turn on to see the cloud deck).
+  const [satelliteMode, setSatelliteMode] = useState(() => {
+    if (typeof window === "undefined") return "off";
+    try { return normalizeSatelliteMode(window.localStorage.getItem("satelliteMode")); } catch { return "off"; }
+  });
+  const cycleSatelliteMode = useCallback(() => {
+    setSatelliteMode((prev) => {
+      const i = SATELLITE_MODES.indexOf(prev);
+      const next = SATELLITE_MODES[(i + 1) % SATELLITE_MODES.length];
+      try { window.localStorage.setItem("satelliteMode", next); } catch { /* localStorage may be unavailable */ }
       return next;
     });
   }, []);
@@ -2335,6 +2352,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleRadarSites,
+    cycleSatelliteMode,
     pickRadarSite,
     toggleLightning,
     cycleRadarNoiseMode,
@@ -2410,6 +2428,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleRadarSites,
+    cycleSatelliteMode,
     pickRadarSite,
     toggleLightning,
     cycleRadarNoiseMode,
@@ -2663,6 +2682,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    satelliteMode,
     showLightning,
     radarNoiseMode,
     radarVelocity,
@@ -2681,6 +2701,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    satelliteMode,
     showLightning,
     radarNoiseMode,
     radarVelocity,

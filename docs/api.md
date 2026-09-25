@@ -204,7 +204,11 @@ timestamp returns HTTP 503 from IEM rather than a blank tile.
     { "stamp": "202609030251", "ts": "2026-09-03T02:51Z", "epoch": 1788403860000 }
   ],
   "generatedAt": "2026-09-03T02:58:00.000Z",
-  "mosaic": { "valid": "2026-09-03T02:55:00Z", "epoch": 1788404100000, "radarQuorum": "142/147" }
+  "mosaic": { "valid": "2026-09-03T02:55:00Z", "epoch": 1788404100000, "radarQuorum": "142/147" },
+  "satellite": {
+    "ir": { "valid": "2026-09-25T18:56:16Z", "epoch": 1790362576000 },
+    "vis": { "valid": "2026-09-25T18:56:16Z", "epoch": 1790362576000 }
+  }
 }
 ```
 
