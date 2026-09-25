@@ -34,6 +34,13 @@ Brave, Edge, or Firefox) and persisted in `~/.config/pi-weather-station/browser.
 carries the same client plus the server's controllers and calls the public
 radar upstreams directly. See [`docs/android-app.md`](docs/android-app.md).
 
+A GitHub Actions workflow builds a **signed release APK on every push to
+`master`** and publishes it to a GitHub Release tagged `app-v<version>`,
+once the four signing secrets (`ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`)
+are set on the repository. Without them the job logs a warning and builds
+nothing; `cd app && npm run apk` still builds a debug APK locally.
+
 ## What it shows
 
 **Two radar layers, blended by zoom level**
@@ -42,11 +49,19 @@ radar upstreams directly. See [`docs/android-app.md`](docs/android-app.md).
   wide-area situational awareness. Animated over IEM's fixed 5-minute offsets
   (11 frames, ~50 min), anchored on the composite time IEM publishes.
 - **Single-site super-resolution** base reflectivity (N0B, 0.5° × 0.25 km, the
-  product RadarScope shows by default) at zoom ≥ 9. The radar follows the
-  **map view**: zoom into a storm anywhere and the nearest NEXRAD to what
-  you are looking at is resolved automatically (NWS `points` API), so the
-  high-res layer is not tied to the home pin.
+  product RadarScope shows by default) at zoom ≥ 9.
 - Zoom 8 crossfades between them so there is no hard cutover.
+
+**Which radar.** The single-site layer uses the **nearest NEXRAD** to the
+home pin (ranked by distance from IEM's radar list, with NWS's office
+assignment only as a fallback — the office boundary runs through east
+Baltimore and used to flip radars for no visible reason). Pan or zoom into
+a storm anywhere and the radar **follows the map view**, but only once the
+view has left the home radar's reach (200 km), so looking across a bay
+never switches sites. A **radar site picker** (dock toggle) draws a
+RadarScope-style chip on every WSR-88D: tap one to pin the layer to that
+radar, tap it again to go back to automatic. The same pin is editable as
+"Radar site" in Settings.
 
 **Raw radial rendering at high zoom.** The latest scan is decoded from the
 public Level III archive and painted gate-by-gate on a canvas instead of
@@ -55,10 +70,34 @@ colours vs 10 in the equivalent IEM tile over the same echo. Historical loop
 frames are rendered the same way progressively, so the loop sharpens as
 frames arrive.
 
-**Velocity mode.** A dock toggle swaps the single-site layer to super-res
-**base velocity** (N0G): green toward the radar, red away, purple where the
-return is range-folded. Same raw-radial renderer, same loop. Rotation and
-shear are what you switch to this for; the mosaic stays reflectivity.
+**Four radar products** at high zoom, one dock button each, all through the
+same raw-radial renderer and loop:
+
+- **Reflectivity** (N0B) — the default.
+- **Base velocity** (N0G): green toward the radar, red away, purple where
+  the return is range-folded. Rotation and shear are what you switch to
+  this for.
+- **Precipitation type** — rain / snow / mix / hail per gate, from the
+  radar's own dual-pol classifier (N0H) merged with the reflectivity
+  intensity of the same scan; at low zoom the mosaic switches to NOAA's
+  MRMS surface precipitation type, with its own history loop.
+- **Correlation coefficient** (N0C), with a **tornado debris marker**: gates
+  near a detected circulation that combine ≥ 30 dBZ with CC < 0.8 are
+  flagged as a debris signature on the storm-track layer.
+
+**Reflectivity palette.** RadarScope-style by default (light rain recedes
+into white-grey, colour arrives with real precipitation) or the NWS
+classic ramp — Settings → Advanced. The palette is applied to the raw
+radial layer, to the IEM tiles (repainted pixel-exact through IEM's
+published colour table) and to the legend together.
+
+**Satellite overlay.** A dock button cycles **off → infrared → visible**
+GOES-East imagery under the radar: infrared works day and night, visible
+is the sharpest cloud picture in daylight. Tiles come from IEM's GOES-East
+CONUS layers (5-minute scans, typically 5–8 minutes old on arrival) and the
+image time gets its own row in the frame-age chip. A separate **radar
+toggle** (eye button) hides every radar layer so the cloud deck, storm
+tracks, lightning and alerts can be read on their own.
 
 **Frame age for every layer.** A stack in the top-left spells out, in
 minutes, how old the on-screen site scan, the mosaic composite, the storm
@@ -72,11 +111,19 @@ last good data rather than freezing silently.
 high zoom; the mosaic's 11-frame grid at low zoom. Scrubber, play/pause and
 speed control in the timeline bar.
 
-**Clear-air noise filter** (on by default). Hides returns below 15 dBZ on
-both the client-rendered radial layer and the IEM tiles — the tiles are
-filtered pixel-by-pixel against IEM's published N0Q colour table — removing
-the blue/green speckle of bugs, birds and dust on dry days. Toggle from the
-dock.
+**Clear-air noise filter**, three states from one dock button:
+
+- **off** — every echo the radar reported;
+- **dBZ floor** — hides returns below 15 dBZ on both the radial layer and
+  the IEM tiles (filtered pixel-by-pixel against IEM's published colour
+  table), removing the blue/green speckle of bugs, birds and dust;
+- **dual-pol clean** (default) — additionally drops the gates the scan's
+  own dual-pol classifier calls non-meteorological, applied server-side so
+  the payload stays the same size. This is what handles the full-disc
+  insect bloom that sits *above* 15 dBZ on warm nights, and it keeps
+  classified light rain that a plain floor would have thrown away. Measured
+  on the reported scan: 95.8 % of the speckle removed, 7 of 368 gates
+  ≥ 40 dBZ lost (5 of them ground clutter).
 
 **Storm tracks** (NEXRAD Level III STI, product 58): SCIT cell positions with
 15/30/45/60-minute forecast tracks, plus **mesocyclone / TVS markers** from
@@ -91,6 +138,9 @@ always-on label. Off by default, dock toggle.
 rolling 5-minute window, with a count in the legend. In-cloud flashes are
 included, so storms show electrification before the first ground strike. Off
 by default, dock toggle.
+
+**Dock hints.** The kiosk dock is icons only; rest the mouse on a button, or
+hold a finger on it, to see its description without triggering it.
 
 **NWS severe-weather alerts.** Active alerts at the home point as a banner
 (tornado / severe thunderstorm / flood tiers), plus an optional
@@ -119,11 +169,12 @@ RadarScope. ECCC (Canada) alerts are also polled for locations in Canada.
 
 | Source | Used for | Key |
 |---|---|---|
-| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) | N0Q mosaic tiles + composite time, N0B single-site tiles, frame-list JSON API, N0Q colour table | none |
-| `unidata-nexrad-level3` (public S3 bucket) | Raw N0B reflectivity and N0G velocity radials, STI storm tracks, NMD mesocyclones | none |
+| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) | N0Q mosaic tiles + composite time, N0B single-site tiles, frame-list JSON API, radar list for nearest-site resolution, N0Q colour table | none |
+| `unidata-nexrad-level3` (public S3 bucket) | Raw N0B reflectivity, N0G velocity, N0H hydrometeor class and N0C correlation-coefficient radials; STI storm tracks; NMD mesocyclones | none |
+| [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) GOES layers | GOES-East infrared and visible satellite tiles + per-channel valid time | none |
 | `noaa-goes19` (public S3 bucket) | GLM lightning flashes | none |
-| `noaa-mrms-pds` (public S3 bucket) | MRMS MESH hail size at each storm cell | none |
-| [api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Nearest radar site, active alerts, zone geometry | none (User-Agent required) |
+| `noaa-mrms-pds` (public S3 bucket) | MRMS MESH hail size at each storm cell; MRMS precipitation type + rate for the low-zoom mosaic | none |
+| [api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Active alerts, zone geometry, radar-site fallback, the WSR-88D station list the site picker ships | none (User-Agent required) |
 | [Environment Canada](https://api.weather.gc.ca/) | Alerts for Canadian locations | none |
 | [Mapbox](https://www.mapbox.com/) | Basemap raster tiles | **required** |
 | [LocationIQ](https://locationiq.com/) | Reverse geocoding for the place name | optional |
@@ -159,8 +210,9 @@ Then open `https://localhost:8443` and go full screen (`F11` in Chromium).
 | `mapApiKey` | yes | Mapbox access token |
 | `reverseGeoApiKey` | no | LocationIQ token for the place name in the header |
 | `startingLat` / `startingLon` | no | Home coordinates. Falls back to IP geolocation when absent |
+| `radarSite` | no | Pin the single-site layer to one NEXRAD (`LWX` or `KLWX`). Empty = nearest radar. Also set by tapping a chip in the map's site picker |
 | `favorites` | no | Managed from the UI (Places button) |
-| `advanced` | no | Managed from the Settings panel (map styles, radar opacity, sleep mode, nearby-alerts radius) |
+| `advanced` | no | Managed from the Settings panel (map styles, radar opacity, radar palette, sleep mode, nearby-alerts radius) |
 
 The **Settings** panel is reachable from the gear button in the bottom dock.
 On a fresh install with no Mapbox key the panel opens automatically.
