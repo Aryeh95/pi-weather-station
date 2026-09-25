@@ -205,6 +205,18 @@ palette, so the IR container gets `filter: grayscale(1)` via Leaflet's
 `className` option; visible is grayscale already and goes black at
 night, which is why IR is the first state. Opacity 0.7.
 
+### Radar visibility toggle (2026-09-25)
+
+`showRadar` (dock eye glyph, per-device, default ON — only a stored
+"false" hides) gates every radar layer in WeatherMap: `radialShown`,
+`mountedLoopRadials`, `currentLoopRadial`, both tile stacks, the precip-
+type mosaic and the two age rows. Satellite, storm tracks, lightning and
+alerts are untouched — the point is reading the cloud deck alone. The
+pollers keep running so the picture is instant on return. Not folded
+into the satellite button's cycle (a fourth state would make it
+confusing) and not the opacity slider (its floor is 5 % and it is buried
+in Advanced).
+
 ### Dock label hints (2026-09-25)
 
 The kiosk/web dock is icons only (the app drawer prints labels beside

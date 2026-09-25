@@ -830,6 +830,7 @@ const WeatherMap = ({ zoom, dark }) => {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    showRadar,
     satelliteMode,
     showLightning,
     radarNoiseMode,
@@ -1121,7 +1122,10 @@ const WeatherMap = ({ zoom, dark }) => {
   // AND the playhead is on the newest frame; historical frames come from
   // the loop cache below when rendered, or the timestamped tiles until
   // then.
-  const radialShown = Boolean(radial.url) && iemFromEnd === 0 && iemVisible.site;
+  // `showRadar` (dock eye toggle) gates every radar layer below: tiles,
+  // the radial overlays, loop frames and the precipitation-type mosaic.
+  // The pollers keep running so the picture is instant when it comes back.
+  const radialShown = showRadar && Boolean(radial.url) && iemFromEnd === 0 && iemVisible.site;
 
   // History is loaded ON PLAY, not on opening the timeline. Opening the
   // scrubber used to warm every loop frame (~30 fetches + ~30 canvas
@@ -1168,7 +1172,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // always mounted — and therefore decoded — one dwell ahead of being
   // shown. Frame 0 is excluded: that's the latest-radial overlay's job.
   const mountedLoopRadials = [];
-  if (radarTimelineVisible && iemVisible.site) {
+  if (showRadar && radarTimelineVisible && iemVisible.site) {
     const windowFromEnds = [iemFromEnd - 1, iemFromEnd, iemFromEnd + 1];
     if (iemFromEnd <= 1) windowFromEnds.push(iemSiteFrames.length - 1);
     const seen = new Set();
@@ -1181,7 +1185,8 @@ const WeatherMap = ({ zoom, dark }) => {
       if (r) mountedLoopRadials.push({ stamp: f.stamp, url: r.url, bounds: r.bounds });
     }
   }
-  const currentLoopRadial = Boolean(currentSiteFrame)
+  const currentLoopRadial = showRadar
+    && Boolean(currentSiteFrame)
     && !radialShown
     && Boolean(radialLoop.byStamp[currentSiteFrame.stamp]);
 
@@ -1210,7 +1215,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // A null current frame (playhead out past a layer's span) keeps the
   // stack mounted with every layer at opacity 0 — unmounting would
   // refetch the whole stack when the playhead comes back into range.
-  const mountedMosaicFrames = (!radarPrecipType && iemVisible.mosaic && iemMosaicFrames.length)
+  const mountedMosaicFrames = (showRadar && !radarPrecipType && iemVisible.mosaic && iemMosaicFrames.length)
     ? (loopActive ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
     : [];
   //
@@ -1221,7 +1226,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // loop warms in ~15 s.
   //
   // PRECIPITATION-TYPE MODE likewise: the tiles are reflectivity.
-  const mountedSiteFrames = (!radarVelocity && !radarPrecipType && !radarCorrelation && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
+  const mountedSiteFrames = (showRadar && !radarVelocity && !radarPrecipType && !radarCorrelation && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
     ? (loopActive ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
@@ -1256,7 +1261,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // same timestamps. The mosaic row is exact when IEM's composite time
   // came through, approximate (schedule-derived, "~") otherwise. Storm
   // tracks report their product's scan time; lightning the newest flash.
-  const siteRowShown = iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
+  const siteRowShown = showRadar && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
     && (radialShown || showIemSite || radarVelocity || radarPrecipType || radarCorrelation || currentLoopRadial);
   // In precipitation-type mode the mosaic row is the MRMS field's — the
   // live one on "latest", the loop frame nearest the playhead otherwise.
@@ -1281,10 +1286,10 @@ const WeatherMap = ({ zoom, dark }) => {
     rateAvailable: precipLoopEntry.rateAvailable,
   } : null), [precipLoopEntry]);
   const precipDisplayField = iemFromEnd === 0 ? precipMosaic.field : precipLoopField;
-  const precipMosaicShown = radarPrecipType && iemVisible.mosaic && Boolean(precipDisplayField);
+  const precipMosaicShown = showRadar && radarPrecipType && iemVisible.mosaic && Boolean(precipDisplayField);
   const mosaicRowShown = radarPrecipType
     ? precipMosaicShown
-    : (iemVisible.mosaic && Boolean(currentMosaicFrame));
+    : (showRadar && iemVisible.mosaic && Boolean(currentMosaicFrame));
   const stormScanEpoch = stormScanTime ? Date.parse(stormScanTime) : NaN;
   const ageRows = [];
   if (siteRowShown) {
@@ -1792,7 +1797,7 @@ const WeatherMap = ({ zoom, dark }) => {
           * (250): above the basemap, below the site layer, which paints
           * over it through the crossfade exactly as the tiles would. */}
         <Pane name="precipMosaicPane" style={{ zIndex: 240 }}>
-          {radarPrecipType && iemVisible.mosaic ? (
+          {showRadar && radarPrecipType && iemVisible.mosaic ? (
             <PrecipMosaicLayer
               field={precipDisplayField}
               opacity={iemOpacity.mosaic}
@@ -1853,7 +1858,7 @@ const WeatherMap = ({ zoom, dark }) => {
               through the historical frames merely hides it (opacity 0)
               instead of unmounting it and re-decoding the bitmap every
               time the playhead returns to "latest". */}
-          {Boolean(radial.url) && iemVisible.site ? (
+          {showRadar && Boolean(radial.url) && iemVisible.site ? (
             <ImageOverlay
               key={radial.url}
               url={radial.url}

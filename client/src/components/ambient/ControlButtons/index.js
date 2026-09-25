@@ -27,6 +27,8 @@ import warningAltIcon from "@iconify/icons-carbon/warning-alt";
 import stormTracksIcon from "@iconify/icons-carbon/hurricane";
 import radarSitesIcon from "@iconify/icons-carbon/radar-enhanced";
 import satelliteIcon from "@iconify/icons-carbon/cloud-satellite";
+import radarOnIcon from "@iconify/icons-carbon/view";
+import radarOffIcon from "@iconify/icons-carbon/view-off";
 import lightningIcon from "@iconify/icons-carbon/lightning";
 import noiseFilterIcon from "@iconify/icons-carbon/filter";
 import dualPolCleanIcon from "@iconify/icons-carbon/clean";
@@ -132,6 +134,7 @@ const ControlButtons = ({ labelled = false }) => {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleRadarSites,
+    toggleRadar,
     cycleSatelliteMode,
     toggleLightning,
     cycleRadarNoiseMode,
@@ -169,6 +172,7 @@ const ControlButtons = ({ labelled = false }) => {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    showRadar,
     satelliteMode,
     showLightning,
     radarNoiseMode,
@@ -752,6 +756,35 @@ const ControlButtons = ({ labelled = false }) => {
       <InlineIcon icon={satelliteIcon} />
     </div>
   );
+  // Radar visibility. Default on; off hides every radar layer so the
+  // satellite deck (and tracks, lightning, alerts) can be read alone. The
+  // glyph carries the state — an open eye while drawn, a struck eye while
+  // hidden — because "pressed" alone cannot say which way a default-on
+  // switch is set.
+  const btnRadar = (
+    <div
+      key="radar"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        toggleRadar();
+        notify(showRadar ? "toasts.radarOff" : "toasts.radarOn", e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${!showRadar && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showRadar ? "controls.hideRadar" : "controls.showRadar")}
+      aria-label={radarOverlaysDisabled
+        ? t("controls.radarOverlaysNeedMaximize")
+        : t(showRadar ? "controls.hideRadar" : "controls.showRadar")}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={showRadar ? radarOnIcon : radarOffIcon} />
+    </div>
+  );
   const btnNoiseFilter = (
     <div
       key="noiseFilter"
@@ -1066,6 +1099,7 @@ const ControlButtons = ({ labelled = false }) => {
         {withLabel(btnStormTracks)}
         {withLabel(btnRadarSites)}
         {withLabel(btnSatellite)}
+        {withLabel(btnRadar)}
         {withLabel(btnLightning)}
         {withLabel(btnNoiseFilter)}
         {withLabel(btnVelocity)}

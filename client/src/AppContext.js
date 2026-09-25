@@ -639,6 +639,23 @@ export function AppContextProvider({ children }) {
     });
   }, []);
 
+  // Radar layer visibility. ON by default — the radar is the product —
+  // but a per-device switch to hide every radar layer (mosaic and site
+  // tiles, radial overlays, loop frames, precipitation-type mosaic) so
+  // the satellite cloud deck, tracks, lightning and alerts can be read on
+  // their own. Only an explicit stored "false" hides the radar.
+  const [showRadar, setShowRadar] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try { return window.localStorage.getItem("showRadar") !== "false"; } catch { return true; }
+  });
+  const toggleRadar = useCallback(() => {
+    setShowRadar((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("showRadar", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
+
   // Radar site picker (RadarScope-style chips on every WSR-88D). Per-
   // device display toggle, OFF by default — it is a tool you open to
   // choose, not a layer to leave up.
@@ -2352,6 +2369,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleRadarSites,
+    toggleRadar,
     cycleSatelliteMode,
     pickRadarSite,
     toggleLightning,
@@ -2428,6 +2446,7 @@ export function AppContextProvider({ children }) {
     toggleWeatherAlerts,
     toggleStormTracks,
     toggleRadarSites,
+    toggleRadar,
     cycleSatelliteMode,
     pickRadarSite,
     toggleLightning,
@@ -2682,6 +2701,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    showRadar,
     satelliteMode,
     showLightning,
     radarNoiseMode,
@@ -2701,6 +2721,7 @@ export function AppContextProvider({ children }) {
     showWeatherAlerts,
     showStormTracks,
     showRadarSites,
+    showRadar,
     satelliteMode,
     showLightning,
     radarNoiseMode,
