@@ -68,9 +68,13 @@ function registerKnownServices() {
     "NEXRAD L3 (radial)",
     "NEXRAD L3 (storm tracks)",
     "MRMS (precip type)",
+    "MRMS (hail)",
     "GOES GLM (lightning)",
     "NWS (severe weather alerts)",
-    "Environment Canada (severe weather alerts)",
+    // Environment Canada is still wired into the nearby-alerts chain for a
+    // point near the border, and registers itself the first time it is
+    // actually called; pre-registering it left a permanent "not yet called"
+    // row on a kiosk that will never be within its coverage.
   ].forEach(registerService);
 }
 

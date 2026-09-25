@@ -15,7 +15,6 @@ const PROVIDER_STATUS_TTL = 30 * 60 * 1000;
 
 const PROVIDER_STATUS_APIS = [
   { name: "Mapbox",          type: "statuspage",           url: "https://status.mapbox.com/api/v2/status.json"       },
-  { name: "ipapi.co",        type: "html",                 url: "https://ipapi.co/status/"                           },
   { name: "LocationIQ",      type: "rss",                  url: "https://status.locationiq.com/rss"                  },
   // IEM publishes no machine-readable status page, so probe the frame-list
   // API the radar actually depends on. Semantics differ from the Statuspage
@@ -38,17 +37,6 @@ const API_PING_SLOW_MS = 3000; // above this threshold the API is "responsive bu
 function parseStatuspage(name, data) {
   const { indicator, description } = data?.status ?? {};
   return { name, indicator: indicator ?? "unknown", description: description ?? "" };
-}
-
-function parseIpapiHtml(name, html) {
-  const m = html.match(/<div class="incident-entry">\s*<span class="light light-(\d)"><\/span>\s*<span>([^<]+)<\/span>[^<]*<span>([^<]+)<\/span>/);
-  if (!m) return { name, indicator: "unknown", description: "Could not parse status" };
-  const lightMap = { "0": "none", "1": "minor", "2": "major" };
-  return {
-    name,
-    indicator:   lightMap[m[1]] ?? "unknown",
-    description: `${m[2].trim()} · ${m[3].trim()}`,
-  };
 }
 
 function parseStatuspageComponent(name, data, componentName) {
@@ -224,7 +212,6 @@ async function fetchProviderStatus() {
         const res = await axios.get(url, { timeout: 5000 });
         if (type === "statuspage")           return parseStatuspage(name, res.data);
         if (type === "statuspage-component") return parseStatuspageComponent(name, res.data, componentName);
-        if (type === "html")                 return parseIpapiHtml(name, res.data);
         if (type === "rss")                  return parseLocationIQRss(name, res.data);
         return { name, indicator: "unknown", description: "Unknown provider type" };
       } catch {
@@ -528,7 +515,7 @@ function logSecurityEvent(ip, method, url) {
 }
 
 /**
- * GET /api/debug — returns cache state, recent logs, vulnerability scan URL, security events
+ * GET /api/debug — returns recent logs, vulnerability scan URL, security events
  * Always restricted to localhost.
  *
  * @param {Object} req
@@ -536,13 +523,6 @@ function logSecurityEvent(ip, method, url) {
  */
 async function getDebugInfo(req, res) {
   const now = Date.now();
-
-  // The weather + ai-summary caches were removed with Tomorrow.io and the
-  // AI summary in the radar rework. Nothing server-side caches payloads
-  // any more (the radar frame list keeps its own short-lived in-memory
-  // cache inside iemRadarCtrl), so this inventory is now always empty —
-  // kept as a stable field so the Debug panel doesn't need a null guard.
-  const cache = [];
 
   let logs = [];
   const LOG_PATHS = [
@@ -605,7 +585,7 @@ async function getDebugInfo(req, res) {
     }))
   );
 
-  return res.status(200).json({ cache, logs, vulnerabilityScanUrl, securityEvents, services: getServiceStatus(), counters: getCounters(), system: getSystemInfo(), network: getNetworkInfo(), providerStatus, connectivity, appVersion: getAppVersion(), serverKpis, remoteClients, updateInfo, serverConfig: getServerConfig() });
+  return res.status(200).json({ logs, vulnerabilityScanUrl, securityEvents, services: getServiceStatus(), counters: getCounters(), system: getSystemInfo(), network: getNetworkInfo(), providerStatus, connectivity, appVersion: getAppVersion(), serverKpis, remoteClients, updateInfo, serverConfig: getServerConfig() });
 }
 
 /**

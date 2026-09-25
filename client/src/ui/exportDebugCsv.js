@@ -100,14 +100,10 @@ export function exportDebugCsv(data, clientMetrics, fps) {
   rows.push([q("METRIC"), q("VALUE")]);
   if (data?.serverKpis) {
     const kpis = data.serverKpis;
-    const { rate } = kpis.cache;
     rows.push([q("Uptime"),             q(formatUptime(kpis.uptimeSec))]);
     rows.push([q("Heap Used (MB)"),     q(kpis.memory.heapUsedMb)]);
     rows.push([q("Heap Total (MB)"),    q(kpis.memory.heapTotalMb)]);
     rows.push([q("RSS (MB)"),           q(kpis.memory.rssMb)]);
-    rows.push([q("Cache Hit Rate (%)"), q(rate !== null ? rate : "N/A")]);
-    rows.push([q("Cache Hits"),         q(kpis.cache.hits)]);
-    rows.push([q("Cache Misses"),       q(kpis.cache.misses)]);
     rows.push([q("CPU Temp (°C)"),      q(kpis.cpuTempC != null ? kpis.cpuTempC : "N/A")]);
     rows.push([q("Fan Speed (RPM)"),    q(kpis.fanRpm != null ? kpis.fanRpm : "N/A")]);
   } else {
@@ -182,16 +178,6 @@ export function exportDebugCsv(data, clientMetrics, fps) {
     });
   }
 
-  // Cache
-  if (data?.cache?.length > 0) {
-    section("CACHE");
-    rows.push([q("TYPE"), q("LAT"), q("LON"), q("TTL (s)")]);
-    data.cache.forEach((entry) => {
-      const [type, lat, lon] = entry.key.split(":");
-      rows.push([q(type), q(lat), q(lon), q(entry.expired ? "EXPIRED" : entry.expiresIn)]);
-    });
-  }
-
   // Remote Clients
   if (data?.remoteClients?.length > 0) {
     section("REMOTE CLIENTS");
@@ -207,25 +193,6 @@ export function exportDebugCsv(data, clientMetrics, fps) {
     rows.push([q("METHOD"), q("URL"), q("IP"), q("TIME")]);
     data.securityEvents.forEach((e) => {
       rows.push([q(e.method), q(e.url), q(e.ip), q(e.time)]);
-    });
-  }
-
-  // Radar Snapshots — flatten radarText/summary onto single lines so each
-  // snapshot fits one CSV row. Newlines in the source are joined with " | ".
-  if (data?.radarSnapshots?.length > 0) {
-    section("RADAR SNAPSHOTS");
-    rows.push([q("TIME"), q("LAT"), q("LON"), q("LANG"), q("SOURCE"), q("RADAR INPUT"), q("SUMMARY")]);
-    data.radarSnapshots.forEach((s) => {
-      const flat = (str) => (str || "").replace(/\r?\n/g, " | ");
-      rows.push([
-        q(new Date(s.ts).toLocaleString()),
-        q(s.lat?.toFixed(4)),
-        q(s.lon?.toFixed(4)),
-        q(s.lang),
-        q(s.source),
-        q(flat(s.radarText)),
-        q(flat(s.summary)),
-      ]);
     });
   }
 

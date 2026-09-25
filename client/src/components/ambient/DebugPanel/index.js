@@ -17,7 +17,6 @@ import launchIcon from "@iconify/icons-carbon/launch";
 import serverIcon from "@iconify/icons-carbon/bare-metal-server";
 import clientIcon from "@iconify/icons-carbon/screen";
 import servicesIcon from "@iconify/icons-carbon/network-3";
-import storageIcon from "@iconify/icons-carbon/data-base";
 import aboutIcon from "@iconify/icons-carbon/information";
 import axios from "axios";
 import { AppContext } from "~/AppContext";
@@ -516,7 +515,6 @@ const BUCKETS = [
   { id: "server",   icon: serverIcon },
   { id: "client",   icon: clientIcon },
   { id: "services", icon: servicesIcon },
-  { id: "storage",  icon: storageIcon },
   { id: "about",    icon: aboutIcon },
 ];
 
@@ -524,7 +522,6 @@ const bucketLabel = (lang, id) => ({
   server:   lbl(lang, "Server",   "Serveur",  "Servidor"),
   client:   lbl(lang, "Client",   "Client",   "Cliente"),
   services: lbl(lang, "Services", "Services", "Servicios"),
-  storage:  lbl(lang, "Storage",  "Stockage", "Almacén"),
   about:    lbl(lang, "About",    "À propos", "Acerca de"),
 }[id] || id);
 
@@ -543,7 +540,6 @@ const APPROX_HEIGHT = {
   // lists, so the bucket grew by ~120 px.
   client: 360,
   services: 580,
-  storage: 440,
   about: 260,
 };
 
@@ -632,7 +628,6 @@ const BucketContent = ({ bucket, data, lang, gridTwoWide, fetchDebug }) => (
      bucket === "client"   ? <BucketClient data={data} lang={lang} gridTwoWide={gridTwoWide} /> :
      bucket === "services" ? <BucketServices data={data} lang={lang} /> :
      bucket === "about"    ? <BucketAbout data={data} lang={lang} gridTwoWide={gridTwoWide} fetchDebug={fetchDebug} /> :
-     bucket === "storage"  ? <BucketStorage data={data} lang={lang} gridTwoWide={gridTwoWide} /> :
                              null}
   </BucketErrorBoundary>
 );
@@ -778,8 +773,6 @@ const BucketServer = ({ data, lang, gridTwoWide }) => {
             : "—"}
         />
         <KV k="fan rpm"    v={fanRpmShown != null ? fanRpmShown.toLocaleString() : "—"} />
-        <KV k="cache hits" v={kpis.cache?.hits != null ? kpis.cache.hits.toLocaleString() : "—"} />
-        <KV k="cache rate" v={kpis.cache?.rate != null ? `${kpis.cache.rate}%` : "—"} />
       </div>
 
       {kpis.powerStatus?.available ? (
@@ -1226,8 +1219,6 @@ const SERVICE_LABELS = {
   "mapbox": "Mapbox",
   "locationiq": "LocationIQ",
   "ipapi.co": "ipapi.co",
-  "anthropic": "Anthropic",
-  "rainviewer": "RainViewer",
 };
 
 /**
@@ -1294,125 +1285,6 @@ const QuotaTable = ({ service, quotas, endpoints }) => {
           {showDay ? <span className={tierClass(total.day, quotas.day)}>{fmt(total.day, quotas.day)}</span> : null}
           {showMonth ? <span className={tierClass(total.month, quotas.month)}>{fmt(total.month, quotas.month)}</span> : null}
         </div>
-      </div>
-    </>
-  );
-};
-
-const BucketStorage = ({ data, lang, gridTwoWide }) => {
-  const cache = Array.isArray(data.cache) ? data.cache : [];
-  const kpis = data.serverKpis || {};
-  return (
-    <div className={styles.bucket}>
-      <SectionTitle title={lbl(lang, "Cache stats", "Statistiques de cache", "Estadísticas de caché")} />
-      <div className={`${styles.gridTwo} ${gridTwoWide ? styles.gridTwoWide : ""}`}>
-        <KV k={lbl(lang, "hits", "succès", "aciertos")}     v={kpis.cache?.hits != null ? kpis.cache.hits.toLocaleString() : "—"} />
-        <KV k={lbl(lang, "misses", "manqués", "fallos")}   v={kpis.cache?.misses != null ? kpis.cache.misses.toLocaleString() : "—"} />
-        <KV k={lbl(lang, "hit rate", "taux de succès", "tasa de aciertos")} v={kpis.cache?.rate != null ? `${kpis.cache.rate}%` : "—"} />
-        <KV k={lbl(lang, "entries", "entrées", "entradas")}  v={cache.length.toLocaleString()} />
-      </div>
-
-      <SectionTitle title={lbl(lang, "Cache entries", "Entrées de cache", "Entradas de caché")} gap />
-      {cache.length === 0 ? (
-        <div className={styles.emptyNote}>{lbl(lang, "Cache is empty.", "Cache vide.", "Caché vacío.")}</div>
-      ) : (
-        <div className={styles.list}>
-          {cache.slice(0, 12).map((e, i) => (
-            <div key={i} className={styles.row}>
-              <span className={styles.rowMono}>{e.key}</span>
-              <span className={styles.rowDim}>
-                {e.expired ? "EXPIRED" : `TTL ${e.expiresIn ?? "?"}s`}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <SectionTitle title={lbl(lang, "Radar AI snapshots", "Captures radar IA", "Capturas radar IA")} gap />
-      <RadarSnapshotsBlock snapshots={data.radarSnapshots} lang={lang} />
-    </div>
-  );
-};
-
-/**
- * Recent radar AI prompt snapshots — collapsible per-entry with the
- * input radar text and the resulting Claude summary. Per-entry copy
- * button, plus a section-level JSON export so the user can ship a
- * full snapshot bundle for offline review.
- *
- * @param {object} props
- * @param {Array} props.snapshots
- * @returns {JSX.Element}
- */
-const RadarSnapshotsBlock = ({ snapshots, lang }) => {
-  const [copiedIndex, setCopiedIndex] = useState(null);
-  const hasAny = Array.isArray(snapshots) && snapshots.length > 0;
-  const handleCopy = useCallback(async (s, i) => {
-    try {
-      const header = `[${new Date(s.ts).toLocaleString()}] ${s.lat?.toFixed(4)}, ${s.lon?.toFixed(4)} · ${s.lang} · ${s.source}`;
-      const text = `${header}\n\n--- Radar text passed to Claude ---\n${s.radarText}\n\n--- Resulting summary ---\n${s.summary}\n`;
-      await navigator.clipboard.writeText(text);
-      setCopiedIndex(i);
-      setTimeout(() => setCopiedIndex((cur) => (cur === i ? null : cur)), 1500);
-    } catch {
-      // Clipboard requires a secure context + user gesture; both hold
-      // on localhost. Silent failure is fine.
-    }
-  }, []);
-  const handleExportJson = useCallback(() => {
-    if (!hasAny) return;
-    const payload = JSON.stringify(snapshots, null, 2);
-    const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
-    const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `radar-snapshots-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [snapshots, hasAny]);
-  if (!hasAny) {
-    return <div className={styles.emptyNote}>{lbl(lang, "No radar snapshots yet.", "Aucune capture radar pour l'instant.", "Sin capturas radar todavía.")}</div>;
-  }
-  return (
-    <>
-      <div className={styles.snapshotsHeader}>
-        <button
-          type="button"
-          className={styles.compExportButton}
-          onClick={handleExportJson}
-        >
-          Export JSON
-        </button>
-      </div>
-      <div className={styles.snapshotsList}>
-        {snapshots.map((s, i) => (
-          <details key={i} className={styles.snapshot}>
-            <summary className={styles.snapshotSummary}>
-              <span className={styles.rowMono}>
-                {new Date(s.ts).toLocaleString()}
-              </span>
-              <span className={styles.rowDim}>
-                {s.lat?.toFixed(2)}, {s.lon?.toFixed(2)} · {s.lang} · {s.source}
-              </span>
-            </summary>
-            <div className={styles.snapshotBody}>
-              <button
-                type="button"
-                className={styles.compExportButton}
-                onClick={() => handleCopy(s, i)}
-              >
-                {copiedIndex === i ? "Copied!" : "Copy"}
-              </button>
-              <div className={styles.snapshotLabel}>Radar text (input)</div>
-              <pre className={styles.snapshotPre}>{s.radarText}</pre>
-              <div className={styles.snapshotLabel}>Summary (output)</div>
-              <pre className={styles.snapshotPre}>{s.summary}</pre>
-            </div>
-          </details>
-        ))}
       </div>
     </>
   );
