@@ -112,6 +112,8 @@ const LOCAL_MIN_NCC = 0.3;
 // verdict-less gates); intensity for matching is dBZ above it.
 const RAIN_DBZ = 15;
 const LEAD_STEP_MIN = 5;
+// Each 5-min step is sampled at this resolution along the parcel's path.
+const SUB_STEP_MIN = 1;
 const HORIZON_MIN = 90;
 // Two consecutive 5-min steps make an event — one lonely cell passing over
 // the pin is not "rain arriving".
@@ -120,7 +122,15 @@ const PERSIST_STEPS = 2;
 // the 3 × 3 km neighbourhood. Overridable for the hindcast harness only.
 const SAMPLE_HALF = Math.max(1, parseInt(envVar("NOWCAST_SAMPLE_HALF") || "1", 10) || 1);
 const SAMPLE_CELLS = (2 * SAMPLE_HALF + 1) ** 2;
-const SAMPLE_MAJORITY = Math.ceil(SAMPLE_CELLS / 2);
+// Wet cells needed for the footprint to count as raining: a THIRD of it
+// (3 of 9). It was a majority (5 of 9) first, which a 2 × 3 km core of
+// 16–21 dBZ two kilometres from the pin could not satisfy from any centre
+// (South Salem NY, 2026-09-27 21:35 Z — the card said "nothing heading
+// this way" under a visible shower). Measured 2026-09-27 with the
+// per-minute sampling: a third costs ~5 CSI points at 15 min on the
+// broken-showers case and gains 3–8 on the band case; it is also what the
+// eye calls rain on the map. Overridable for the harness.
+const SAMPLE_MAJORITY = Math.max(1, parseInt(envVar("NOWCAST_SAMPLE_WET") || "", 10) || Math.ceil(SAMPLE_CELLS / 3));
 // Ensemble: speed factors × direction offsets, spread by the correlation
 // quality (a sharp peak means a tight ensemble). At ncc 0.9 the spread is
 // ±13 % / ±11°; at ncc 0.5 it is ±25 % / ±23°.
@@ -159,9 +169,15 @@ const MRMS_WEIGHT = 0.5;
 const DEFAULT_OFF = ["mrms"];
 // Probability thresholds for the sentences: the rain call, and the range
 // the arrival is quoted over.
+// Echo reported beside a dry answer: anything the cleaned scan kept above
+// this, within this radius of the pin.
+const NEARBY_MIN_DBZ = 5;
+const NEARBY_RADIUS_KM = 15;
 const P_RAIN = 0.5;
 const P_EARLIEST = 0.3;
 const P_LATEST = 0.7;
+// A single wet step counts as an event when this sure.
+const P_BRIEF = 0.6;
 
 // Intensity categories by dBZ, in the vocabulary the client's i18n uses.
 const CATEGORIES = [
@@ -176,10 +192,12 @@ const CATEGORIES = [
 const PTYPE_OF_GROUP = ["none", "rain", "snow", "mix", "graupel", "hail"];
 
 // Skill measured by tools/nowcastHindcast.js against archived scans (see
-// CLAUDE.md, "Nowcast"). Two cases, 9 pins each, 3 × 3 km footprint,
-// scored on the ≥ 50 % probability call with the default features
-// (ensemble + trend + local field + previous vector; MRMS off):
-//   DIX 2026-09-27 14–20 Z — broken bands of showers, 729 nowcasts
+// CLAUDE.md, "Nowcast"). Two cases, 9 pins each, scored on the ≥ 50 %
+// probability call with the default features (ensemble + trend + local
+// field + previous vector; MRMS off), against the truth the card actually
+// claims: "rain crosses the pin (a third of the 3 × 3 km footprint ≥ 15
+// dBZ) in some scan of the 5-min window ending at the lead":
+//   DIX 2026-09-27 14–20 Z — broken bands of showers, 756 nowcasts
 //   LWX 2026-09-22 03–06 Z — a fast stratiform band, 540 nowcasts
 // `leads` is the mean of the two cases; `persistence` is the "it keeps
 // doing what it does now" baseline the nowcast has to beat, and does at
@@ -193,16 +211,16 @@ const HINDCAST = {
   cases: ["DIX 2026-09-27 14-20Z (showers)", "LWX 2026-09-22 03-06Z (band)"],
   leads: {
     15: {
-      leadMin: 15, pod: 0.71, far: 0.37, csi: 0.51, brier: 0.057, persistence: { pod: 0.41, far: 0.56, csi: 0.28 },
+      leadMin: 15, pod: 0.79, far: 0.36, csi: 0.54, brier: 0.11, persistence: { pod: 0.49, far: 0.37, csi: 0.39 },
     },
     30: {
-      leadMin: 30, pod: 0.58, far: 0.41, csi: 0.42, brier: 0.075, persistence: { pod: 0.28, far: 0.70, csi: 0.17 },
+      leadMin: 30, pod: 0.64, far: 0.45, csi: 0.42, brier: 0.14, persistence: { pod: 0.32, far: 0.57, csi: 0.22 },
     },
     45: {
-      leadMin: 45, pod: 0.38, far: 0.53, csi: 0.26, brier: 0.093, persistence: { pod: 0.17, far: 0.83, csi: 0.10 },
+      leadMin: 45, pod: 0.56, far: 0.47, csi: 0.37, brier: 0.16, persistence: { pod: 0.22, far: 0.70, csi: 0.15 },
     },
     60: {
-      leadMin: 60, pod: 0.36, far: 0.46, csi: 0.26, brier: 0.092, persistence: { pod: 0.12, far: 0.89, csi: 0.06 },
+      leadMin: 60, pod: 0.43, far: 0.58, csi: 0.26, brier: 0.17, persistence: { pod: 0.16, far: 0.81, csi: 0.10 },
     },
   },
 };
@@ -795,9 +813,8 @@ function sampleGrid(grid, xKm, yKm) {
       }
     }
   }
-  // Rain / no rain needs a MAJORITY of the neighbourhood wet: one wet
-  // cell is the edge of a band or a stray gate, while a 1 km miss of a
-  // solid band still leaves most of the footprint wet.
+  // Rain / no rain needs a THIRD of the neighbourhood wet: one wet cell
+  // is the edge of a band or a stray gate; three is a shower.
   return {
     max, rainMean: rainCells ? sum / rainCells : -Infinity, rainCells, raining: rainCells >= SAMPLE_MAJORITY,
   };
@@ -889,26 +906,54 @@ function advectSeries(grid, motion, ctx = {}) {
     let dbzMax = -Infinity;
     let central = null;
     const adjust = Math.max(-TREND_MAX_TOTAL_DB, Math.min(TREND_MAX_TOTAL_DB, (trendDb * lead) / 60));
+    // A step stands for the 5 minutes ENDING at `lead`: each member's
+    // parcel is sampled every minute across that window and the member is
+    // wet if rain crosses the pin at any of them. A 4 km shower at
+    // 60 km/h passes the pin in 4 minutes and used to fall between two
+    // samples (South Salem NY, 2026-09-27 21:35 Z: the card said "nothing
+    // heading this way" with the cell 2 km east).
+    const subSteps = lead === 0 ? [0] : [];
+    for (let t = lead - LEAD_STEP_MIN + SUB_STEP_MIN; t <= lead; t += SUB_STEP_MIN) if (lead > 0) subSteps.push(t);
     for (const m of members) {
-      const p = upstreamPoint(m, field, lead);
-      const s = sampleGrid(grid, p.x, p.y);
-      if (!s) continue; // this member's parcel is off the grid
+      let onGrid = false;
+      let wet = false;
+      // Intensity while it rains: the mean over the wet minutes, so a
+      // shower's edge minute does not set the category.
+      let dbzAcc = 0;
+      let wetMinutes = 0;
+      let mrmsSeen = false;
+      let mrmsWetHere = false;
+      for (const t of subSteps) {
+        const p = upstreamPoint(m, field, t);
+        const s = sampleGrid(grid, p.x, p.y);
+        if (!s) continue; // this parcel is off the grid at this minute
+        onGrid = true;
+        const adjusted = Number.isFinite(s.rainMean) ? s.rainMean + adjust : -Infinity;
+        if (s.raining && adjusted >= RAIN_DBZ) {
+          wet = true;
+          dbzAcc += adjusted;
+          wetMinutes += 1;
+        }
+        if (Number.isFinite(s.max) && s.max + adjust > dbzMax) dbzMax = s.max + adjust;
+        if (t === lead && !central && m.speedFactor === 1 && m.dirOffsetDeg === 0 && !m.previous) central = p;
+        if (ctx.rateGrid) {
+          const r = sampleRate(ctx.rateGrid, p.x, p.y, mrmsWet);
+          if (r) {
+            mrmsSeen = true;
+            if (r.wet) mrmsWetHere = true;
+          }
+        }
+      }
+      if (!onGrid) continue;
       totalW += m.weight;
-      const adjusted = Number.isFinite(s.rainMean) ? s.rainMean + adjust : -Infinity;
-      const wet = s.raining && adjusted >= RAIN_DBZ;
       if (wet) {
         wetW += m.weight;
-        dbzSum += adjusted * m.weight;
+        dbzSum += (dbzAcc / wetMinutes) * m.weight;
         dbzW += m.weight;
       }
-      if (Number.isFinite(s.max) && s.max + adjust > dbzMax) dbzMax = s.max + adjust;
-      if (!central && m.speedFactor === 1 && m.dirOffsetDeg === 0 && !m.previous) central = p;
-      if (ctx.rateGrid) {
-        const r = sampleRate(ctx.rateGrid, p.x, p.y, mrmsWet);
-        if (r) {
-          mrmsTotalW += m.weight;
-          if (r.wet) mrmsWetW += m.weight;
-        }
+      if (mrmsSeen) {
+        mrmsTotalW += m.weight;
+        if (mrmsWetHere) mrmsWetW += m.weight;
       }
     }
     // The horizon ends where most of the ensemble has left the grid: rain
@@ -945,6 +990,40 @@ function advectSeries(grid, motion, ctx = {}) {
 }
 
 /**
+ * The strongest echo near the pin, for the "dry" wording: a card that says
+ * "nothing is heading this way" beside a visible shower is wrong even when
+ * the shower is below the rain floor or too small for the footprint. Any
+ * echo the cleaned scan kept counts (the clean mask has already removed
+ * insects and clutter).
+ *
+ * @param {Float32Array} grid newest dBZ grid
+ * @param {Number} [radiusKm] search radius
+ * @returns {{maxDbz: Number, distanceKm: Number, bearingDeg: Number}|null} null when nothing within the radius
+ */
+function nearestEcho(grid, radiusKm = NEARBY_RADIUS_KM) {
+  const c = (GRID_N - 1) / 2;
+  const r = Math.round(radiusKm / GRID_CELL_KM);
+  let best = null;
+  for (let i = c - r; i <= c + r; i += 1) {
+    for (let j = c - r; j <= c + r; j += 1) {
+      const v = grid[i * GRID_N + j];
+      if (!(v >= NEARBY_MIN_DBZ)) continue;
+      const dx = (j - c) * GRID_CELL_KM;
+      const dy = (c - i) * GRID_CELL_KM;
+      const d = Math.hypot(dx, dy);
+      if (d > radiusKm) continue;
+      // Prefer the strongest; among equals the nearest.
+      if (!best || v > best.maxDbz + 3 || (Math.abs(v - best.maxDbz) <= 3 && d < best.distanceKm)) {
+        let bearing = (Math.atan2(dx, dy) * 180) / Math.PI;
+        if (bearing < 0) bearing += 360;
+        best = { maxDbz: Math.round(v * 2) / 2, distanceKm: Math.round(d * 10) / 10, bearingDeg: Math.round(bearing) };
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * Turn the series into the sentences the card prints.
  *
  * @param {Array<Object>} series from advectSeries
@@ -952,9 +1031,15 @@ function advectSeries(grid, motion, ctx = {}) {
  */
 function summarize(series) {
   const rainAt = series.map((s) => s.prob >= P_RAIN);
+  // An event is PERSIST_STEPS consecutive wet steps — or one step the
+  // ensemble is confident about (≥ P_BRIEF): a small shower crossing the
+  // pin in four minutes is one step long and still real (the card calls
+  // it a brief shower).
   const persistentAt = (k) => {
-    for (let m = 0; m < PERSIST_STEPS; m += 1) {
-      if (k + m >= rainAt.length) return k + m === rainAt.length && m > 0; // the horizon edge counts
+    if (!rainAt[k]) return false;
+    if (series[k].prob >= P_BRIEF) return true;
+    for (let m = 1; m < PERSIST_STEPS; m += 1) {
+      if (k + m >= rainAt.length) return true; // the horizon edge counts
       if (!rainAt[k + m]) return false;
     }
     return true;
@@ -1016,6 +1101,8 @@ function summarize(series) {
         category: series[start].category,
         dbz: series[start].dbz,
         ptype: series[start].ptype,
+        // One wet step followed by a dry one: a passing shower.
+        brief: start + 1 < rainAt.length && !rainAt[start + 1],
       };
     }
     let endIdx = -1;
@@ -1136,6 +1223,7 @@ function nowcastFromScans(scans, home, opts = {}) {
     mrms: mrmsInfo,
     classification: classGrid ? { product: CLASS_PRODUCT, scanTime: opts.classification.scanTime || null } : null,
     confidence: confidenceFor(motion, key ? key.leadMin : null, key ? key.prob : null),
+    nearby: nearestEcho(newest.grid),
     echoCellsInRange: echoCells,
     gridKm: GRID_HALF_KM,
     rainDbz: RAIN_DBZ,
@@ -1477,6 +1565,7 @@ module.exports = {
   advectSeries,
   summarize,
   sampleGrid,
+  nearestEcho,
   categoryFor,
   rateForDbz,
   featureSet,
@@ -1489,6 +1578,7 @@ module.exports = {
   HORIZON_MIN,
   LEAD_STEP_MIN,
   P_RAIN,
+  P_BRIEF,
   MRMS_RATE_PRODUCT,
   MRMS_MAX_SKEW_MS,
   MRMS_WET_MM_H,

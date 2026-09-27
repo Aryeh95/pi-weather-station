@@ -116,7 +116,7 @@
     "tryLater": "El radar no respondió; se reintentará en un minuto",
     "rainingNow": "Lloviendo ahora",
     "noRain": "Sin lluvia prevista en los próximos {{min}} min",
-    "noRainDetail": "Nada en {{km}} km viene hacia aquí",
+    "noRainDetail": "Ningún eco de lluvia en {{km}} km viene hacia aquí",
     "horizonShort": "Más allá de {{min}} min la lluvia vendría de fuera del alcance del radar",
     "motionUnknown": "Lluvia cerca, movimiento incierto",
     "motionUnknownDetail": "Hay eco en {{km}} km, pero los barridos no coinciden en su movimiento",
@@ -159,7 +159,16 @@
     "withSurface": "el radar de superficie coincide",
     "liveSkill": "Aquí: el {{right}}% de los avisos a {{lead}} min se cumplieron ({{n}} comprobados)",
     "liveSkillHint": "Verificado en vivo en este lugar: cada aviso se comprueba con el barrido que llega {{lead}} min después.",
-    "nowTick": "ahora"
+    "nowTick": "ahora",
+    "nearbyEcho": "Un chubasco pequeño a {{km}} km al {{dir}} ({{dbz}} dBZ) no pasa sobre el punto",
+    "nearbyLightEcho": "Solo eco débil cerca ({{km}} km al {{dir}}, {{dbz}} dBZ), por debajo del umbral de lluvia de 15 dBZ",
+    "brief": {
+      "rain": "Chubasco breve en {{range}} min",
+      "snow": "Nevada breve en {{range}} min",
+      "mix": "Aguanieve breve en {{range}} min",
+      "hail": "Granizo breve en {{range}} min",
+      "graupel": "Nieve granulada breve en {{range}} min"
+    }
   },
   "conditions": {
     "title": "Condiciones",

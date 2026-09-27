@@ -82,8 +82,9 @@ test("advectSeries + summarize: a blob 24 km upwind arrives in 30 min and ends w
   assert.equal(series.length, HORIZON_MIN / LEAD_STEP_MIN + 1);
   const s = nc.summarize(series);
   assert.equal(s.now.raining, false);
-  assert.ok(s.arrival && s.arrival.leadMin >= 25 && s.arrival.leadMin <= 30, `arrival ${JSON.stringify(s.arrival)}`);
-  assert.equal(s.arrival.category, "moderate");
+  assert.ok(s.arrival && s.arrival.leadMin >= 20 && s.arrival.leadMin <= 30, `arrival ${JSON.stringify(s.arrival)}`);
+  // The synthetic blob's gradient puts its leading edge at ~40 dBZ.
+  assert.ok(["moderate", "heavy"].includes(s.arrival.category), s.arrival.category);
   assert.ok(s.end && s.end.leadMin >= 45 && s.end.leadMin <= 55, `end ${JSON.stringify(s.end)}`);
   assert.ok(s.peak && s.peak.dbz >= 30);
 });
@@ -279,4 +280,32 @@ test("verifyAndRecord scores a pending forecast when its verifying scan arrives"
   assert.equal(skill.leads[15].n, 2, "the 15-min lead of the second forecast (0.1) verified as a correct negative");
   assert.equal(skill.leads[15].correctNegative, 1);
   assert.ok(skill.leads[30].brier > 0.6);
+});
+
+test("a small fast shower that crosses the pin between two 5-min steps still counts for its step", () => {
+  // 2 km blob centred 2.5 km upstream, moving at 1 km/min: over the pin
+  // at t ≈ 1–4 min, gone before the +5 mark.
+  const grid = blob(-2.5, 0, 1, 25);
+  const motion = { vx: 1, vy: 0 };
+  const series = nc.advectSeries(grid, motion, { features: nc.featureSet() });
+  assert.equal(series[0].prob, 0, "not over the pin at scan time");
+  assert.equal(series[1].prob, 1, "crosses the pin inside the first 5-min window");
+  assert.equal(series[2].prob, 0, "gone by +10");
+  assert.equal(nc.summarize(series).arrival.leadMin, 5);
+  // Sampled only AT the 5-min marks it was invisible: at t = 5 the parcel
+  // sits 5 km upstream, past the blob's far edge.
+  assert.equal(nc.sampleGrid(grid, -5, 0).raining, false);
+  assert.equal(nc.sampleGrid(grid, 0, 0).raining, false);
+});
+
+test("nearestEcho reports the strongest echo beside the pin, or null on a clean field", () => {
+  const dry = new Float32Array(GRID_N * GRID_N).fill(-Infinity);
+  assert.equal(nc.nearestEcho(dry), null);
+  // A 2 × 2 km patch of 12 dBZ, 3 km east: below the rain floor but real echo.
+  const g = new Float32Array(GRID_N * GRID_N).fill(-Infinity);
+  for (const di of [0, 1]) for (const dj of [3, 4]) g[(C - di) * GRID_N + (C + dj)] = 12;
+  const e = nc.nearestEcho(g);
+  assert.ok(e && e.maxDbz >= 10 && e.maxDbz < 15, JSON.stringify(e));
+  assert.ok(e.distanceKm >= 1 && e.distanceKm <= 4);
+  assert.ok(e.bearingDeg > 45 && e.bearingDeg < 135, "to the east");
 });

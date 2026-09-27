@@ -145,7 +145,7 @@ const NowcastPanel = ({ compact = false }) => {
 
   // ---- The answer ---------------------------------------------------
   const {
-    now: current, arrival, peak, end, series, motion, trend, confidence, horizonMin, scanTime, site, hindcast, liveSkill, mrms,
+    now: scanNow, arrival, peak, end, series, motion, trend, confidence, horizonMin, scanTime, site, hindcast, liveSkill, mrms, nearby,
   } = data;
   const at = (lead) => clockAt(scanTime, lead, clockTime, mapTimezone);
   const cat = (name) => t(`nowcast.intensity.${name}`);
@@ -155,6 +155,13 @@ const NowcastPanel = ({ compact = false }) => {
   // "in N min" is from now, never negative.
   const elapsed = Math.max(0, Math.round((now - Date.parse(scanTime)) / 60000));
   const fromNow = (lead) => Math.max(1, lead - elapsed);
+  // "Now" is judged at the scan's current age: a scan is 0–6 min old when
+  // read, and a shower 3 km upstream at scan time is over the pin by then.
+  const nowIdx = Math.min(series.length - 1, Math.round(elapsed / 5));
+  const nowStep = series[nowIdx] || series[0];
+  const current = nowIdx > 0 && nowStep
+    ? { ...scanNow, raining: nowStep.prob >= 0.5, prob: nowStep.prob, dbz: nowStep.dbz, category: nowStep.category, rateMmh: nowStep.rateMmh, ptype: nowStep.ptype }
+    : scanNow;
   // Precipitation-type vocabulary: "Rain", "Snow", "Sleet / freezing
   // rain", "Hail", "Graupel" — one headline key per type.
   const typeOf = (x) => (x && x.ptype && x.ptype !== "none" ? x.ptype : "rain");
@@ -172,14 +179,14 @@ const NowcastPanel = ({ compact = false }) => {
     if (end) parts.push(t("nowcast.endsAround", { time: at(end.leadMin), min: fromNow(end.leadMin) }));
     else parts.push(t("nowcast.noEnd", { time: at(horizonMin) }));
     detail = parts.join(" · ");
-  } else if (arrival) {
+  } else if (arrival && arrival.leadMin > elapsed) {
     tone = arrival.category;
     // The ensemble's range: "20–35 min" when the members disagree, "~25"
     // when they agree within one step.
     const lo = fromNow(arrival.earliestMin ?? arrival.leadMin);
     const hi = arrival.latestMin != null ? fromNow(arrival.latestMin) : null;
     const range = hi != null && hi - lo >= 10 ? `${lo}–${hi}` : `~${fromNow(arrival.leadMin)}`;
-    headline = t(`nowcast.in.${typeOf(arrival)}`, { range });
+    headline = t(`nowcast.${arrival.brief ? "brief" : "in"}.${typeOf(arrival)}`, { range });
     const parts = [cat(peak ? peak.category : arrival.category)];
     if (peak && peak.rateMmh >= 0.5) parts.push(t("nowcast.rate", { rate: peak.rateMmh }));
     parts.push(t("nowcast.chance", { pct: pct(arrival.prob) }));
@@ -191,13 +198,16 @@ const NowcastPanel = ({ compact = false }) => {
   } else {
     headline = t("nowcast.noRain", { min: horizonMin });
     // The highest chance anywhere in the window, so "dry" never hides a
-    // 40 % step.
+    // 40 % step; failing that, the strongest echo near the pin, so "dry"
+    // never contradicts a shower the map is plainly showing.
     const maxStep = series.reduce((b, x) => (x.prob > (b ? b.prob : 0) ? x : b), null);
-    detail = horizonMin < 90
-      ? t("nowcast.horizonShort", { min: horizonMin })
-      : (maxStep && maxStep.prob >= 0.2
-        ? t("nowcast.someChance", { pct: pct(maxStep.prob), time: at(maxStep.leadMin) })
-        : t("nowcast.noRainDetail", { km: data.gridKm }));
+    if (horizonMin < 90) detail = t("nowcast.horizonShort", { min: horizonMin });
+    else if (maxStep && maxStep.prob >= 0.2) detail = t("nowcast.someChance", { pct: pct(maxStep.prob), time: at(maxStep.leadMin) });
+    else if (nearby) {
+      detail = t(nearby.maxDbz >= 15 ? "nowcast.nearbyEcho" : "nowcast.nearbyLightEcho", {
+        km: nearby.distanceKm < 1 ? "<1" : Math.round(nearby.distanceKm), dir: compass(nearby.bearingDeg), dbz: Math.round(nearby.maxDbz),
+      });
+    } else detail = t("nowcast.noRainDetail", { km: data.gridKm });
   }
 
   const motionLine = motion

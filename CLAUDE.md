@@ -1341,9 +1341,33 @@ DIX 2026-09-27 14–20 Z showers and LWX 2026-09-22 03–06 Z band):
   lists it and the card quotes the pin's own hit rate after 20 verified
   calls. Verification only runs while something polls the route, i.e.
   while the card is shown.
-- Sampling is a 3 × 3 km footprint with a MAJORITY-wet rule (5 × 5 helped
-  the showers case and hurt the band case; 3 × 3 kept). Rain / no-rain is
-  ≥ 15 dBZ, the same floor as the clean mask.
+- Sampling is a 3 × 3 km footprint (5 × 5 helped the showers case and hurt
+  the band case; 3 × 3 kept). Rain / no-rain is ≥ 15 dBZ, the same floor
+  as the clean mask.
+- **The first kiosk report (South Salem NY, 2026-09-27 21:38 local) was a
+  miss, not a stale card.** "No rain expected · nothing upstream is
+  heading this way" beside a visible shower 2 km east, moving toward the
+  pin at 59 km/h. Replaying the OKX scans for that pin reproduced the
+  card's exact numbers, so the pin HAD updated; the model missed a 4 km,
+  16–21 dBZ cell three ways: the pin cell read 0 dBZ and only 2 of the 9
+  footprint cells cleared 15 dBZ (majority rule), the cell crossed the pin
+  between the "now" sample and the +5 sample (5-min steps, 1 km/min), and
+  the wording was written for an empty field. Fixed the same evening:
+  each 5-min step now samples the parcel's path EVERY MINUTE and is wet if
+  rain crosses the pin at any of them (intensity = mean over the wet
+  minutes); the footprint rule is a THIRD wet (3 of 9), which is what the
+  eye calls rain on the map; a single confident wet step (≥ 60 %) is an
+  event, flagged `arrival.brief` and worded "Brief shower in ~5 min";
+  "raining now" is judged at the scan's current age (the card reads the
+  step nearest the elapsed minutes); and a dry answer names the nearest
+  echo (`nearby`: "A small shower 7 km to the SW (20 dBZ) is not on a path
+  over the pin", or "Only light echo nearby … below the 15 dBZ threshold").
+  The hindcast truth changed to match ("rain in any scan of the 5-min
+  window"), so the numbers in HINDCAST are not comparable with the first
+  ones above: they now read CSI 54 / 42 / 37 / 26 % at 15 / 30 / 45 / 60
+  min against persistence 39 / 22 / 15 / 10 %, Brier 0.11–0.17 (the
+  window truth is harder for everyone — persistence's Brier went from
+  0.10 to 0.16). Replayed South Salem: "Brief shower in ~5 min · 67 %".
 - The dock's Map group is now 16 buttons and did not fit a phone in
   portrait — the noise-filter, velocity, type and CC toggles were off the
   right edge, silently. The group wraps onto two rows now

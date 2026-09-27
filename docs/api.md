@@ -566,9 +566,15 @@ probability at each 5-min lead.
 }
 ```
 
-`arrival` (when not raining now) carries `leadMin` (first lead with
-probability ≥ 0.5 held for two steps), `earliestMin` (first ≥ 0.3) and
-`latestMin` (first ≥ 0.7, or null) — the card quotes the range. `ptype`
+Each step stands for the 5 minutes ending at `leadMin`: the ensemble's
+parcels are sampled every minute across that window and a member is wet
+if rain crosses the pin at any of them. `arrival` (when not raining now)
+carries `leadMin` (first lead with probability ≥ 0.5 held for two steps,
+or one step at ≥ 0.6), `earliestMin` (first ≥ 0.3), `latestMin` (first
+≥ 0.7, or null) and `brief` (one wet step followed by a dry one) — the
+card quotes the range and says "brief shower". `nearby` names the
+strongest echo within 15 km of the pin (`maxDbz`, `distanceKm`,
+`bearingDeg`) so a dry answer can say what the map shows. `ptype`
 is `rain` / `snow` / `mix` / `graupel` / `hail` from N0H at the upstream
 point. `category` is `none` / `light` (≥ 15 dBZ) / `moderate` (≥ 30) /
 `heavy` (≥ 40) / `intense` (≥ 50). `confidence` is `high` / `medium` /

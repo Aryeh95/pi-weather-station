@@ -116,7 +116,7 @@
     "tryLater": "The radar feed did not answer — it will retry in a minute",
     "rainingNow": "Raining now",
     "noRain": "No rain expected in the next {{min}} min",
-    "noRainDetail": "Nothing upstream within {{km}} km is heading this way",
+    "noRainDetail": "No rain echo within {{km}} km is heading this way",
     "horizonShort": "Beyond {{min}} min the rain would come from outside the radar's view",
     "motionUnknown": "Rain nearby, motion unclear",
     "motionUnknownDetail": "Echo within {{km}} km, but the scans do not agree on how it is moving",
@@ -159,7 +159,16 @@
     "withSurface": "surface radar agrees",
     "liveSkill": "Here: {{right}}% of {{lead}}-min rain calls came true ({{n}} checked)",
     "liveSkillHint": "Scored live at this location: every call is checked against the radar scan that arrives {{lead}} min later.",
-    "nowTick": "now"
+    "nowTick": "now",
+    "nearbyEcho": "A small shower {{km}} km to the {{dir}} ({{dbz}} dBZ) is not on a path over the pin",
+    "nearbyLightEcho": "Only light echo nearby ({{km}} km to the {{dir}}, {{dbz}} dBZ) — below the 15 dBZ rain threshold",
+    "brief": {
+      "rain": "Brief shower in {{range}} min",
+      "snow": "Brief snow shower in {{range}} min",
+      "mix": "Brief sleet in {{range}} min",
+      "hail": "Brief hail in {{range}} min",
+      "graupel": "Brief graupel in {{range}} min"
+    }
   },
   "conditions": {
     "title": "Conditions",

@@ -116,7 +116,7 @@
     "tryLater": "Le radar n'a pas répondu ; nouvel essai dans une minute",
     "rainingNow": "Il pleut",
     "noRain": "Pas de pluie prévue dans les {{min}} prochaines min",
-    "noRainDetail": "Rien à moins de {{km}} km ne se dirige vers ici",
+    "noRainDetail": "Aucun écho de pluie à moins de {{km}} km ne se dirige vers ici",
     "horizonShort": "Au-delà de {{min}} min la pluie viendrait de hors de portée du radar",
     "motionUnknown": "Pluie à proximité, mouvement incertain",
     "motionUnknownDetail": "Échos à moins de {{km}} km, mais les balayages ne s'accordent pas sur leur mouvement",
@@ -159,7 +159,16 @@
     "withSurface": "le radar de surface confirme",
     "liveSkill": "Ici : {{right}} % des annonces à {{lead}} min se sont vérifiées ({{n}} contrôlées)",
     "liveSkillHint": "Vérifié en direct à cet endroit : chaque annonce est contrôlée avec le balayage qui arrive {{lead}} min plus tard.",
-    "nowTick": "maint."
+    "nowTick": "maint.",
+    "nearbyEcho": "Une petite averse à {{km}} km au {{dir}} ({{dbz}} dBZ) ne passe pas sur le repère",
+    "nearbyLightEcho": "Seulement un écho faible à proximité ({{km}} km au {{dir}}, {{dbz}} dBZ), sous le seuil de pluie de 15 dBZ",
+    "brief": {
+      "rain": "Averse brève dans {{range}} min",
+      "snow": "Averse de neige brève dans {{range}} min",
+      "mix": "Grésil bref dans {{range}} min",
+      "hail": "Grêle brève dans {{range}} min",
+      "graupel": "Neige roulée brève dans {{range}} min"
+    }
   },
   "conditions": {
     "title": "Conditions",

@@ -32,6 +32,8 @@ const nc = require("../server/nowcastCtrl");
 
 const LEADS = [15, 30, 45, 60];
 const MATCH_TOLERANCE_MS = 3 * 60 * 1000;
+// The 5-min window each lead stands for (see the truth definition below).
+const WINDOW_MS = 5 * 60 * 1000;
 const NUM_SCANS = 4;
 const PROB_BINS = [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.01];
 
@@ -229,14 +231,20 @@ async function main() {
         lastArrival = arrivalAbs;
         const nowRain = rainingAtHome(grids[k]);
         for (const L of LEADS) {
+          // A step stands for the 5 minutes ending at L, so the truth is
+          // "did rain cross the pin in any scan of that window" — the same
+          // semantics the forecast has since the per-minute sampling.
           const target = epochs[k] + L * 60000;
           let best = -1;
+          let actual = false;
           for (let m = k + 1; m < scans.length; m += 1) {
-            if (Math.abs(epochs[m] - target) <= MATCH_TOLERANCE_MS
-              && (best < 0 || Math.abs(epochs[m] - target) < Math.abs(epochs[best] - target))) best = m;
+            const dt = epochs[m] - target;
+            if (dt > -WINDOW_MS && dt <= MATCH_TOLERANCE_MS) {
+              if (best < 0 || Math.abs(dt) < Math.abs(epochs[best] - target)) best = m;
+              if (rainingAtHome(grids[m])) actual = true;
+            }
           }
           if (best < 0) continue;
-          const actual = rainingAtHome(grids[best]);
           const step = fc.series.find((s) => s.leadMin === L);
           const prob = step ? step.prob : 0;
           const predicted = prob >= nc.P_RAIN;
