@@ -5,6 +5,7 @@ import WeatherMap from "~/components/WeatherMap";
 import AlertView from "~/components/ambient/AlertView";
 import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
+import NowcastPanel from "~/components/ambient/NowcastPanel";
 import AlertDetailInline from "~/components/ambient/AlertDetailInline";
 import AlertMiniCards from "~/components/ambient/AlertMiniCards";
 import BottomDock from "~/components/ambient/BottomDock";
@@ -133,6 +134,7 @@ const LayoutPi = () => {
             * radar rework — the alert stack returns null in calm weather,
             * so the rail is just the header then. */}
           <RadarHeader compact />
+          <NowcastPanel compact />
           <AlertBanner />
           {/* v3.2 inline expansion — in the v3.3 priority model the alert
             * card opens the full AlertView instead, so drop the inline body. */}

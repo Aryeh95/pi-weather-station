@@ -30,6 +30,9 @@ import satelliteIcon from "@iconify/icons-carbon/cloud-satellite";
 import radarOnIcon from "@iconify/icons-carbon/view";
 import radarOffIcon from "@iconify/icons-carbon/view-off";
 import lightningIcon from "@iconify/icons-carbon/lightning";
+/* Nowcast panel: an umbrella is the question the card answers — "will I
+ * need one, and when". */
+import nowcastIcon from "@iconify/icons-carbon/umbrella";
 import noiseFilterIcon from "@iconify/icons-carbon/filter";
 import dualPolCleanIcon from "@iconify/icons-carbon/clean";
 /* Velocity mode: opposed horizontal arrows read as "toward / away from
@@ -41,6 +44,9 @@ import precipTypeIcon from "@iconify/icons-carbon/mixed-rain-hail";
 /* Correlation coefficient: a scatter of points reads as "how alike are the
  * targets in this gate", which is what the product measures. */
 import correlationIcon from "@iconify/icons-carbon/chart-scatter";
+/* Rainfall accumulation: falling drops — "how much has fallen". Carbon
+ * ships no plain rain-drop glyph; drizzle is the closest. */
+import accumulationIcon from "@iconify/icons-carbon/rain-drizzle";
 import contrastIcon from "@iconify/icons-carbon/contrast";
 import automaticIcon from "@iconify/icons-carbon/automatic";
 import moonIcon from "@iconify/icons-carbon/moon";
@@ -137,10 +143,12 @@ const ControlButtons = ({ labelled = false }) => {
     toggleRadar,
     cycleSatelliteMode,
     toggleLightning,
+    toggleNowcast,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
     toggleRadarCorrelation,
+    cycleRadarAccumulation,
     saveHideRadarLegend,
     toggleSettingsMenuOpen,
     toggleDebugMenuOpen,
@@ -175,10 +183,13 @@ const ControlButtons = ({ labelled = false }) => {
     showRadar,
     satelliteMode,
     showLightning,
+    showNowcast,
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
     radarCorrelation,
+    radarAccumulation,
+    radarAccumulationProduct,
     nearbyAlerts,
   } = useContext(AlertsContext);
 
@@ -698,6 +709,24 @@ const ControlButtons = ({ labelled = false }) => {
       <InlineIcon icon={lightningIcon} />
     </div>
   );
+  // Nowcast card toggle. Not gated on radarOverlaysDisabled: it is a card
+  // in the alert stack, not a map layer, so it is readable in the mobile
+  // mini-card state too.
+  const btnNowcast = (
+    <div
+      key="nowcast"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        toggleNowcast();
+        notify(showNowcast ? "toasts.nowcastOff" : "toasts.nowcastOn", e);
+      }}
+      className={showNowcast ? styles.buttonDown : ""}
+      title={t(showNowcast ? "controls.hideNowcast" : "controls.showNowcast")}
+      aria-label={t(showNowcast ? "controls.hideNowcast" : "controls.showNowcast")}
+    >
+      <InlineIcon icon={nowcastIcon} />
+    </div>
+  );
   // Clear-air noise filter for the raw-radial layer — hides sub-15 dBZ
   // returns (bugs/birds/dust in clear-air mode) that otherwise paint the
   // whole disc on a dry day. Unlike its neighbours the pressed state means
@@ -887,6 +916,35 @@ const ControlButtons = ({ labelled = false }) => {
       aria-disabled={radarOverlaysDisabled || undefined}
     >
       <InlineIcon icon={correlationIcon} />
+    </div>
+  );
+  /* Rainfall accumulation, cycling off → 1 h → 3 h → storm total → off.
+   * The label names where the NEXT tap goes, like the satellite button;
+   * pressed while any period is showing. */
+  const accumNext = {
+    null: { label: "controls.accumToDAA", toast: "toasts.accumDAA" },
+    DAA: { label: "controls.accumToDU3", toast: "toasts.accumDU3" },
+    DU3: { label: "controls.accumToDTA", toast: "toasts.accumDTA" },
+    DTA: { label: "controls.accumToOff", toast: "toasts.accumOff" },
+  }[radarAccumulationProduct || "null"];
+  const btnAccumulation = (
+    <div
+      key="accumulation"
+      data-dock-priority="secondary"
+      onClick={(e) => {
+        if (radarOverlaysDisabled) {
+          notify("toasts.radarOverlaysNeedMaximize", e);
+          return;
+        }
+        cycleRadarAccumulation();
+        notify(accumNext.toast, e);
+      }}
+      className={`${radarOverlaysDisabled ? styles.buttonDisabled : ""} ${radarAccumulation && !radarOverlaysDisabled ? styles.buttonDown : ""}`}
+      title={radarOverlaysDisabled ? t("controls.radarOverlaysNeedMaximize") : t(accumNext.label)}
+      aria-label={radarOverlaysDisabled ? t("controls.radarOverlaysNeedMaximize") : t(accumNext.label)}
+      aria-disabled={radarOverlaysDisabled || undefined}
+    >
+      <InlineIcon icon={accumulationIcon} />
     </div>
   );
   const btnContrast = (
@@ -1101,10 +1159,12 @@ const ControlButtons = ({ labelled = false }) => {
         {withLabel(btnSatellite)}
         {withLabel(btnRadar)}
         {withLabel(btnLightning)}
+        {withLabel(btnNowcast)}
         {withLabel(btnNoiseFilter)}
         {withLabel(btnVelocity)}
         {withLabel(btnPrecipType)}
         {withLabel(btnCorrelation)}
+        {withLabel(btnAccumulation)}
       </div>
       {/* Views group (rail-affordance redesign 2026-06-24) — "change topic
         * to a full-rail content view", distinct from the Map group's

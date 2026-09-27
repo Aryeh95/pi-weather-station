@@ -69,6 +69,8 @@ function registerKnownServices() {
     "NEXRAD L3 (storm tracks)",
     "MRMS (precip type)",
     "MRMS (hail)",
+    "MRMS (rainfall)",
+    "NEXRAD L3 (nowcast)",
     "GOES GLM (lightning)",
     "NWS (severe weather alerts)",
     // Environment Canada is still wired into the nearby-alerts chain for a
@@ -745,6 +747,20 @@ app.get("/api/radar/radial",        apiLimiter, getRadarRadial);
 // mode is `/api/radar/radial?product=PTYPE` above.
 const { getPrecipMosaic } = require("./mrmsPrecipTypeCtrl");
 app.get("/api/radar/precip-mosaic", apiLimiter, getPrecipMosaic);
+
+// MRMS rainfall accumulation (radar-only QPE, 1 h / 3 h) over CONUS for the
+// accumulation mode's low-zoom mosaic; the high-zoom half is
+// `/api/radar/radial?product=DAA|DU3|DTA` above.
+const { getQpeMosaic } = require("./mrmsQpeCtrl");
+app.get("/api/radar/qpe-mosaic",    apiLimiter, getQpeMosaic);
+
+// Point nowcast for the home pin — rain arrival / intensity / end over the
+// next 90 min by extrapolating the last few scans' motion (Lagrangian
+// persistence, dual-pol cleaned reflectivity). Optional panel, off by
+// default.
+const { getNowcast, getNowcastSkill } = require("./nowcastCtrl");
+app.get("/api/radar/nowcast",       apiLimiter, getNowcast);
+app.get("/api/radar/nowcast/skill", apiLimiter, getNowcastSkill);
 
 // GOES GLM lightning — total-lightning flash positions (in-cloud included,
 // which shows electrification minutes before the first CG strike) from the

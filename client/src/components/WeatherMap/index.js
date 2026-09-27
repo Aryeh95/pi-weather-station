@@ -84,6 +84,7 @@ import StormTracks from "./StormTracks";
 import FilteredTileLayer from "./FilteredTileLayer";
 import usePrecipMosaic from "./usePrecipMosaic";
 import usePrecipMosaicLoop from "./usePrecipMosaicLoop";
+import useQpeMosaic from "./useQpeMosaic";
 import { rleDecode } from "../../../../server/precipType";
 import PrecipMosaicLayer from "./PrecipMosaicLayer";
 import { NOISE_FILTER_MIN_DBZ } from "./radialRender";
@@ -837,6 +838,8 @@ const WeatherMap = ({ zoom, dark }) => {
     radarVelocity,
     radarPrecipType,
     radarCorrelation,
+    radarAccumulation,
+    radarAccumulationProduct,
     radarPalette,
     showAlertRing,
     nearbyAlerts,
@@ -1025,6 +1028,7 @@ const WeatherMap = ({ zoom, dark }) => {
   if (radarVelocity) radialProduct = "N0G";
   else if (radarPrecipType) radialProduct = "PTYPE";
   else if (radarCorrelation) radialProduct = "N0C";
+  else if (radarAccumulationProduct) radialProduct = radarAccumulationProduct;
 
   // Mosaic frame list, recomputed whenever the single-site list
   // refreshes so both age displays advance together. The dependency on
@@ -1090,6 +1094,14 @@ const WeatherMap = ({ zoom, dark }) => {
   // historical frame it hides rather than claim an age it does not have.
   const precipMosaic = usePrecipMosaic({
     enabled: radarPrecipType && iemVisible.mosaic,
+    paused: pollingPaused,
+  });
+  // Rainfall accumulation at mosaic zoom comes from MRMS (1 h / 3 h only —
+  // storm total is a single-radar notion and has no CONUS equivalent).
+  const qpePeriodMin = radarAccumulationProduct === "DAA" ? 60 : (radarAccumulationProduct === "DU3" ? 180 : null);
+  const qpeMosaic = useQpeMosaic({
+    periodMin: qpePeriodMin,
+    enabled: radarAccumulation && iemVisible.mosaic && Boolean(qpePeriodMin),
     paused: pollingPaused,
   });
   // Frame stamps for the type mosaic's history — the same rule as the
@@ -1215,7 +1227,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // A null current frame (playhead out past a layer's span) keeps the
   // stack mounted with every layer at opacity 0 — unmounting would
   // refetch the whole stack when the playhead comes back into range.
-  const mountedMosaicFrames = (showRadar && !radarPrecipType && iemVisible.mosaic && iemMosaicFrames.length)
+  const mountedMosaicFrames = (showRadar && !radarPrecipType && !radarAccumulation && iemVisible.mosaic && iemMosaicFrames.length)
     ? (loopActive ? iemMosaicFrames : (currentMosaicFrame ? [currentMosaicFrame] : []))
     : [];
   //
@@ -1226,7 +1238,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // loop warms in ~15 s.
   //
   // PRECIPITATION-TYPE MODE likewise: the tiles are reflectivity.
-  const mountedSiteFrames = (showRadar && !radarVelocity && !radarPrecipType && !radarCorrelation && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
+  const mountedSiteFrames = (showRadar && !radarVelocity && !radarPrecipType && !radarCorrelation && !radarAccumulation && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && iemSiteFrames.length)
     ? (loopActive ? iemSiteFrames : (radialShown || !currentSiteFrame ? [] : [currentSiteFrame]))
     : [];
 
@@ -1262,7 +1274,7 @@ const WeatherMap = ({ zoom, dark }) => {
   // came through, approximate (schedule-derived, "~") otherwise. Storm
   // tracks report their product's scan time; lightning the newest flash.
   const siteRowShown = showRadar && iemVisible.site && iemSiteAvailable && Boolean(iemSite) && Boolean(currentSiteFrame)
-    && (radialShown || showIemSite || radarVelocity || radarPrecipType || radarCorrelation || currentLoopRadial);
+    && (radialShown || showIemSite || radarVelocity || radarPrecipType || radarCorrelation || radarAccumulation || currentLoopRadial);
   // In precipitation-type mode the mosaic row is the MRMS field's — the
   // live one on "latest", the loop frame nearest the playhead otherwise.
   const stampOf = (epoch) => new Date(epoch).toISOString().slice(0, 16).replace(/[-:T]/g, "");
@@ -1287,9 +1299,13 @@ const WeatherMap = ({ zoom, dark }) => {
   } : null), [precipLoopEntry]);
   const precipDisplayField = iemFromEnd === 0 ? precipMosaic.field : precipLoopField;
   const precipMosaicShown = showRadar && radarPrecipType && iemVisible.mosaic && Boolean(precipDisplayField);
-  const mosaicRowShown = radarPrecipType
-    ? precipMosaicShown
-    : (showRadar && iemVisible.mosaic && Boolean(currentMosaicFrame));
+  // The QPE mosaic is newest-only: while the playhead is on history it
+  // hides rather than claim a time it does not have.
+  const qpeMosaicShown = showRadar && radarAccumulation && iemVisible.mosaic && iemFromEnd === 0 && Boolean(qpeMosaic.field);
+  let mosaicRowShown;
+  if (radarPrecipType) mosaicRowShown = precipMosaicShown;
+  else if (radarAccumulation) mosaicRowShown = qpeMosaicShown;
+  else mosaicRowShown = showRadar && iemVisible.mosaic && Boolean(currentMosaicFrame);
   const stormScanEpoch = stormScanTime ? Date.parse(stormScanTime) : NaN;
   const ageRows = [];
   if (siteRowShown) {
@@ -1305,6 +1321,7 @@ const WeatherMap = ({ zoom, dark }) => {
     if (radarVelocity) siteLabel = `${iemSite} ${t("radar.ageVelocity")}`;
     else if (radarPrecipType) siteLabel = `${iemSite} ${t("radar.agePrecipType")}`;
     else if (radarCorrelation) siteLabel = `${iemSite} ${t("radar.ageCorrelation")}`;
+    else if (radarAccumulationProduct) siteLabel = `${iemSite} ${t(`radar.ageAccum.${radarAccumulationProduct}`)}`;
     ageRows.push({
       key: "site",
       label: siteLabel,
@@ -1320,6 +1337,14 @@ const WeatherMap = ({ zoom, dark }) => {
       epoch: Date.parse(precipDisplayField.validTime),
       approximate: false,
       sourceStale: iemFromEnd === 0 && precipMosaic.stale,
+    });
+  } else if (mosaicRowShown && radarAccumulation) {
+    ageRows.push({
+      key: "mosaic",
+      label: t(`radar.ageMosaicAccum.${radarAccumulationProduct}`),
+      epoch: Date.parse(qpeMosaic.field.validTime),
+      approximate: false,
+      sourceStale: qpeMosaic.stale,
     });
   } else if (mosaicRowShown) {
     ageRows.push({
@@ -1804,6 +1829,16 @@ const WeatherMap = ({ zoom, dark }) => {
               minDbz={noiseFloorOn(radarNoiseMode) && !dualPolCleanOn(radarNoiseMode) ? NOISE_FILTER_MIN_DBZ : undefined}
             />
           ) : null}
+          {/* Rainfall accumulation: MRMS radar-only QPE for the period, in
+            * the accumulation LUT. Same pane and crossfade as the type
+            * mosaic; hidden while scrubbing history (newest-only field). */}
+          {showRadar && radarAccumulation && iemVisible.mosaic && qpePeriodMin ? (
+            <PrecipMosaicLayer
+              field={iemFromEnd === 0 ? qpeMosaic.field : null}
+              opacity={iemOpacity.mosaic}
+              kind="accum"
+            />
+          ) : null}
         </Pane>
         {/* ── Layer 2: single-site super-res (high zoom) ────────
           * N0B base reflectivity from the covering NEXRAD: 0.5°
@@ -2038,6 +2073,15 @@ const WeatherMap = ({ zoom, dark }) => {
           correlationUnavailable={radarCorrelation && iemVisible.site && !radial.url && Boolean(radial.unavailable)}
           cleanApplied={radial.cleanApplied}
           holdingClean={radial.holdingClean}
+          accumulation={radarAccumulationProduct ? {
+            product: radarAccumulationProduct,
+            siteInView: iemVisible.site,
+            siteUnavailable: iemVisible.site && !radial.url && Boolean(radial.unavailable),
+            mosaicInView: iemVisible.mosaic && Boolean(qpePeriodMin),
+            mosaicField: qpeMosaicShown ? qpeMosaic.field : null,
+            atPin: radialShown && radial.valueAt && homePoint ? radial.valueAt(homePoint.lat, homePoint.lon) : null,
+            meta: radial.accumulation || null,
+          } : null}
           precip={radarPrecipType ? {
             siteInView: iemVisible.site && iemSiteAvailable && Boolean(iemSite),
             siteUnavailable: !radial.url && Boolean(radial.unavailable),

@@ -33,7 +33,9 @@
 import { getRadarSite, getRadarFrames } from "../../../server/iemRadarCtrl";
 import { getRadarRadial } from "../../../server/radarRadialCtrl";
 import { getPrecipMosaic } from "../../../server/mrmsPrecipTypeCtrl";
+import { getQpeMosaic } from "../../../server/mrmsQpeCtrl";
 import { getStormTracks } from "../../../server/stormTracksCtrl";
+import { getNowcast, getNowcastSkill } from "../../../server/nowcastCtrl";
 import { getLightning } from "../../../server/glmLightningCtrl";
 import { getWeatherAlerts, getNearbyAlerts } from "../../../server/govAlertsCtrl";
 // Sunrise/sunset is computed, not fetched (server/solar.js), so the server's
@@ -88,7 +90,10 @@ const ROUTES = {
   "GET /api/radar/frames": getRadarFrames,
   "GET /api/radar/radial": getRadarRadial,
   "GET /api/radar/precip-mosaic": getPrecipMosaic,
+  "GET /api/radar/qpe-mosaic": getQpeMosaic,
   "GET /api/storm-tracks": getStormTracks,
+  "GET /api/radar/nowcast": getNowcast,
+  "GET /api/radar/nowcast/skill": getNowcastSkill,
   "GET /api/lightning": getLightning,
   "GET /api/weather-alerts": getWeatherAlerts,
   "GET /api/nearby-alerts": getNearbyAlerts,

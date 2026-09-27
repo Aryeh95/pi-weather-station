@@ -102,19 +102,64 @@
     }
   },
   "nowcast": {
-    "aria": "Radar status: {{verdict}}",
-    "calm": {
-      "noRainWithin": "No rain within {{distance}} {{unit}}",
-      "radarUnavailable": "Radar unavailable",
-      "clearDay": "Clear and sunny",
-      "clearNight": "Clear night",
-      "partly": "A few clouds",
-      "cloudy": "Overcast",
-      "fog": "Fog",
-      "lightSnow": "Light snow",
-      "lightPrecip": "Light precipitation",
-      "none": "Nothing on radar"
-    }
+    "title": "Nowcast",
+    "now": {
+      "rain": "Raining now",
+      "snow": "Snowing now",
+      "mix": "Sleet or freezing rain now",
+      "hail": "Hail now",
+      "graupel": "Graupel now"
+    },
+    "loading": "Reading the radar…",
+    "unavailable": "Nowcast unavailable",
+    "noScans": "No recent scans from {{site}}",
+    "tryLater": "The radar feed did not answer — it will retry in a minute",
+    "rainingNow": "Raining now",
+    "noRain": "No rain expected in the next {{min}} min",
+    "noRainDetail": "Nothing upstream within {{km}} km is heading this way",
+    "horizonShort": "Beyond {{min}} min the rain would come from outside the radar's view",
+    "motionUnknown": "Rain nearby, motion unclear",
+    "motionUnknownDetail": "Echo within {{km}} km, but the scans do not agree on how it is moving",
+    "peakAt": "{{intensity}} around {{time}}",
+    "endsAround": "ending around {{time}}",
+    "noEnd": "still raining at {{time}}",
+    "rate": "about {{rate}} mm/h",
+    "moving": "Moving {{speed}} from the {{dir}}",
+    "stationary": "Nearly stationary",
+    "intensity": {
+      "none": "no rain",
+      "light": "light",
+      "moderate": "moderate",
+      "heavy": "heavy",
+      "intense": "intense"
+    },
+    "confidence": {
+      "high": "high confidence",
+      "medium": "medium confidence",
+      "low": "low confidence",
+      "unknown": "motion unknown"
+    },
+    "skill": "Track record: {{right}}% of {{lead}}-min rain calls came true",
+    "stripAria": "Expected rain intensity over the next {{min}} minutes",
+    "aria": "Nowcast: {{headline}}",
+    "skillHint": "Measured against archived radar scans. When the card said rain would arrive in about {{lead}} min, it did {{right}}% of the time; it also missed {{missed}}% of the rain that did come.",
+    "in": {
+      "rain": "Rain in {{range}} min",
+      "snow": "Snow in {{range}} min",
+      "mix": "Sleet or freezing rain in {{range}} min",
+      "hail": "Hail in {{range}} min",
+      "graupel": "Graupel in {{range}} min"
+    },
+    "chance": "{{pct}}% chance",
+    "someChance": "Up to a {{pct}}% chance around {{time}}",
+    "trend": {
+      "growing": "building",
+      "decaying": "weakening"
+    },
+    "withSurface": "surface radar agrees",
+    "liveSkill": "Here: {{right}}% of {{lead}}-min rain calls came true ({{n}} checked)",
+    "liveSkillHint": "Scored live at this location: every call is checked against the radar scan that arrives {{lead}} min later.",
+    "nowTick": "now"
   },
   "conditions": {
     "title": "Conditions",
@@ -431,7 +476,30 @@
     "legendCorrelation": "Correlation coefficient",
     "legendCorrelationNote": "Near 1 uniform precipitation · low inside a rotation: debris",
     "legendCorrelationUnavailable": "No correlation product published by this radar",
-    "ageCorrelation": "CC"
+    "ageCorrelation": "CC",
+    "legendAccum": {
+      "DAA": "Rain · last hour",
+      "DU3": "Rain · last 3 h",
+      "DTA": "Rain · storm total"
+    },
+    "legendAccumAtHome": "At home: {{depth}}",
+    "legendAccumAtHomeNone": "At home: none",
+    "legendAccumSince": "since {{time}}",
+    "legendAccumMax": "radar max {{depth}}",
+    "legendAccumMosaic": "MRMS · every radar in range, at the surface",
+    "legendAccumMosaicPending": "MRMS mosaic loading…",
+    "legendAccumNoMosaic": "Storm total is a single-radar product — zoom in to see it",
+    "legendAccumNone": "No rain in this period",
+    "legendAccumUnavailable": "No accumulation published by this radar",
+    "ageAccum": {
+      "DAA": "1 h",
+      "DU3": "3 h",
+      "DTA": "total"
+    },
+    "ageMosaicAccum": {
+      "DAA": "MRMS 1 h",
+      "DU3": "MRMS 3 h"
+    }
   },
   "controls": {
     "resetMapPosition": "Recenter the map on the home position",
@@ -501,7 +569,13 @@
     "precipTypeOn": "Show precipitation type",
     "precipTypeOff": "Show reflectivity",
     "correlationOn": "Show correlation coefficient",
-    "correlationOff": "Show reflectivity"
+    "correlationOff": "Show reflectivity",
+    "showNowcast": "Show nowcast",
+    "hideNowcast": "Hide nowcast",
+    "accumToDAA": "Show rainfall · last hour",
+    "accumToDU3": "Rainfall: switch to last 3 hours",
+    "accumToDTA": "Rainfall: switch to storm total",
+    "accumToOff": "Hide rainfall totals"
   },
   "toasts": {
     "mapRecentered": "Map recentered",
@@ -556,7 +630,13 @@
     "precipTypeOn": "Precipitation type on",
     "precipTypeOff": "Precipitation type off",
     "correlationOn": "Correlation coefficient on",
-    "correlationOff": "Correlation coefficient off"
+    "correlationOff": "Correlation coefficient off",
+    "nowcastOn": "Nowcast on",
+    "nowcastOff": "Nowcast off",
+    "accumDAA": "Rainfall · last hour",
+    "accumDU3": "Rainfall · last 3 hours",
+    "accumDTA": "Rainfall · storm total",
+    "accumOff": "Rainfall totals off"
   },
   "health": {
     "title": "Service health",

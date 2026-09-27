@@ -1280,6 +1280,126 @@ Things established on the way:
   (LWX N0H, the Banff PrecipFlag frame) and should be eyeballed on the
   kiosk at the first winter event.
 
+### Nowcast panel (2026-09-27)
+
+Motivating ask: "an optional panel that gives some sort of nowcast based
+on the current radar — when rain will arrive, how heavy, and if it's
+raining, when it will stop". Built as `server/nowcastCtrl.js` →
+`/api/radar/nowcast` (+ `/skill`), `NowcastPanel` card in the alert stack
+(top of the desktop / Pi rail, under the header on phones), dock toggle
+`showNowcast` (carbon `umbrella`, per-device, OFF by default), polled once
+a minute while shown. Full write-up in `docs/api.md`. What was measured on
+the way, all with `tools/nowcastHindcast.js` (replays archived scans,
+scores each lead against the scan that actually arrived, 9 pins per case;
+DIX 2026-09-27 14–20 Z showers and LWX 2026-09-22 03–06 Z band):
+
+- **A Lagrangian nowcast beats persistence at every lead** — that is the
+  bar. Persistence ("same as now") CSI at 15 / 30 / 60 min: 28 / 17 / 6 %.
+  The shipped configuration: **51 / 42 / 26 %**, hit rate 71 / 58 / 36 %,
+  false-alarm ratio 37 / 41 / 46 %, Brier 0.057 / 0.075 / 0.092. The first
+  deterministic version scored 45 / 33 / 25 % CSI with FAR 43 / 55 / 60 %.
+- **The motion search must be coarse to fine.** A 17-min baseline searched
+  in full "found" 203 km/h at the edge of its window while the 5- and
+  11-min baselines agreed on 45 km/h — a different band had slid under the
+  window. Now the shortest baseline is searched in full (cap 120 km/h), the
+  longer ones only within a few cells of the motion already found, and a
+  peak on a window edge is never accepted.
+- **The ensemble is the big win** (Brier 0.118 → 0.071 at 15 min on DIX,
+  FAR 47 → 39 %, CSI +3–9 at every lead): 25 perturbations of the vector
+  in speed and direction, spread by the correlation quality, so the card
+  prints a probability and an arrival RANGE ("20–35 min") instead of one
+  number. Calibration is decent: 90–100 % calls verify 74–87 %, 0–10 %
+  calls verify 1–2 %; the 50–70 % bin over-forecasts on the showers day.
+- **The 3 × 3 local motion field helps broken bands** (DIX 15-min CSI
+  46 → 55 %) and is neutral on a solid band except at 60 min (LWX 28 →
+  19 %, recovered to 23 with the previous vector). Each block is searched
+  only around the global shift so it cannot alias to a neighbouring echo.
+- **Growth / decay trend is nearly a no-op on these cases** (mean |dBZ|
+  error 3.0 → 2.8 at 45 min, CSI ±1). Kept: cheap, and the label
+  ("building" / "weakening") is honest information.
+- **Carrying the previous nowcast's vector** (25 % of the ensemble weight,
+  within 20 min) gains 1–4 CSI points at 30–60 min and did NOT lower the
+  crude headline flip rate (DIX 39 → 42 %, LWX 33 → 34 %). The visible
+  fix for flip-flop is the range, not the memory.
+- **MRMS PrecipRate does NOT help against radar truth and ships OFF.**
+  MRMS ≥ 0.2 mm/h is wet at 3× as many pins as N0B ≥ 15 dBZ (P(radar wet |
+  MRMS wet) 29–39 %, P(MRMS wet | radar wet) 94–97 %): averaging the two
+  probabilities tripled the false-alarm ratio (DIX 15 min 35 → 74 %), and
+  using MRMS only to lower a radar call ("veto", 0.5–1 mm/h) traded misses
+  for false alarms with no net gain. The code and the `enable: ["mrms"]`
+  path stay for a future surface-truth mode; `NOWCAST_ENABLE=mrms` turns
+  it on. Note the truth here is the radar itself — MRMS may well be right
+  about the ground; the kiosk shows radar, so radar is what the card must
+  predict.
+- **Snow / sleet / hail wording comes from N0H** at the central member's
+  upstream point (`ptype`), the same classification the clean mask and the
+  type product already download. Not verified on real snow (September);
+  pinned by a synthetic test.
+- **Live self-verification**: each issued nowcast is queued and scored
+  when its 15 / 30 / 60-min scan arrives (per pin, persisted under
+  `~/.local/state/pi-weather-station/`); the debug panel's Server bucket
+  lists it and the card quotes the pin's own hit rate after 20 verified
+  calls. Verification only runs while something polls the route, i.e.
+  while the card is shown.
+- Sampling is a 3 × 3 km footprint with a MAJORITY-wet rule (5 × 5 helped
+  the showers case and hurt the band case; 3 × 3 kept). Rain / no-rain is
+  ≥ 15 dBZ, the same floor as the clean mask.
+- The dock's Map group is now 16 buttons and did not fit a phone in
+  portrait — the noise-filter, velocity, type and CC toggles were off the
+  right edge, silently. The group wraps onto two rows now
+  (`ControlButtons/styles.css`, `max-width: 100%` on the group; `flex: 0 0
+  auto` alone never wraps its children).
+
+### Rainfall accumulation — 1 h / 3 h / storm total (2026-09-27)
+
+Motivating ask: RadarScope's "derived" accumulation layers. Built as three
+more values of `radarProduct` (`DAA`, `DU3`, `DTA`) behind ONE dock button
+(carbon `rain-drizzle`) that cycles off → last hour → last 3 h → storm
+total → off, so the Map group grew by one button; the legend carries the
+period, a colour bar in the user's `lengthUnit`, and the honest extras.
+Write-up in `docs/api.md`. What was established:
+
+- **LWX publishes DAA (170), DTA (172), DU3 (173), OHA (169) and DPR (176)
+  every scan / hour**; no PTA, N1P, N3P, NTP, DUA, DU6 (one file a day),
+  DOD or DSD. The library ships 170 and 172; **173 is a shim of 170**, not
+  of 94 — its header reader is 170's (float scale / offset at hw 31–34,
+  max accumulation, end date / time). `OHA` is 16-level and unsupported;
+  `DPR` is a generic packet (0x1c) the parser rejects. Neither is offered.
+- **Values are inches: `(level − offset) / scale`**, the library having
+  already multiplied the raw scale by 100. Verified against each header's
+  own `maxAccumulation`: DAA scale 2081.97 / offset −1.08 → level 255 =
+  0.123 in (header 0.1); DTA 100 / 0 (0.01 in per level, max 2.55);
+  DU3 1443 / −0.44. Pinned by `test/accumulation.test.js` on the committed
+  `LWX_DAA/DTA/DU3_2026_09_27_*` files. Level 0 is the only reserved level;
+  the client LUT is transparent below 0.01 in.
+- **DU3's halfwords 27–28 are END minutes and LENGTH** (1260 / 180 on a file
+  ending 21:00 Z) and the library's `accumulationEndDate / Minutes` (hw
+  47–48) hold the period's START for this product — `accumulationMeta`
+  reads them that way and pins 18:00–21:00 Z on the fixture. DTA carries
+  its own start (hw 27–28), which the legend prints as "since 7:12 AM":
+  RadarScope never says when its storm total started.
+- **Point readout:** `useRadarRadial` now keeps the decoded bins in a ref
+  and publishes `valueAt(lat, lon)`; the legend prints "At home: 0.18 in"
+  from the frame on screen. Works for any product; only used here.
+- **Low zoom is MRMS RadarOnly_QPE_01H / _03H** (`server/mrmsQpeCtrl.js`
+  → `/api/radar/qpe-mosaic`), the same GRIB2 PNG path as the hail and
+  type products, reduced to 2 km cells on a geometric one-byte depth
+  ladder (`server/accumulation.js`, shared with the client like
+  precipType.js) — every radar in range, past the home radar's 230 km,
+  which RadarScope's single-radar layer cannot show. Radar-only rather
+  than the gauge-corrected MultiSensor passes so it is as fresh as the
+  radar layer under it (measured: 1 h file 2-min cadence; 3 h file
+  hourly, so its age row reads up to an hour). Newest frame only — hidden
+  while scrubbing history. `PrecipMosaicLayer` gained a `kind` prop
+  ("ptype" | "accum") to pick the LUT, nothing else.
+- Storm total has no MRMS analogue: at mosaic zoom the legend says so and
+  the disc shows at site zoom. The 1 h / 3 h RADIAL history scrubs through
+  the loop like N0B (same file naming); the mosaic does not.
+- Palette `ACCUM_STOPS`: trace grey-blue → blues → greens at ¼ in → yellow
+  at ½ → orange at 1 → red at 1½ → magenta / purple → white past 5 in,
+  interpolated in log depth. Shaped after the NWS / RadarScope
+  accumulation ramps so a glance transfers.
+
 ### App Mapbox token (2026-09-04)
 
 Optional, per-device, `appMapboxToken` in localStorage — never in the APK.

@@ -102,19 +102,64 @@
     }
   },
   "nowcast": {
-    "aria": "Estado del radar: {{verdict}}",
-    "calm": {
-      "noRainWithin": "Sin lluvia en {{distance}} {{unit}}",
-      "radarUnavailable": "Radar no disponible",
-      "clearDay": "Cielo despejado",
-      "clearNight": "Noche despejada",
-      "partly": "Algunas nubes",
-      "cloudy": "Cielo cubierto",
-      "fog": "Niebla",
-      "lightSnow": "Nieve ligera",
-      "lightPrecip": "Precipitación ligera",
-      "none": "Nada en el radar"
-    }
+    "title": "Pronóstico inmediato",
+    "now": {
+      "rain": "Lloviendo ahora",
+      "snow": "Nevando ahora",
+      "mix": "Aguanieve o lluvia helada ahora",
+      "hail": "Granizo ahora",
+      "graupel": "Nieve granulada ahora"
+    },
+    "loading": "Leyendo el radar…",
+    "unavailable": "Pronóstico inmediato no disponible",
+    "noScans": "Sin barridos recientes de {{site}}",
+    "tryLater": "El radar no respondió; se reintentará en un minuto",
+    "rainingNow": "Lloviendo ahora",
+    "noRain": "Sin lluvia prevista en los próximos {{min}} min",
+    "noRainDetail": "Nada en {{km}} km viene hacia aquí",
+    "horizonShort": "Más allá de {{min}} min la lluvia vendría de fuera del alcance del radar",
+    "motionUnknown": "Lluvia cerca, movimiento incierto",
+    "motionUnknownDetail": "Hay eco en {{km}} km, pero los barridos no coinciden en su movimiento",
+    "peakAt": "{{intensity}} hacia las {{time}}",
+    "endsAround": "termina hacia las {{time}}",
+    "noEnd": "sigue lloviendo a las {{time}}",
+    "rate": "unos {{rate}} mm/h",
+    "moving": "Se mueve a {{speed}} desde el {{dir}}",
+    "stationary": "Casi estacionaria",
+    "intensity": {
+      "none": "sin lluvia",
+      "light": "ligera",
+      "moderate": "moderada",
+      "heavy": "fuerte",
+      "intense": "muy fuerte"
+    },
+    "confidence": {
+      "high": "confianza alta",
+      "medium": "confianza media",
+      "low": "confianza baja",
+      "unknown": "movimiento desconocido"
+    },
+    "skill": "Historial: el {{right}}% de los avisos de lluvia a {{lead}} min se cumplieron",
+    "stripAria": "Intensidad de lluvia prevista en los próximos {{min}} minutos",
+    "aria": "Pronóstico inmediato: {{headline}}",
+    "skillHint": "Medido con barridos de radar archivados. Cuando la tarjeta anunció lluvia en unos {{lead}} min, llegó el {{right}}% de las veces; además no avisó del {{missed}}% de la lluvia que sí llegó.",
+    "in": {
+      "rain": "Lluvia en {{range}} min",
+      "snow": "Nieve en {{range}} min",
+      "mix": "Aguanieve o lluvia helada en {{range}} min",
+      "hail": "Granizo en {{range}} min",
+      "graupel": "Nieve granulada en {{range}} min"
+    },
+    "chance": "{{pct}}% de probabilidad",
+    "someChance": "Hasta un {{pct}}% de probabilidad hacia las {{time}}",
+    "trend": {
+      "growing": "intensificándose",
+      "decaying": "debilitándose"
+    },
+    "withSurface": "el radar de superficie coincide",
+    "liveSkill": "Aquí: el {{right}}% de los avisos a {{lead}} min se cumplieron ({{n}} comprobados)",
+    "liveSkillHint": "Verificado en vivo en este lugar: cada aviso se comprueba con el barrido que llega {{lead}} min después.",
+    "nowTick": "ahora"
   },
   "conditions": {
     "title": "Condiciones",
@@ -431,7 +476,30 @@
     "legendCorrelation": "Coeficiente de correlación",
     "legendCorrelationNote": "Cerca de 1 precipitación uniforme · bajo dentro de una rotación: escombros",
     "legendCorrelationUnavailable": "Este radar no publica el producto de correlación",
-    "ageCorrelation": "CC"
+    "ageCorrelation": "CC",
+    "legendAccum": {
+      "DAA": "Lluvia · última hora",
+      "DU3": "Lluvia · últimas 3 h",
+      "DTA": "Lluvia · total tormenta"
+    },
+    "legendAccumAtHome": "En casa: {{depth}}",
+    "legendAccumAtHomeNone": "En casa: nada",
+    "legendAccumSince": "desde las {{time}}",
+    "legendAccumMax": "máx. del radar {{depth}}",
+    "legendAccumMosaic": "MRMS · todos los radares al alcance, en superficie",
+    "legendAccumMosaicPending": "Cargando el mosaico MRMS…",
+    "legendAccumNoMosaic": "El total de la tormenta es de un solo radar: acerca el mapa para verlo",
+    "legendAccumNone": "Sin lluvia en este periodo",
+    "legendAccumUnavailable": "Este radar no publica acumulación",
+    "ageAccum": {
+      "DAA": "1 h",
+      "DU3": "3 h",
+      "DTA": "total"
+    },
+    "ageMosaicAccum": {
+      "DAA": "MRMS 1 h",
+      "DU3": "MRMS 3 h"
+    }
   },
   "controls": {
     "resetMapPosition": "Recentrar el mapa en la posición inicial",
@@ -501,7 +569,13 @@
     "precipTypeOn": "Mostrar tipo de precipitación",
     "precipTypeOff": "Mostrar reflectividad",
     "correlationOn": "Mostrar coeficiente de correlación",
-    "correlationOff": "Mostrar reflectividad"
+    "correlationOff": "Mostrar reflectividad",
+    "showNowcast": "Mostrar pronóstico inmediato",
+    "hideNowcast": "Ocultar pronóstico inmediato",
+    "accumToDAA": "Mostrar lluvia · última hora",
+    "accumToDU3": "Lluvia: cambiar a últimas 3 horas",
+    "accumToDTA": "Lluvia: cambiar a total de la tormenta",
+    "accumToOff": "Ocultar acumulación de lluvia"
   },
   "toasts": {
     "mapRecentered": "Mapa recentrado",
@@ -556,7 +630,13 @@
     "precipTypeOn": "Tipo de precipitación activado",
     "precipTypeOff": "Tipo de precipitación desactivado",
     "correlationOn": "Coeficiente de correlación activado",
-    "correlationOff": "Coeficiente de correlación desactivado"
+    "correlationOff": "Coeficiente de correlación desactivado",
+    "nowcastOn": "Pronóstico inmediato activado",
+    "nowcastOff": "Pronóstico inmediato desactivado",
+    "accumDAA": "Lluvia · última hora",
+    "accumDU3": "Lluvia · últimas 3 horas",
+    "accumDTA": "Lluvia · total de la tormenta",
+    "accumOff": "Acumulación de lluvia desactivada"
   },
   "health": {
     "title": "Estado de los servicios",

@@ -341,6 +341,48 @@ the bin size. Reflectivity: 1840 bins = 460 km. Velocity: 1200 bins = 300 km.
   exists — the client falls back to IEM tiles (reflectivity) or shows no
   site layer for that frame (velocity, precipitation type).
 
+### Rainfall accumulation products (`/api/radar/radial?product=DAA|DU3|DTA`)
+
+Three more `product` values on the radial route — RadarScope's "derived"
+accumulation layers, decoded from the same `unidata-nexrad-level3` bucket:
+
+| product | Level III | window | notes |
+|---|---|---|---|
+| `DAA` | 170 Digital One Hour Accumulation | last 60 min | every volume scan |
+| `DU3` | 173 Digital User-Selectable Accumulation | last 3 h, ending on the hour | published hourly; shim of 170's header reader |
+| `DTA` | 172 Digital Storm Total Accumulation | since the storm-total reset | every volume scan |
+
+All three are 360 radials × 1°, 920 bins × 0.25 km (230 km), 256 levels.
+The payload has the reflectivity shape with `kind: "accumulation"`, `units:
+"in"`, level 0 reserved, and `scaling` derived from the header's float
+scale / offset (`value = (level − offset) / scale` → `min = −offset / scale`,
+`increment = 1 / scale`), plus an `accumulation` block:
+
+```json
+"accumulation": { "periodMin": 611, "startTime": "2026-09-27T11:12:00.000Z", "endTime": "2026-09-27T21:23:00.000Z", "maxIn": 0.7, "meanFieldBias": 0, "nullProduct": null }
+```
+
+`nullProduct` carries the product's own "no accumulation" reason (e.g. no
+precipitation in the period) when the file is a null product. `stamp=`
+history works as for N0B (same file naming). The 16-level `OHA` and the
+rate product `DPR` (generic packet 28) are not decodable with the current
+parser and are not offered.
+
+### `GET /api/radar/qpe-mosaic?period=60|180[&stamp=YYYYMMDDHHMM]`
+
+MRMS radar-only rainfall accumulation over CONUS — the low-zoom half of the
+accumulation mode (storm total has no MRMS equivalent, so `DTA` shows the
+single-radar disc only).
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:** `period` 60 (`RadarOnly_QPE_01H`) or 180 (`RadarOnly_QPE_03H`); `stamp` optional, nearest file within 3 min
+- **Source:** `noaa-mrms-pds`, GRIB2 PNG packing decoded by the hail controller's path; 2 km cells (max of each 2 × 2), one byte per cell on the geometric depth ladder in `server/accumulation.js` (tier 1 = 0.01 in, tier 255 = 20 in, ratio 1.0304), run-length encoded (~270 KB base64 on a wet day)
+- **Cached:** per file, 10 min; the file changes every 2 min (1 h) / hourly (3 h)
+
+```json
+{ "available": true, "source": "MRMS", "product": "RadarOnly_QPE_01H", "periodMin": 60, "validTime": "2026-09-27T21:24:00.000Z", "key": "MRMS_RadarOnly_QPE_01H_00.00_20260927-212400.grib2.gz", "grid": { "ni": 3500, "nj": 1750, "lat0": 54.99, "lon0": -129.99, "dLat": 0.02, "dLon": 0.02 }, "encoding": "rle8", "tiers": { "minIn": 0.01, "topIn": 20, "max": 255 }, "drawn": 96595, "maxIn": 2.8, "data": "…" }
+```
+
 ### `GET /api/radar/precip-mosaic`
 
 MRMS surface precipitation type over CONUS — the low-zoom half of
@@ -485,6 +527,71 @@ GOES-19 GLM total-lightning flashes in a rolling 5-minute window.
 
 Each flash is `[lat, lon, ageSeconds]`, quality-filtered
 (`flash_quality_flag === 0`). GLM resolution is ~8–14 km.
+
+### `GET /api/radar/nowcast?lat=&lon=[&site=]`
+
+Point nowcast for the pin: will rain reach it in the next 90 minutes, how
+heavy, when does it end. Lagrangian persistence on the dual-pol cleaned
+reflectivity — the last four volume scans are projected onto a 1 km grid
+around the pin, the echo motion is found by cross-correlation (coarse to
+fine, then a 3 × 3 local field), a growth/decay trend is measured, and an
+ensemble of 25 motion perturbations (plus the previous nowcast's vector)
+is advected over the pin. The fraction of members that find rain is the
+probability at each 5-min lead.
+
+- **Access:** 🌐 Public — rate limited
+- **Query params:** `lat`, `lon` (required); `site` (3- or 4-letter, optional).
+  Site precedence is the same as `/api/radar/frames`: settings.json
+  `radarSite` override, then `site`, then the radar nearest the pin.
+- **Source:** `unidata-nexrad-level3` N0B (+ N0H for the clean mask and the
+  precipitation type). MRMS PrecipRate is wired as a cross-check but OFF
+  by default (`NOWCAST_ENABLE=mrms`) — see the note in `server/nowcastCtrl.js`.
+- **Cached:** 60 s per (site, pin, newest scan); ~100–300 ms to compute.
+
+```json
+{
+  "available": true, "site": "DIX", "scanTime": "2026-09-27T20:52:17.000Z",
+  "now": { "raining": true, "prob": 1, "dbz": 19.5, "category": "light", "rateMmh": 0.6, "ptype": "rain" },
+  "arrival": null,
+  "peak": { "leadMin": 0, "category": "light", "dbz": 19.5, "rateMmh": 0.6, "ptype": "rain" },
+  "end": { "leadMin": 20, "prob": 0.33 },
+  "horizonMin": 90,
+  "series": [{ "leadMin": 0, "prob": 1, "probRadar": 1, "probMrms": null, "dbz": 19.5, "dbzMax": 27, "category": "light", "rateMmh": 0.6, "ptype": "rain" }],
+  "motion": { "speedKmh": 33, "towardDeg": 252, "fromDeg": 72, "quality": 0.92, "baselineMin": 17, "localBlocks": 7 },
+  "trend": { "dbPerHour": -0.1, "areaRatio": 0.94, "label": "steady" },
+  "ensemble": { "members": 25, "previousUsed": false },
+  "confidence": "medium",
+  "hindcast": { "measuredOn": "2026-09-27", "leads": { "15": { "pod": 0.71, "far": 0.37, "csi": 0.51, "brier": 0.057 } } },
+  "liveSkill": { "leads": { "15": { "n": 0, "pod": null, "far": null, "brier": null } } }
+}
+```
+
+`arrival` (when not raining now) carries `leadMin` (first lead with
+probability ≥ 0.5 held for two steps), `earliestMin` (first ≥ 0.3) and
+`latestMin` (first ≥ 0.7, or null) — the card quotes the range. `ptype`
+is `rain` / `snow` / `mix` / `graupel` / `hail` from N0H at the upstream
+point. `category` is `none` / `light` (≥ 15 dBZ) / `moderate` (≥ 30) /
+`heavy` (≥ 40) / `intense` (≥ 50). `confidence` is `high` / `medium` /
+`low` / `unknown` from the correlation quality, the ensemble's agreement
+at the key lead and the lead itself. The horizon shortens when most of the
+ensemble's upstream points leave the ±120 km grid. `available: false`
+with `reason` `no-recent-scans` / `no-decodable-scans` /
+`upstream-unavailable` otherwise.
+
+### `GET /api/radar/nowcast/skill`
+
+Live verification: every nowcast the server issues is scored against the
+scan that arrives 15, 30 and 60 min later, per pin, and the running hit /
+miss / false-alarm counts and Brier score are kept (persisted to
+`~/.local/state/pi-weather-station/nowcast-skill.json` on the kiosk, in
+memory in the app). The debug panel's Server bucket shows it; the card
+quotes the pin's own hit rate once it has 20 verified calls.
+
+- **Access:** 🌐 Public — rate limited
+
+```json
+{ "leads": [15, 30, 60], "pins": { "DIX:39.950,-75.170": { "leads": { "15": { "n": 42, "hit": 9, "miss": 3, "falseAlarm": 6, "correctNegative": 24, "pod": 0.75, "far": 0.4, "csi": 0.5, "brier": 0.11 } }, "updatedAt": 1790000000000, "pending": 3 } }, "hindcast": { } }
+```
 
 ---
 

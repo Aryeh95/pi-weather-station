@@ -2,12 +2,13 @@ import React, { useContext, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 
-import { AlertsContext, UiPrefsContext } from "~/AppContext";
+import { AlertsContext, LocationContext, UiPrefsContext } from "~/AppContext";
 import { CloseIcon } from "./icons";
 import styles from "./styles.css";
 
 import { colorForDbz, colorForVelocity, colorForCorrelation } from "./radialRender";
 import { GROUPS as PTYPE_GROUPS, colorForGate, encodeGate } from "../../../../server/precipType";
+import { colorForDepthIn, formatDepth, MM_PER_IN } from "../../../../server/accumulation";
 
 // Tiers sampled for each precipitation-type ramp in the legend: 7.5 to
 // 62.5 dBZ mid-points, light → heavy, from the same table the map uses.
@@ -112,6 +113,24 @@ const VelocityScale = ({ palette }) => (
 
 VelocityScale.propTypes = { palette: PropTypes.string };
 
+// Depths the accumulation bar samples (inches), and the ones labelled.
+const ACCUM_SCALE_IN = [0.01, 0.02, 0.05, 0.1, 0.15, 0.25, 0.35, 0.5, 0.75, 1, 1.5, 2, 3, 5];
+const ACCUM_LABELS_IN = [0.01, 0.1, 0.5, 1, 5];
+
+/**
+ * Rainfall accumulation colour bar (ACCUM_STOPS in server/accumulation.js).
+ *
+ * @returns {JSX.Element} Scale bar
+ */
+const AccumulationScale = () => (
+  <span className={styles.precipScale} aria-hidden="true">
+    {ACCUM_SCALE_IN.map((d) => {
+      const [r, g, b] = colorForDepthIn(d);
+      return <span key={d} style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }} />;
+    })}
+  </span>
+);
+
 /**
  * Correlation-coefficient colour bar (CC_STOPS in radialRender.js).
  *
@@ -149,6 +168,7 @@ const CorrelationScale = () => (
  * @param {number|null} [props.lightningCount] GLM flash count for the lightning section (null hides it)
  * @param {boolean} [props.velocity] Show the base-velocity colour bar (velocity mode on, site layer in view)
  * @param {boolean} [props.correlation] Show the correlation-coefficient bar (CC mode on, site layer in view)
+ * @param {object} [props.accumulation] Rainfall-accumulation mode: product, what is in view, the value at the pin and the scan's window
  * @param {boolean} [props.correlationUnavailable] CC mode on but this radar publishes no N0C
  * @param {boolean|null} [props.cleanApplied] Dual-pol clean: true applied, false the scan had no classification, null not asked for
  * @param {boolean} [props.holdingClean] The frame on screen is an older CLEAN scan, held because the newest one has no classification yet
@@ -158,7 +178,7 @@ const CorrelationScale = () => (
 const RadarLegend = ({
   dark, chipMode, lightningCount = null, velocity = false,
   correlation = false, correlationUnavailable = false,
-  cleanApplied = null, holdingClean = false, precip = null,
+  cleanApplied = null, holdingClean = false, precip = null, accumulation = null,
 }) => {
   const { t } = useTranslation();
   const {
@@ -169,7 +189,8 @@ const RadarLegend = ({
     radarNoiseMode,
     radarPalette,
   } = useContext(AlertsContext);
-  const { distanceUnit } = useContext(UiPrefsContext);
+  const { distanceUnit, lengthUnit, clockTime } = useContext(UiPrefsContext);
+  const { mapTimezone } = useContext(LocationContext) || {};
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   // Escape closes the overlay — keyboard parity with the scrim/✕
@@ -211,9 +232,65 @@ const RadarLegend = ({
     }
   }
 
+  // Rainfall accumulation section text: the period, what the colours are
+  // read from (this radar aloft-corrected QPE vs MRMS's every-radar
+  // surface field), the value at the pin, and the storm total's start.
+  let accumLines = null;
+  if (accumulation) {
+    const unit = lengthUnit === "mm" ? "mm" : "in";
+    const fmtTime = (iso) => {
+      const t0 = Date.parse(iso || "");
+      if (!Number.isFinite(t0)) return null;
+      try {
+        return new Intl.DateTimeFormat(undefined, {
+          hour: "numeric", minute: "2-digit", hour12: clockTime === "12", timeZone: mapTimezone || undefined,
+        }).format(new Date(t0));
+      } catch {
+        return new Date(t0).toTimeString().slice(0, 5);
+      }
+    };
+    const lines = [];
+    const meta = accumulation.meta;
+    if (accumulation.siteInView) {
+      if (accumulation.siteUnavailable) lines.push(t("radar.legendAccumUnavailable"));
+      else if (meta && meta.nullProduct) lines.push(t("radar.legendAccumNone"));
+      else if (accumulation.atPin != null) lines.push(t("radar.legendAccumAtHome", { depth: formatDepth(accumulation.atPin, unit) }));
+      else if (meta) lines.push(t("radar.legendAccumAtHomeNone"));
+      if (meta && accumulation.product === "DTA" && meta.startTime) {
+        lines.push(t("radar.legendAccumSince", { time: fmtTime(meta.startTime) }));
+      }
+      if (meta && Number.isFinite(meta.maxIn) && meta.maxIn > 0) {
+        lines.push(t("radar.legendAccumMax", { depth: formatDepth(meta.maxIn, unit) }));
+      }
+    } else if (accumulation.mosaicInView) {
+      lines.push(t(accumulation.mosaicField ? "radar.legendAccumMosaic" : "radar.legendAccumMosaicPending"));
+    } else if (accumulation.product === "DTA") {
+      lines.push(t("radar.legendAccumNoMosaic"));
+    }
+    accumLines = lines;
+  }
+
   const sections = (
     <>
-      {precip ? (
+      {accumulation ? (
+        <div className={styles.legendSection}>
+          <div className={styles.legendTitle}>{t(`radar.legendAccum.${accumulation.product}`)}</div>
+          <AccumulationScale />
+          <div className={styles.scaleLabels}>
+            {ACCUM_LABELS_IN.map((d, i) => (
+              <span key={d}>
+                {lengthUnit === "mm"
+                  ? `${d * MM_PER_IN < 1 ? (d * MM_PER_IN).toFixed(1) : Math.round(d * MM_PER_IN)}${i === ACCUM_LABELS_IN.length - 1 ? " mm" : ""}`
+                  : `${d}${i === ACCUM_LABELS_IN.length - 1 ? " in" : ""}`}
+              </span>
+            ))}
+          </div>
+          {accumLines && accumLines.length ? (
+            <div className={styles.alertCount}>{accumLines.join(" · ")}</div>
+          ) : null}
+        </div>
+      ) : null}
+      {accumulation ? null : precip ? (
         <div className={styles.legendSection}>
           <div className={styles.legendTitle}>{t("radar.legendPrecipType")}</div>
           <PrecipTypeRows />
@@ -323,7 +400,7 @@ const RadarLegend = ({
           title={t("radar.legendOpen")}
         >
           <span className={styles.legendChipI} aria-hidden="true">i</span>
-          {precip ? <PrecipTypeScale /> : <PrecipScale palette={radarPalette} />}
+          {accumulation ? <AccumulationScale /> : (precip ? <PrecipTypeScale /> : <PrecipScale palette={radarPalette} />)}
           {t("radar.legendTitle")}
         </button>
       ) : (
@@ -332,7 +409,7 @@ const RadarLegend = ({
         </div>
       )}
       <div className={styles.legendMobileStrip}>
-        {precip ? <PrecipTypeScale /> : <PrecipScale palette={radarPalette} />}
+        {accumulation ? <AccumulationScale /> : (precip ? <PrecipTypeScale /> : <PrecipScale palette={radarPalette} />)}
         {showWeatherAlerts && nearbyCount > 0 ? (
           <span className={styles.legendMobileAlert}>
             <svg viewBox="0 0 18 16" aria-hidden="true">
@@ -398,6 +475,15 @@ RadarLegend.propTypes = {
   velocity: PropTypes.bool,
   correlation: PropTypes.bool,
   correlationUnavailable: PropTypes.bool,
+  accumulation: PropTypes.shape({
+    product: PropTypes.string.isRequired,
+    siteInView: PropTypes.bool,
+    siteUnavailable: PropTypes.bool,
+    mosaicInView: PropTypes.bool,
+    mosaicField: PropTypes.object,
+    atPin: PropTypes.number,
+    meta: PropTypes.object,
+  }),
 };
 
 export default RadarLegend;

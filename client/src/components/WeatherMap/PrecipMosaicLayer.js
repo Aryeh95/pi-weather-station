@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { ImageOverlay, useMap, useMapEvents } from "react-leaflet";
 import { buildPrecipLut } from "../../../../server/precipType";
+import { buildAccumLut } from "../../../../server/accumulation";
 
 // Margin around the view, as a fraction of the view size, on each side.
 export const PAD = 0.5;
@@ -45,11 +46,12 @@ const fromMerc = (ym) => (Math.atan(Math.sinh(ym)) * 180) / Math.PI;
  * @param {Number} width canvas width, px
  * @param {Number} height canvas height, px
  * @param {Number} [minDbz] noise-filter floor (tiers below it are not drawn)
+ * @param {String} [kind] "ptype" (class × tier bytes, default) or "accum" (accumulation tiers)
  * @returns {HTMLCanvasElement} the painted canvas
  */
-export function renderPrecipCanvas(field, bounds, width, height, minDbz) {
+export function renderPrecipCanvas(field, bounds, width, height, minDbz, kind = "ptype") {
   const { grid, cells } = field;
-  const lut32 = new Uint32Array(buildPrecipLut(minDbz).buffer);
+  const lut32 = new Uint32Array((kind === "accum" ? buildAccumLut() : buildPrecipLut(minDbz)).buffer);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -108,9 +110,10 @@ export function renderCovers(rendered, view, zoom) {
  * @param {Object|null} props.field decoded field from usePrecipMosaic, or null to draw nothing (the layer stays mounted so its render cache survives a loop frame that has not arrived yet)
  * @param {Number} props.opacity overlay opacity (0 hides without unmounting)
  * @param {Number} [props.minDbz] noise-filter floor
+ * @param {String} [props.kind] "ptype" (default) or "accum" — which byte encoding / LUT the cells use
  * @returns {JSX.Element|null} the overlay once rendered
  */
-const PrecipMosaicLayer = ({ field, opacity, minDbz }) => {
+const PrecipMosaicLayer = ({ field, opacity, minDbz, kind = "ptype" }) => {
   const map = useMap();
   const [img, setImg] = useState(null);
   // The view the cache was rendered for; a move outside it empties the cache.
@@ -131,7 +134,7 @@ const PrecipMosaicLayer = ({ field, opacity, minDbz }) => {
     }
     const size = map.getSize();
     if (size.x < 1 || size.y < 1) return;
-    const cacheKey = `${field.key}|${minDbz ?? "none"}`;
+    const cacheKey = `${field.key}|${kind}|${minDbz ?? "none"}`;
     const view = map.getBounds();
     const zoom = map.getZoom();
     // Same view as the cache was built for, and this frame already drawn?
@@ -158,7 +161,7 @@ const PrecipMosaicLayer = ({ field, opacity, minDbz }) => {
       };
     }
     const { bounds, width, height } = renderedRef.current;
-    const canvas = renderPrecipCanvas(field, bounds, width, height, minDbz);
+    const canvas = renderPrecipCanvas(field, bounds, width, height, minDbz, kind);
     canvas.toBlob((blob) => {
       if (!blob || !aliveRef.current) return;
       // The view may have moved while encoding; a stale render must not
@@ -174,7 +177,7 @@ const PrecipMosaicLayer = ({ field, opacity, minDbz }) => {
       }
       setImg({ url, bounds: leaflet });
     }, "image/png");
-  }, [map, field, minDbz, clearCache]);
+  }, [map, field, minDbz, kind, clearCache]);
 
   // New field (a loop frame, a new scan) or filter state: paint it — from
   // the cache when this view has seen it before.
@@ -209,6 +212,7 @@ PrecipMosaicLayer.propTypes = {
   }),
   opacity: PropTypes.number.isRequired,
   minDbz: PropTypes.number,
+  kind: PropTypes.oneOf(["ptype", "accum"]),
 };
 
 export default PrecipMosaicLayer;

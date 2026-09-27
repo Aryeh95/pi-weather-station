@@ -525,6 +525,7 @@ module.exports = {
   toEpochMs,
   normalizeSiteId,
   resolveRadarSite,
+  overrideSite,
   parseMosaicMeta,
   parseSatelliteMeta,
   fetchMosaicMeta,

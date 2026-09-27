@@ -38,6 +38,32 @@ const CLEAN_RETRY_LIMIT = 5; // ~50 s, i.e. up to the next scheduled poll
 const CLEAN_HOLD_MAX_MS = 10 * 60 * 1000;
 
 /**
+ * Point readout over a decoded frame: the physical value at a lat/lon
+ * (the product's own units), or null off-disc / below threshold.
+ *
+ * @param {{d: Object, bins: Uint8Array}} frame payload + decoded levels
+ * @returns {(lat: Number, lon: Number) => Number|null}
+ */
+function sampler({ d, bins }) {
+  const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling, reservedLevels } = d;
+  const kmPerDegLat = 110.574;
+  const kmPerDegLon = 111.32 * Math.cos((radar.lat * Math.PI) / 180);
+  return (lat, lon) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const dx = (lon - radar.lon) * kmPerDegLon;
+    const dy = (lat - radar.lat) * kmPerDegLat;
+    const bin = Math.floor((Math.hypot(dx, dy) - firstBinKm) / binKm);
+    if (bin < 0 || bin >= numBins) return null;
+    let az = (Math.atan2(dx, dy) * 180) / Math.PI;
+    if (az < 0) az += 360;
+    const bucket = Math.min(numBuckets - 1, Math.floor(az / bucketDeg));
+    const level = bins[bucket * numBins + bin];
+    if (level < (reservedLevels ?? 1)) return null;
+    return scaling.min + level * scaling.increment;
+  };
+}
+
+/**
  * Keep a rendered raw-radial image current for a site.
  *
  * @param {Object} params
@@ -49,6 +75,7 @@ const CLEAN_HOLD_MAX_MS = 10 * 60 * 1000;
  * @param {Boolean} [params.paused] true suspends polling but keeps the current image
  * @param {String} [params.palette] reflectivity palette id (ui/radarPalette.js)
  * @returns {{url: String|null, bounds: Array|null, scanTime: String|null, stale: Boolean, cleanApplied: Boolean|null, holdingClean: Boolean, unavailable: String|null}}
+ *   `valueAt(lat, lon)` reads the frame on screen at a point (product units), null when none;
  *   `cleanApplied` is null unless dual-pol clean was asked for AND the product
  *   is one it applies to (reflectivity): true when the scan's classification
  *   was found and used, false when it was not.
@@ -63,9 +90,13 @@ export default function useRadarRadial({
   site, enabled, noiseFilter, dualPolClean = false, product = "N0B", paused = false, palette = "nws",
 }) {
   const [state, setState] = useState({
-    url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null,
+    url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null, valueAt: null,
   });
   const lastKeyRef = useRef(null);
+  // The decoded bins of the frame on screen, for point readouts
+  // (accumulation at the pin). Kept in a ref so publishing does not copy
+  // a megabyte into state; `valueAt` closes over it.
+  const binsRef = useRef(null);
   const urlRef = useRef(null);
   const cancelledRef = useRef(false);
   const retryRef = useRef(null);
@@ -81,8 +112,10 @@ export default function useRadarRadial({
       urlRef.current = url;
       // What is on screen now is what a later "hold" would hold.
       cleanFrameRef.current = cleanApplied === true ? scanTime : null;
+      const frame = url ? binsRef.current : null;
       setState({
-        url, bounds, scanTime, stale: false, cleanApplied, holdingClean: false, unavailable,
+        url, bounds, scanTime, stale: false, cleanApplied, holdingClean: false, unavailable, valueAt: frame ? sampler(frame) : null,
+        accumulation: frame && frame.d.accumulation ? frame.d.accumulation : null,
       });
     };
 
@@ -93,8 +126,9 @@ export default function useRadarRadial({
         urlRef.current = null;
       }
       cleanFrameRef.current = null;
+      binsRef.current = null;
       setState({
-        url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null,
+        url: null, bounds: null, scanTime: null, stale: false, cleanApplied: null, holdingClean: false, unavailable: null, valueAt: null,
       });
       return () => { cancelledRef.current = true; };
     }
@@ -187,10 +221,12 @@ export default function useRadarRadial({
             ));
             return;
           }
-          const { canvas, bounds } = renderRadialImage(d, decodeBins(d.bins), minDbz, palette);
+          const bins = decodeBins(d.bins);
+          const { canvas, bounds } = renderRadialImage(d, bins, minDbz, palette);
           canvas.toBlob((blob) => {
             if (cancelledRef.current || !blob) return;
             lastKeyRef.current = renderKey;
+            binsRef.current = { d, bins };
             publish(URL.createObjectURL(blob), bounds, d.scanTime, cleanApplied);
           }, "image/png");
         })

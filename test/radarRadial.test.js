@@ -27,6 +27,7 @@ const parseLevel3 = require("nexrad-level-3-data");
 // The precipitation-type table the copied buildLevelLut delegates to lives
 // with the server (the client imports the same file).
 const { buildPrecipLut } = require("../server/precipType");
+const { colorForDepthIn } = require("../server/accumulation");
 
 const FIXTURE = path.join(__dirname, "fixtures", "DIX_N0B_2026_08_12_00_37_12.bin");
 // Super-res base velocity from the same site — one volume scan, live
@@ -175,15 +176,19 @@ function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity", palet
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
   const correlation = kind === "correlation";
+  // Rainfall accumulation: inches on the product's own scale, level 0
+  // reserved, no dBZ floor (colorForDepthIn is transparent below 0.01 in).
+  const accumulation = kind === "accumulation";
   if (velocity || correlation) {
     lut.set(VEL_RF_COLOR, 4);
   }
-  for (let level = 2; level < 256; level += 1) {
+  for (let level = accumulation ? 1 : 2; level < 256; level += 1) {
     const v = scaling.min + level * scaling.increment;
-    if (!velocity && !correlation && v < minDbz) continue;
+    if (!velocity && !correlation && !accumulation && v < minDbz) continue;
     let rgba;
     if (velocity) rgba = colorForVelocity(v, palette);
     else if (correlation) rgba = colorForCorrelation(v);
+    else if (accumulation) rgba = colorForDepthIn(v);
     else rgba = colorForDbz(v, palette);
     const [r, g, b, a] = rgba;
     lut[level * 4] = r;
@@ -585,4 +590,14 @@ test("debris signature: low CC inside a 30+ dBZ core counts, rain and bloom do n
   assert.equal(west.detected, false, "uniform rain has no signature");
   assert.ok(west.sampled > 0);
   assert.ok(TDS_MAX_CC < 1 && TDS_MIN_DBZ >= 30);
+});
+
+test("buildLevelLut: accumulation paints inches from level 1 with no dBZ floor and a trace transparent", () => {
+  // DTA-style scaling: 0.01 in per level from level 0.
+  const scaling = { min: 0, increment: 0.01 };
+  const lut = buildLevelLut(scaling, NOISE_FILTER_MIN_DBZ, "accumulation");
+  assert.equal(lut[3], 0, "level 0 is reserved / transparent");
+  assert.equal(lut[1 * 4 + 3], 230, "level 1 = 0.01 in is the faint trace colour");
+  assert.deepEqual([...lut.subarray(100 * 4, 100 * 4 + 4)], colorForDepthIn(1.0), "level 100 = 1.00 in");
+  assert.ok(lut[50 * 4 + 3] === 255, "0.5 in is opaque despite the dBZ floor argument");
 });

@@ -1,0 +1,162 @@
+/* NowcastPanel — a card in the alert stack, same surface tokens as the
+ * AlertBanner so the rail reads as one column. The left strip carries the
+ * headline's tone (the colour the rain would paint on the map), grey when
+ * dry, so the card's state is visible from across the room. */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 10px 18px;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  color: var(--c-text);
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  pointer-events: auto;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 8px 0 0 8px;
+  background-color: var(--c-text-dim, #8a8578);
+}
+
+.tone-light::before { background-color: #4caf50; }
+.tone-moderate::before { background-color: #e6c400; }
+.tone-heavy::before { background-color: #f57c00; }
+.tone-intense::before { background-color: #d32f2f; }
+
+.compact {
+  padding: 10px 12px 8px 16px;
+  gap: 4px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-dim, #8a8578);
+}
+
+/* Site + scan age, in the frame-age chip's vocabulary and colours. */
+.age {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Geist Mono", monospace;
+  font-size: 11px;
+  color: var(--c-text-dim, #8a8578);
+}
+
+.site {
+  letter-spacing: 0.04em;
+}
+
+.ageDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rc-ink-3, #a39a82);
+}
+
+.age-fresh .ageDot { background: var(--rc-tile-2, #00c800); }
+.age-aging .ageDot { background: var(--rc-alert-watch, #ee7710); }
+.age-stale .ageDot { background: var(--rc-alert-warn, #e60000); }
+.age-stale { color: var(--rc-alert-warn, #e60000); }
+
+.headline {
+  font-size: calc(18px * var(--c-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.compact .headline {
+  font-size: calc(16px * var(--c-font-scale, 1));
+}
+
+.detail {
+  font-size: calc(13px * var(--c-font-scale, 1));
+  line-height: 1.4;
+  color: var(--c-text);
+  opacity: 0.85;
+}
+
+/* 0–90 min strip: one segment per 5-min step, painted in the active
+ * reflectivity palette. Dry steps show the surface through a faint frame
+ * so the strip's extent stays readable when every step is dry. */
+.strip {
+  display: flex;
+  gap: 1px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.step {
+  flex: 1;
+  min-width: 0;
+  background: var(--c-border);
+}
+
+.stepDry {
+  background: var(--c-border, rgba(0, 0, 0, 0.12));
+  opacity: 0.5;
+}
+
+/* A 20–50 % step: rain is possible but not the call. Neutral ink so the
+ * colour ramp stays reserved for "likely". */
+.stepPossible {
+  background: var(--c-text-dim, #8a8578);
+}
+
+/* Steps past a shortened horizon (rain upstream would come from outside
+ * the radar's view): left blank. */
+.stepGap {
+  background: transparent;
+}
+
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  font-family: "Geist Mono", monospace;
+  font-size: 10px;
+  color: var(--c-text-dim, #8a8578);
+  line-height: 1;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 2px;
+  font-size: calc(12px * var(--c-font-scale, 1));
+  color: var(--c-text-dim, #8a8578);
+}
+
+.conf-high { color: var(--rc-tile-2, #2e9e3a); }
+.conf-medium { color: var(--rc-alert-watch, #ee7710); }
+.conf-low,
+.conf-unknown { color: var(--rc-alert-warn, #c62828); }
+
+.skill {
+  font-family: "Geist Mono", monospace;
+}
+
+.stale .headline,
+.stale .detail {
+  opacity: 0.6;
+}

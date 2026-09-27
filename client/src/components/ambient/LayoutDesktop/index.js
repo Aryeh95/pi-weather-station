@@ -3,6 +3,7 @@ import { UiPrefsContext, SystemContext, AppActionsContext } from "~/AppContext";
 import WeatherMap from "~/components/WeatherMap";
 import RadarHeader from "~/components/ambient/RadarHeader";
 import AlertBanner from "~/components/ambient/AlertBanner";
+import NowcastPanel from "~/components/ambient/NowcastPanel";
 import AlertDetailInline from "~/components/ambient/AlertDetailInline";
 import AlertMiniCards from "~/components/ambient/AlertMiniCards";
 import BottomDock from "~/components/ambient/BottomDock";
@@ -109,6 +110,7 @@ const LayoutDesktop = () => {
             prose all went with their data sources in the radar rework;
             the stack returns null in calm weather, so the rail simply
             isn't there when there is nothing to say. */}
+        <NowcastPanel />
         <AlertBanner />
         <AlertDetailInline />
         <AlertMiniCards />

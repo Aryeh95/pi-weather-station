@@ -446,6 +446,20 @@
     height: auto;
     row-gap: 2px;
   }
+  /* The Map group itself wraps too (2026-09-27): at sixteen 36 px
+   * buttons it is wider than any phone, and an unwrapped group simply
+   * ran off the right edge — the noise-filter, velocity, type and CC
+   * toggles were unreachable on the phone without anyone noticing. */
+  .container.grouped .group {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    /* `flex: 0 0 auto` + `width: auto` (above) size the group to its
+     * max-content width, so without a cap its children never need to
+     * wrap — they just overflow. */
+    max-width: 100%;
+    box-sizing: border-box;
+    justify-content: flex-start;
+  }
   /* The hairline between groups would open the second row with a
    * stray bar at its left edge; the row break already separates them. */
   .container.grouped .group + .group::before {

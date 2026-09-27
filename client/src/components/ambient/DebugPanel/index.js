@@ -694,6 +694,16 @@ const BucketServer = ({ data, lang, gridTwoWide }) => {
   // isn't pinned, automatic cleanup when it's unpinned or the panel closes.
   const [cpuTempLive, setCpuTempLive] = useState(null);
   const [fanRpmLive, setFanRpmLive] = useState(null);
+  // Live nowcast verification: the running hit / false-alarm score per
+  // pin, fetched once per bucket mount (it only changes with new scans).
+  const [nowcastSkill, setNowcastSkill] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    axios.get("/api/radar/nowcast/skill")
+      .then((res) => { if (!cancelled) setNowcastSkill(res.data || null); })
+      .catch(() => { /* optional section */ });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const poll = () => {
@@ -792,6 +802,29 @@ const BucketServer = ({ data, lang, gridTwoWide }) => {
                 <span className={styles.rowDim}>{r.count} req</span>
                 <span className={styles.rowMono}>{r.avgMs} ms {lbl(lang, "avg", "moy", "prom")}</span>
               </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {nowcastSkill && nowcastSkill.pins && Object.keys(nowcastSkill.pins).length > 0 ? (
+        <>
+          <SectionTitle title={lbl(lang, "Nowcast skill (live)", "Fiabilité prévision immédiate (direct)", "Acierto del pronóstico inmediato (en vivo)")} gap />
+          <div className={styles.list}>
+            {Object.entries(nowcastSkill.pins).map(([pin, v]) => (
+              (nowcastSkill.leads || [15, 30, 60]).map((L) => {
+                const r = v.leads && v.leads[L];
+                if (!r) return null;
+                return (
+                  <div key={`${pin}-${L}`} className={styles.row}>
+                    <span className={styles.rowName}>{pin} · {L} min</span>
+                    <span className={styles.rowDim}>n {r.n}</span>
+                    <span className={styles.rowMono}>
+                      {r.pod == null ? "—" : `POD ${Math.round(r.pod * 100)}%`} · {r.far == null ? "—" : `FAR ${Math.round(r.far * 100)}%`} · {r.brier == null ? "—" : `Brier ${r.brier}`}
+                    </span>
+                  </div>
+                );
+              })
             ))}
           </div>
         </>

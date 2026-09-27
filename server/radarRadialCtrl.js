@@ -45,6 +45,7 @@
 const parseLevel3 = require("nexrad-level-3-data");
 const level3Products = require("nexrad-level-3-data/src/products");
 const product94 = require("nexrad-level-3-data/src/products/94");
+const product170 = require("nexrad-level-3-data/src/products/170");
 const { recordServiceCall } = require("./serviceStatus");
 const { increment } = require("./requestCounter");
 const { BoundedMap } = require("./boundedCache");
@@ -107,8 +108,55 @@ const PRODUCTS = {
     reservedLevels: 1,
     scaling: { min: 0, increment: 1, levels: 16 },
   },
+  // ── Rainfall accumulation (dual-pol QPE) ──────────────────────────
+  // Three "derived" products RadarScope also lists. All three are
+  // 360 radials × 1°, 920 bins × 0.25 km (230 km), 256 levels with a
+  // float SCALE / OFFSET in the product description (the library reads
+  // them for 170 / 172; the 173 shim below reuses 170's reader): value
+  // in INCHES = (level − offset) / scale. Verified live LWX 2026-09-27
+  // 21:10 Z: DAA scale 2081.97 / offset −1.08 → max level 255 = 0.123 in
+  // against the header's own maxAccumulation 0.1; DTA scale 100 / offset
+  // 0 (0.01 in per level); DU3 scale 1443 / offset −0.44. Level 0 is
+  // "no data" and is the only reserved level; a level that decodes below
+  // 0.01 in is a trace and the client's LUT leaves it transparent.
+  DAA: {
+    code: 170,
+    kind: "accumulation",
+    units: "in",
+    abbreviations: ["DAA"],
+    description: "Digital One Hour Accumulation",
+    reservedLevels: 1,
+    accumulation: { periodMin: 60 },
+  },
+  // Product 173 (user-selectable period) is not in the library: the shim
+  // clones 170's definition, whose 30–53 halfword reader is the same
+  // layout. Its 27–28 halfwords differ: hw 27 is the period's END time
+  // (minutes since midnight) and hw 28 the period LENGTH in minutes
+  // (verified: 1260 / 180 on a file ending 21:00 Z), and hw 47–48 (the
+  // library's accumulationEndDate / Minutes) hold the period's START.
+  DU3: {
+    code: 173,
+    kind: "accumulation",
+    units: "in",
+    abbreviations: ["DU3", "DU6", "DUA"],
+    description: "Digital User-Selectable Accumulation",
+    reservedLevels: 1,
+    accumulation: { periodMin: 180 },
+    shimFrom: product170,
+  },
+  DTA: {
+    code: 172,
+    kind: "accumulation",
+    units: "in",
+    abbreviations: ["DTA"],
+    description: "Digital Storm Total Accumulation",
+    reservedLevels: 1,
+    accumulation: { periodMin: null },
+  },
 };
 const DEFAULT_PRODUCT = "N0B";
+// The accumulation products, for callers that treat them alike.
+const ACCUMULATION_PRODUCTS = Object.keys(PRODUCTS).filter((k) => PRODUCTS[k].kind === "accumulation");
 // The classification the dual-pol clean mode reads its verdict from.
 const CLASS_PRODUCT = "N0H";
 // Virtual product: the precipitation-type picture, N0H's class per gate
@@ -123,7 +171,7 @@ const PRECIP_PRODUCT = "PTYPE";
 for (const def of Object.values(PRODUCTS)) {
   if (!level3Products.products[String(def.code)]) {
     level3Products.products[String(def.code)] = {
-      ...product94,
+      ...(def.shimFrom || product94),
       code: def.code,
       abbreviation: def.abbreviations,
       description: def.description,
@@ -293,6 +341,67 @@ async function keyForEpoch(site, product, target) {
 }
 
 /**
+ * `min + level × increment` scaling for an accumulation product whose
+ * header carries a float scale and offset: value = (level − offset) / scale.
+ *
+ * @param {Object} pd parsed product description
+ * @returns {{min: Number, increment: Number, levels: Number}} inches
+ */
+function accumulationScaling(pd) {
+  const scale = pd.plot && Number.isFinite(pd.plot.scale) && pd.plot.scale > 0 ? pd.plot.scale : 100;
+  const offset = pd.plot && Number.isFinite(pd.plot.offset) ? pd.plot.offset : 0;
+  return { min: -offset / scale, increment: 1 / scale, levels: 255 };
+}
+
+/**
+ * Product-description day / minute pair → ISO time. Days are modified
+ * Julian days since 1 Jan 1970 (day 1), like the volume-scan date.
+ *
+ * @param {Number} day
+ * @param {Number} minutes since midnight
+ * @returns {String|null}
+ */
+function dayMinutesIso(day, minutes) {
+  if (!Number.isFinite(day) || !Number.isFinite(minutes) || day <= 0) return null;
+  return new Date(((day - 1) * 86400 + minutes * 60) * 1000).toISOString();
+}
+
+/**
+ * The accumulation window and header extras of a DAA / DU3 / DTA scan.
+ *
+ * @param {Object} def PRODUCTS entry
+ * @param {Object} pd parsed product description
+ * @returns {{periodMin: Number|null, startTime: String|null, endTime: String|null, maxIn: Number|null, meanFieldBias: Number|null, nullProduct: Object|null}}
+ */
+function accumulationMeta(def, pd) {
+  let periodMin = def.accumulation.periodMin;
+  let startTime = null;
+  let endTime = null;
+  if (def.code === 173) {
+    // See the DU3 entry: hw 47–48 hold the START, hw 28 the length.
+    periodMin = Number.isFinite(pd.totalTime) && pd.totalTime > 0 ? pd.totalTime : periodMin;
+    startTime = dayMinutesIso(pd.accumulationEndDate, pd.accumulationEndMinutes);
+    endTime = startTime && periodMin ? new Date(Date.parse(startTime) + periodMin * 60000).toISOString() : null;
+  } else {
+    endTime = dayMinutesIso(pd.accumulationEndDate, pd.accumulationEndMinutes);
+    if (def.code === 172) {
+      startTime = dayMinutesIso(pd.accumulationStartDate, pd.accumulationStartMinutes);
+      periodMin = startTime && endTime ? Math.round((Date.parse(endTime) - Date.parse(startTime)) / 60000) : null;
+    } else if (endTime && periodMin) {
+      startTime = new Date(Date.parse(endTime) - periodMin * 60000).toISOString();
+    }
+  }
+  return {
+    periodMin,
+    startTime,
+    endTime,
+    maxIn: Number.isFinite(pd.maxAccumulation) ? pd.maxAccumulation : null,
+    meanFieldBias: Number.isFinite(pd.meanFieldBias) ? pd.meanFieldBias : null,
+    nullProduct: pd.nullProductFlag && pd.nullProductFlag.value ? pd.nullProductFlag : null,
+  };
+}
+
+/**
  * Fetch + decode one radial file into the /api/radar/radial payload shape.
  *
  * @param {String} site 3-letter radar id
@@ -365,11 +474,12 @@ async function decodeKey(site, product, key) {
     // (velocity); level L ≥ 2 is `min + L × increment` in `units` — the
     // same table the parser builds internally for its scaled view.
     reservedLevels: def.reservedLevels,
-    scaling: def.scaling || (def.dualPolScaling ? dualPolScaling(buf, def.code) : {
+    scaling: def.scaling || (def.dualPolScaling ? dualPolScaling(buf, def.code) : (def.kind === "accumulation" ? accumulationScaling(pd) : {
       min: pd.plot ? pd.plot.minimumDataValue : (def.kind === "velocity" ? -63.5 : -32),
       increment: pd.plot ? pd.plot.dataIncrement : 0.5,
       levels: pd.plot ? pd.plot.dataLevels : 254,
-    }),
+    })),
+    ...(def.kind === "accumulation" ? { accumulation: accumulationMeta(def, pd) } : {}),
     numBuckets: NUM_BUCKETS,
     bucketDeg: BUCKET_DEG,
     numBins,
@@ -587,6 +697,30 @@ async function fetchRadial(site, product = DEFAULT_PRODUCT, clean = false) {
     ? CLEAN_PENDING_TTL_MS
     : RADIAL_TTL_MS;
   radialCache.set(cacheKey, { value, expires: Date.now() + ttl });
+  return value;
+}
+
+/**
+ * Fetch + decode one specific bucket object, optionally cleaned. Cached
+ * like the history path (a completed scan is immutable). Used by the
+ * nowcast, which needs the last few scans by key rather than by stamp.
+ *
+ * @param {String} site 3-letter radar id
+ * @param {String} product bucket product token
+ * @param {String} key bucket object key
+ * @param {Boolean} [clean] apply the dual-pol clean mask (reflectivity only)
+ * @returns {Promise<Object>} payload for /api/radar/radial
+ */
+async function fetchRadialByKey(site, product, key, clean = false) {
+  const cacheKey = `${site}:${product}:key:${key}${clean ? ":clean" : ""}`;
+  const hit = historyCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const decoded = await decodeKey(site, product, key);
+  const value = clean ? await cleanRadial(decoded) : decoded;
+  const ttl = (value.clean && !value.clean.applied && CLEAN_TRANSIENT.has(value.clean.reason))
+    ? CLEAN_PENDING_TTL_MS
+    : HISTORY_TTL_MS;
+  historyCache.set(cacheKey, { value, expires: Date.now() + ttl });
   return value;
 }
 
@@ -999,6 +1133,7 @@ module.exports = {
   packRadials,
   fetchRadial,
   fetchRadialAtStamp,
+  fetchRadialByKey,
   keyForStamp,
   keyForEpoch,
   wantsClean,
@@ -1022,6 +1157,9 @@ module.exports = {
   CLEAN_FLOOR_DBZ,
   CLASS_PRODUCT,
   PRODUCTS,
+  ACCUMULATION_PRODUCTS,
+  accumulationScaling,
+  accumulationMeta,
   BIN_KM,
   NUM_BUCKETS,
   BUCKET_DEG,

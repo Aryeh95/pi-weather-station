@@ -20,6 +20,9 @@ import { RADAR_PALETTE_DEFAULT, RADAR_PALETTE_STORAGE_KEY, normalizeRadarPalette
 import axios from "axios";
 import tzlookup from "tz-lookup";
 
+// Accumulation products in dock-cycle order (see cycleRadarAccumulation).
+const ACCUMULATION_CYCLE = ["DAA", "DU3", "DTA"];
+
 export const AppContext = createContext();
 
 // ——— Context slices (step 2b of the AppContext split) ———
@@ -671,6 +674,22 @@ export function AppContextProvider({ children }) {
     });
   }, []);
 
+  // Nowcast panel — "rain at the pin in N minutes, this heavy, ending
+  // then" from the radar's own motion. Per-device, OFF by default: it is
+  // a card over the map, and a kiosk that only wants the picture should
+  // not carry it. The poll only runs while it is shown.
+  const [showNowcast, setShowNowcast] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem("showNowcast") === "true"; } catch { return false; }
+  });
+  const toggleNowcast = useCallback(() => {
+    setShowNowcast((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("showNowcast", String(next)); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
+
   // GOES GLM lightning overlay. Per-device, OFF by default like the
   // other radar overlays -- and the cold-start window fetch (~10 MB from
   // the GOES bucket) only ever happens when someone actually wants it.
@@ -735,7 +754,7 @@ export function AppContextProvider({ children }) {
   const [radarProduct, setRadarProduct] = useState(() => {
     if (typeof window === "undefined") return "N0B";
     const stored = window.localStorage.getItem("radarProduct");
-    if (stored === "N0B" || stored === "N0G" || stored === "PTYPE" || stored === "N0C") return stored;
+    if (["N0B", "N0G", "PTYPE", "N0C", "DAA", "DU3", "DTA"].includes(stored)) return stored;
     return window.localStorage.getItem("radarVelocity") === "true" ? "N0G" : "N0B";
   });
   const radarVelocity = radarProduct === "N0G";
@@ -743,6 +762,20 @@ export function AppContextProvider({ children }) {
   // Correlation coefficient (N0C) — RadarScope's "Super-Res Correlation
   // Coefficient"; where the debris signature is read by eye.
   const radarCorrelation = radarProduct === "N0C";
+  // Rainfall accumulation — RadarScope's "derived" accumulation products.
+  // One dock button cycles the period: off → 1 h (DAA) → 3 h (DU3) →
+  // storm total (DTA) → off, so the Map group grows by one button, not
+  // three. `radarAccumulationProduct` is the product id while on.
+  const radarAccumulation = ACCUMULATION_CYCLE.includes(radarProduct);
+  const radarAccumulationProduct = radarAccumulation ? radarProduct : null;
+  const cycleRadarAccumulation = useCallback(() => {
+    setRadarProduct((prev) => {
+      const i = ACCUMULATION_CYCLE.indexOf(prev);
+      const next = i < 0 ? ACCUMULATION_CYCLE[0] : (i + 1 < ACCUMULATION_CYCLE.length ? ACCUMULATION_CYCLE[i + 1] : "N0B");
+      try { window.localStorage.setItem("radarProduct", next); } catch { /* localStorage may be unavailable */ }
+      return next;
+    });
+  }, []);
   const flipRadarProduct = useCallback((product) => {
     setRadarProduct((prev) => {
       const next = prev === product ? "N0B" : product;
@@ -2373,10 +2406,12 @@ export function AppContextProvider({ children }) {
     cycleSatelliteMode,
     pickRadarSite,
     toggleLightning,
+    toggleNowcast,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
     toggleRadarCorrelation,
+    cycleRadarAccumulation,
     setRadarPalette,
     setAlertRadiusKmLive,
     selectGovAlert,
@@ -2450,10 +2485,12 @@ export function AppContextProvider({ children }) {
     cycleSatelliteMode,
     pickRadarSite,
     toggleLightning,
+    toggleNowcast,
     cycleRadarNoiseMode,
     toggleRadarVelocity,
     toggleRadarPrecipType,
     toggleRadarCorrelation,
+    cycleRadarAccumulation,
     setRadarPalette,
     setAlertRadiusKmLive,
     selectGovAlert,
@@ -2704,10 +2741,13 @@ export function AppContextProvider({ children }) {
     showRadar,
     satelliteMode,
     showLightning,
+    showNowcast,
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
     radarCorrelation,
+    radarAccumulation,
+    radarAccumulationProduct,
     radarPalette,
     showAlertRing,
     alertRadiusKm,
@@ -2724,10 +2764,13 @@ export function AppContextProvider({ children }) {
     showRadar,
     satelliteMode,
     showLightning,
+    showNowcast,
     radarNoiseMode,
     radarVelocity,
     radarPrecipType,
     radarCorrelation,
+    radarAccumulation,
+    radarAccumulationProduct,
     radarPalette,
     showAlertRing,
     alertRadiusKm,

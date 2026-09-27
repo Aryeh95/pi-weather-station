@@ -26,6 +26,7 @@
 // lookup table live with the server, which is what produces it — one copy
 // for the kiosk, the app and the tests. Plain CommonJS, no Node built-ins.
 import { buildPrecipLut } from "../../../../server/precipType";
+import { colorForDepthIn } from "../../../../server/accumulation";
 
 // Display clip. N0B data reaches 460 km, but rendering the full disc at
 // gate resolution would need a ~7000 px canvas; 300 km at 2560 px gives
@@ -291,7 +292,7 @@ export function colorForCorrelation(cc) {
  * Correlation coefficient ("correlation") is unitless: no floor, and its
  * level 1 is range folded like velocity's.
  *
- * @param {String} [kind] "reflectivity" (default), "velocity", "correlation" or "precip"
+ * @param {String} [kind] "reflectivity" (default), "velocity", "correlation", "accumulation" or "precip"
  * @param {String} [palette] palette id (see ui/radarPalette.js); reflectivity and velocity follow it
  * @returns {Uint8ClampedArray} 256 × 4 RGBA entries
  */
@@ -300,15 +301,19 @@ export function buildLevelLut(scaling, minDbz = -Infinity, kind = "reflectivity"
   const lut = new Uint8ClampedArray(256 * 4);
   const velocity = kind === "velocity";
   const correlation = kind === "correlation";
+  // Rainfall accumulation: inches on the product's own scale, level 0
+  // reserved, no dBZ floor (colorForDepthIn is transparent below 0.01 in).
+  const accumulation = kind === "accumulation";
   if (velocity || correlation) {
     lut.set(VEL_RF_COLOR, 4);
   }
-  for (let level = 2; level < 256; level += 1) {
+  for (let level = accumulation ? 1 : 2; level < 256; level += 1) {
     const v = scaling.min + level * scaling.increment;
-    if (!velocity && !correlation && v < minDbz) continue;
+    if (!velocity && !correlation && !accumulation && v < minDbz) continue;
     let rgba;
     if (velocity) rgba = colorForVelocity(v, palette);
     else if (correlation) rgba = colorForCorrelation(v);
+    else if (accumulation) rgba = colorForDepthIn(v);
     else rgba = colorForDbz(v, palette);
     const [r, g, b, a] = rgba;
     lut[level * 4] = r;
@@ -359,11 +364,12 @@ export function radialBounds(lat, lon) {
 export function renderRadialImage(data, bins, minDbz, palette = "nws") {
   const size = RADIAL_CANVAS_PX;
   const { radar, numBuckets, bucketDeg, numBins, binKm, firstBinKm, scaling, kind } = data;
-  const lutKind = ["velocity", "precip", "correlation"].includes(kind) ? kind : "reflectivity";
+  const lutKind = ["velocity", "precip", "correlation", "accumulation"].includes(kind) ? kind : "reflectivity";
   const lut = buildLevelLut(scaling, minDbz, lutKind, palette);
   // Reflectivity skips the two reserved levels outright; velocity and
   // correlation keep level 1 (range folded) because the LUT paints it;
-  // precipitation type has only level 0 reserved and lets the LUT decide.
+  // precipitation type and accumulation have only level 0 reserved and
+  // let the LUT decide.
   const minLevel = lutKind === "reflectivity" ? 2 : 1;
   const lut32 = new Uint32Array(lut.buffer);
   // (xm0 is only needed for the bounds themselves — the column loop is
