@@ -28,6 +28,10 @@
 const { listHourKeys } = require("../server/nexradBucket");
 const { fetchRadialByKey } = require("../server/radarRadialCtrl");
 const { keyNearest, fetchGrid } = require("../server/mrmsHailCtrl");
+const { keyForEpoch } = require("../server/radarRadialCtrl");
+const { parseCellRows, toGeoCell } = require("../server/stormTracksCtrl");
+const parseLevel3 = require("nexrad-level-3-data");
+const axios = require("axios");
 const nc = require("../server/nowcastCtrl");
 
 const LEADS = [15, 30, 45, 60];
@@ -50,8 +54,29 @@ const CONFIGS = {
   "veto0.2": { disable: ["ptype"], enable: ["mrms"], mrmsMode: "veto", mrmsWet: 0.2 },
   "veto0.5": { disable: ["ptype"], enable: ["mrms"], mrmsMode: "veto", mrmsWet: 0.5 },
   "veto1.0": { disable: ["ptype"], enable: ["mrms"], mrmsMode: "veto", mrmsWet: 1.0 },
+  "no-cells": { disable: ["ptype", "cells"] },
 };
-const DEFAULT_CONFIGS = ["baseline", "ensemble", "+trend", "+local", "default", "blend0.2", "blend1.0", "veto1.0", "veto0.5", "veto0.2"];
+const DEFAULT_CONFIGS = ["baseline", "ensemble", "+trend", "+local", "no-cells", "default", "blend0.2", "blend1.0", "veto1.0", "veto0.5", "veto0.2"];
+const L3_BASE = "https://unidata-nexrad-level3.s3.amazonaws.com";
+
+/**
+ * SCIT cells from the storm-track product nearest a scan time, parsed
+ * exactly as stormTracksCtrl does live. Null when none within the window.
+ *
+ * @param {String} site
+ * @param {Number} epoch
+ * @returns {Promise<Array<Object>|null>}
+ */
+async function cellsAtEpoch(site, epoch) {
+  const key = await keyForEpoch(site, "NST", epoch);
+  if (!key) return null;
+  const res = await axios.get(`${L3_BASE}/${key}`, { responseType: "arraybuffer", timeout: 15000 });
+  const parsed = parseLevel3(Buffer.from(res.data));
+  const pd = parsed && parsed.productDescription;
+  if (!pd || !Number.isFinite(pd.latitude)) return null;
+  const page = (parsed.tabular && parsed.tabular.pages && parsed.tabular.pages[0]) || [];
+  return parseCellRows(page).map((r) => toGeoCell(r, pd.latitude, pd.longitude));
+}
 
 /**
  * Every N0B key for a site between two times, oldest first.
@@ -187,6 +212,24 @@ async function main() {
     console.log(`  ≥ ${thr} mm/h: ${pRadarGivenMrms == null ? "—" : `${(pRadarGivenMrms * 100).toFixed(0)} %`} / ${pMrmsGivenRadar == null ? "—" : `${(pMrmsGivenRadar * 100).toFixed(0)} %`}  (both ${c.both}, MRMS only ${c.mrmsOnly}, radar only ${c.radarOnly}, neither ${c.neither})`);
   });
 
+  // Storm cells per scan (the nowcast folds on-track cells into its
+  // ensemble); a scan with no product keeps null.
+  const cellsByScan = [];
+  let cellScans = 0;
+  for (let k = 0; k < scans.length; k += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- sequential small files
+      const c = await cellsAtEpoch(site, epochs[k]);
+      cellsByScan.push(c);
+      if (c) cellScans += 1;
+    } catch (err) {
+      cellsByScan.push(null);
+      process.stderr.write(`\nSTI ${k}: ${err.message}\n`);
+    }
+    process.stderr.write(`\rSTI ${cellScans}/${k + 1}`);
+  }
+  process.stderr.write("\n");
+
   const results = {};
   const t0 = Date.now();
   for (const name of configNames) {
@@ -211,7 +254,7 @@ async function main() {
         if (epochs[k] < startMs) continue;
         const window = scans.slice(k - NUM_SCANS + 1, k + 1);
         const fc = nc.nowcastFromScans(window, home, {
-          disable, enable: cfg.enable, previous, rateGrid: rateGrids[k] ? rateGrids[k][h] : null, mrmsMode: cfg.mrmsMode, mrmsWet: cfg.mrmsWet,
+          disable, enable: cfg.enable, previous, rateGrid: rateGrids[k] ? rateGrids[k][h] : null, mrmsMode: cfg.mrmsMode, mrmsWet: cfg.mrmsWet, cells: cellsByScan[k],
         });
         issued += 1;
         if (fc.motion) {
@@ -284,7 +327,7 @@ async function main() {
 
   const fmt = (v) => (v == null ? "  —  " : `${(v * 100).toFixed(0).padStart(3)} %`);
   const fmtB = (v) => (v == null ? "  —  " : v.toFixed(3));
-  console.log(`\n${site} ${startIso} → ${endIso}, ${homes.length} homes, ${scans.length} scans, MRMS for ${mrmsFound}, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  console.log(`\n${site} ${startIso} → ${endIso}, ${homes.length} homes, ${scans.length} scans, MRMS for ${mrmsFound}, STI for ${cellScans}, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   const first = results[configNames[0]];
   if (first) {
     console.log("\npersistence baseline (\"same as now\"):");

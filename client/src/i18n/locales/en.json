@@ -168,7 +168,9 @@
       "mix": "Brief sleet in {{range}} min",
       "hail": "Brief hail in {{range}} min",
       "graupel": "Brief graupel in {{range}} min"
-    }
+    },
+    "cellOnTrack": "Storm cell {{id}} on track · ≈{{min}} min",
+    "cellOverhead": "Storm cell {{id}} overhead"
   },
   "conditions": {
     "title": "Conditions",

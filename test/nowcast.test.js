@@ -309,3 +309,54 @@ test("nearestEcho reports the strongest echo beside the pin, or null on a clean 
   assert.ok(e.distanceKm >= 1 && e.distanceKm <= 4);
   assert.ok(e.bearingDeg > 45 && e.bearingDeg < 135, "to the east");
 });
+
+test("cellsOnTrack keeps a SCIT cell whose forecast path crosses the pin and rejects one passing wide", () => {
+  const home = { lat: 32.19, lon: -98.235 };
+  const kmLat = 1 / 110.574;
+  const kmLon = 1 / (111.32 * Math.cos((home.lat * Math.PI) / 180));
+  // Cell 10 km NE moving SW at 24 km/h (0.4 km/min): over the pin in 25 min.
+  const toward = {
+    id: "A3", lat: home.lat + 7.07 * kmLat, lon: home.lon + 7.07 * kmLon,
+    forecast: [{ minutes: 60, lat: home.lat + (7.07 - 16.97) * kmLat, lon: home.lon + (7.07 - 16.97) * kmLon }],
+  };
+  // Cell 30 km north moving east: passes 30 km wide.
+  const wide = {
+    id: "B1", lat: home.lat + 30 * kmLat, lon: home.lon,
+    forecast: [{ minutes: 60, lat: home.lat + 30 * kmLat, lon: home.lon + 20 * kmLon }],
+  };
+  const fresh = { id: "N1", lat: home.lat + 5 * kmLat, lon: home.lon, forecast: [] };
+  const on = nc.cellsOnTrack([toward, wide, fresh], home);
+  assert.equal(on.length, 1);
+  assert.equal(on[0].id, "A3");
+  assert.ok(on[0].arrivalMin >= 22 && on[0].arrivalMin <= 28, `arrival ${on[0].arrivalMin}`);
+  assert.ok(on[0].passKm < 1.5);
+  assert.ok(on[0].towardDeg > 215 && on[0].towardDeg < 235, `toward ${on[0].towardDeg}`);
+  // Cell members join the ensemble with CELL_WEIGHT of the total and keep it summing to one.
+  const field = nc.ensembleMembers({ vx: 0.3, vy: -0.2, ncc: 0.9 }, null, nc.featureSet(), 0);
+  const all = nc.withCellMembers(field, on);
+  const sum = all.reduce((a, m) => a + m.weight, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9);
+  const cellShare = all.filter((m) => m.cell).reduce((a, m) => a + m.weight, 0);
+  assert.ok(cellShare > 0.55 && cellShare <= 0.6, `head-on cell share ${cellShare}`);
+  assert.equal(nc.withCellMembers(field, []), field, "no cells: untouched");
+  assert.equal(nc.withCellMembers(null, on).reduce((a, m) => a + m.weight, 0), 1, "cells alone carry the ensemble");
+});
+
+test("a cell moving at right angles to the field brings its core to the pin", () => {
+  // Field drifts east; a heavy core 10 km north of the pin moves south.
+  const home = { lat: 40, lon: -75 };
+  const grid = blob(0, 10, 3, 50);
+  const motion = { vx: 0.4, vy: 0, ncc: 0.9 };
+  const field = nc.ensembleMembers(motion, null, nc.featureSet(), 0);
+  const without = nc.advectSeries(grid, motion, { members: field, features: nc.featureSet() });
+  assert.ok(without.every((s) => s.prob < 0.5), "the field alone never brings the core over the pin");
+  const kmLat = 1 / 110.574;
+  const cell = { id: "Z9", lat: home.lat + 10 * kmLat, lon: home.lon, forecast: [{ minutes: 30, lat: home.lat - 5 * kmLat, lon: home.lon }] };
+  const on = nc.cellsOnTrack([cell], home);
+  assert.equal(on.length, 1);
+  const withCells = nc.advectSeries(grid, motion, { members: nc.withCellMembers(field, on), features: nc.featureSet() });
+  const hit = withCells.find((s) => s.leadMin === 20);
+  assert.ok(hit.prob >= 0.55 && hit.prob <= 0.65, `cell share at +20: ${hit.prob}`);
+  assert.ok(["heavy", "intense"].includes(hit.category), hit.category);
+  assert.ok([15, 20].includes(nc.summarize(withCells).arrival.leadMin), "the core reaches the pin in the +15 or +20 window");
+});

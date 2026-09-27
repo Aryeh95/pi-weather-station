@@ -382,6 +382,7 @@ async function getStormTracks(req, res) {
 
 module.exports = {
   getStormTracks,
+  fetchTracks,
   // Exported for tests.
   parseCellRows,
   toGeoCell,

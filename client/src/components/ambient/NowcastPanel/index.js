@@ -145,7 +145,7 @@ const NowcastPanel = ({ compact = false }) => {
 
   // ---- The answer ---------------------------------------------------
   const {
-    now: scanNow, arrival, peak, end, series, motion, trend, confidence, horizonMin, scanTime, site, hindcast, liveSkill, mrms, nearby,
+    now: scanNow, arrival, peak, end, series, motion, trend, confidence, horizonMin, scanTime, site, hindcast, liveSkill, mrms, nearby, cells,
   } = data;
   const at = (lead) => clockAt(scanTime, lead, clockTime, mapTimezone);
   const cat = (name) => t(`nowcast.intensity.${name}`);
@@ -210,6 +210,12 @@ const NowcastPanel = ({ compact = false }) => {
     } else detail = t("nowcast.noRainDetail", { km: data.gridKm });
   }
 
+  // A tracked storm cell on a path over the pin: named, with the tracker's
+  // own arrival time, so the card and the storm-track label agree.
+  const cell = Array.isArray(cells) && cells.length ? cells[0] : null;
+  const cellLine = cell
+    ? t(cell.arrivalMin > elapsed ? "nowcast.cellOnTrack" : "nowcast.cellOverhead", { id: cell.id, min: Math.max(1, cell.arrivalMin - elapsed) })
+    : null;
   const motionLine = motion
     ? (motion.speedKmh < 5
       ? t("nowcast.stationary")
@@ -273,6 +279,7 @@ const NowcastPanel = ({ compact = false }) => {
       </div>
       <footer className={styles.foot}>
         {motionLine ? <span>{motionLine}{trendLine ? ` · ${trendLine}` : ""}</span> : null}
+        {cellLine ? <span className={styles.cell}>{cellLine}</span> : null}
         <span className={`${styles.conf} ${styles[`conf-${confidence}`] || ""}`}>
           {conf}{mrms && mrms.weight ? ` · ${t("nowcast.withSurface")}` : ""}
         </span>

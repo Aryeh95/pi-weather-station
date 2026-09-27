@@ -574,7 +574,12 @@ or one step at ≥ 0.6), `earliestMin` (first ≥ 0.3), `latestMin` (first
 ≥ 0.7, or null) and `brief` (one wet step followed by a dry one) — the
 card quotes the range and says "brief shower". `nearby` names the
 strongest echo within 15 km of the pin (`maxDbz`, `distanceKm`,
-`bearingDeg`) so a dry answer can say what the map shows. `ptype`
+`bearingDeg`) so a dry answer can say what the map shows. `cells` lists
+the SCIT storm cells (from `/api/storm-tracks`) whose forecast path passes
+within 15 km of the pin inside the horizon — `id`, `speedKmh`,
+`towardDeg`, `arrivalMin`, `passKm`, `rangeKm` — which the ensemble carries
+with the cell's own motion (35–60 % of its weight by closest approach)
+because a discrete cell can move at right angles to the field. `ptype`
 is `rain` / `snow` / `mix` / `graupel` / `hail` from N0H at the upstream
 point. `category` is `none` / `light` (≥ 15 dBZ) / `moderate` (≥ 30) /
 `heavy` (≥ 40) / `intense` (≥ 50). `confidence` is `high` / `medium` /

@@ -160,3 +160,10 @@
 .stale .detail {
   opacity: 0.6;
 }
+
+/* A tracked storm cell on course for the pin — the one line worth
+ * making louder than the rest of the footer. */
+.cell {
+  color: var(--c-text);
+  font-weight: 600;
+}

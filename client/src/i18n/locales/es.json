@@ -168,7 +168,9 @@
       "mix": "Aguanieve breve en {{range}} min",
       "hail": "Granizo breve en {{range}} min",
       "graupel": "Nieve granulada breve en {{range}} min"
-    }
+    },
+    "cellOnTrack": "Célula {{id}} en rumbo · ≈{{min}} min",
+    "cellOverhead": "Célula {{id}} encima"
   },
   "conditions": {
     "title": "Condiciones",

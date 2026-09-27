@@ -168,7 +168,9 @@
       "mix": "Grésil bref dans {{range}} min",
       "hail": "Grêle brève dans {{range}} min",
       "graupel": "Neige roulée brève dans {{range}} min"
-    }
+    },
+    "cellOnTrack": "Cellule {{id}} en approche · ≈{{min}} min",
+    "cellOverhead": "Cellule {{id}} au-dessus"
   },
   "conditions": {
     "title": "Conditions",

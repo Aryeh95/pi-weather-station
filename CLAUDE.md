@@ -1368,6 +1368,27 @@ DIX 2026-09-27 14–20 Z showers and LWX 2026-09-22 03–06 Z band):
   min against persistence 39 / 22 / 15 / 10 %, Brier 0.11–0.17 (the
   window truth is harder for everyone — persistence's Brier went from
   0.10 to 0.16). Replayed South Salem: "Brief shower in ~5 min · 67 %".
+- **Second kiosk report (Stephenville TX, FWS, 2026-09-27 22:32 Z): the
+  field's motion is not the cell's.** The card read "Raining now · light
+  · moderate around 5:47" while the storm-track label on the same screen
+  read "A3 · ≈ 17 min" for a 50+ dBZ core aimed at the pin. Replayed: the
+  whole-field cross-correlation gave 23 km/h toward 125° (the broad rain
+  area's south-east drift, ncc 0.89, 7 of 9 local blocks agreeing) while
+  SCIT had cell A3 moving toward 205° at 12 kt — nearly at right angles.
+  The nowcast sampled upstream to the north-west and never saw the core;
+  the local 3 × 3 field (60 km blocks, 50 km apart) is far too coarse for
+  a 10 km cell. Fix: `cellsOnTrack` folds the storm-track layer's own
+  cells into the ensemble — a cell whose forecast path (built from the
+  forecast POSITIONS, never MOVEMENT) passes within 15 km of the pin
+  inside the horizon contributes members with the CELL's vector, sharing
+  35–60 % of the ensemble by closest approach (head-on = 60 %, enough for
+  a rain call on its own); cell members ignore the local field. The card
+  prints "Storm cell A3 on track · ≈ 17 min" so the two features agree.
+  Replayed Stephenville: heavy now, 48 dBZ at +10, ending +35. On the two
+  archived cases (a stratiform band and unorganised showers) cells changed
+  nothing to rounding — this is a convective-day fix, and the hindcast
+  harness now fetches the STI product per scan (`cellsAtEpoch`) so a
+  convective case can be measured when one is archived.
 - The dock's Map group is now 16 buttons and did not fit a phone in
   portrait — the noise-filter, velocity, type and CC toggles were off the
   right edge, silently. The group wraps onto two rows now

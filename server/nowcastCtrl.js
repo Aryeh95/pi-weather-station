@@ -48,6 +48,7 @@ const { listHourKeys } = require("./nexradBucket");
 const { fetchRadialByKey, keyForEpoch, CLASS_PRODUCT } = require("./radarRadialCtrl");
 const { resolveRadarSite, overrideSite } = require("./iemRadarCtrl");
 const { keyNearest, fetchGrid } = require("./mrmsHailCtrl");
+const { fetchTracks } = require("./stormTracksCtrl");
 const precipType = require("./precipType");
 
 const SERVICE_NAME = "NEXRAD L3 (nowcast)";
@@ -167,6 +168,24 @@ const MRMS_MODE = "veto";
 const MRMS_VETO_FLOOR = 0.5;
 const MRMS_WEIGHT = 0.5;
 const DEFAULT_OFF = ["mrms"];
+// Storm cells (NEXRAD SCIT, the storm-track layer's product) join the
+// ensemble with their OWN motion when their forecast path passes within
+// CELL_PASS_KM of the pin inside the horizon. The whole-field vector is
+// the broad rain area's drift; a discrete cell can propagate at a right
+// angle to it (Stephenville TX, 2026-09-27 22:32 Z: field toward 125° at
+// 23 km/h, cell A3 toward 205° at 12 kt straight at the pin — the card
+// sampled north-west of the pin and promised "light … moderate" while the
+// storm-track label on the same screen read "A3 · ≈ 17 min"). Cells share
+// CELL_WEIGHT of the ensemble; the field keeps the rest.
+// A cell aimed straight at the pin gets CELL_WEIGHT_MAX of the ensemble
+// (enough on its own for a rain call), one passing CELL_PASS_KM wide gets
+// CELL_WEIGHT_MIN; linear in between.
+const CELL_WEIGHT_MAX = 0.6;
+const CELL_WEIGHT_MIN = 0.35;
+const CELL_PASS_KM = 15;
+const CELL_MAX_RANGE_KM = 100;
+const CELL_MIN_SPEED_KMH = 3;
+const CELL_MAX_SPEED_KMH = 120;
 // Probability thresholds for the sentences: the rain call, and the range
 // the arrival is quoted over.
 // Echo reported beside a dry answer: anything the cleaned scan kept above
@@ -249,7 +268,7 @@ let mrmsInflight = null;
  *
  * @param {Iterable<String>} [disable] feature names to turn off
  * @param {Iterable<String>} [enable] feature names to turn on (beats DEFAULT_OFF)
- * @returns {{ensemble: Boolean, trend: Boolean, local: Boolean, mrms: Boolean, persist: Boolean, ptype: Boolean}}
+ * @returns {{ensemble: Boolean, trend: Boolean, local: Boolean, mrms: Boolean, persist: Boolean, ptype: Boolean, cells: Boolean}}
  */
 function featureSet(disable, enable) {
   const list = (v) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -266,6 +285,7 @@ function featureSet(disable, enable) {
     mrms: !off.has("mrms"),
     persist: !off.has("persist"),
     ptype: !off.has("ptype"),
+    cells: !off.has("cells"),
   };
 }
 
@@ -742,6 +762,83 @@ function ensembleMembers(motion, previous, features, nowEpoch) {
 }
 
 /**
+ * SCIT storm cells whose forecast path passes close to the pin, with their
+ * own motion vectors — built from the forecast POSITIONS (the MOVEMENT
+ * field is a from-direction, see stormTracksCtrl).
+ *
+ * @param {Array<Object>} cells /api/storm-tracks cells
+ * @param {{lat: Number, lon: Number}} home
+ * @returns {Array<{id: String, vx: Number, vy: Number, speedKmh: Number, towardDeg: Number, arrivalMin: Number, passKm: Number, rangeKm: Number}>} nearest arrival first
+ */
+function cellsOnTrack(cells, home) {
+  if (!Array.isArray(cells) || !cells.length) return [];
+  const { kmPerDegLon } = homeGeometry(home);
+  const out = [];
+  for (const cell of cells) {
+    if (!cell || !Array.isArray(cell.forecast) || !cell.forecast.length) continue;
+    const last = cell.forecast[cell.forecast.length - 1];
+    if (!Number.isFinite(last.minutes) || last.minutes <= 0) continue;
+    // Cell and its forecast end, km east / north of home.
+    const cx = (cell.lon - home.lon) * kmPerDegLon;
+    const cy = (cell.lat - home.lat) * KM_PER_DEG_LAT;
+    const fx = (last.lon - home.lon) * kmPerDegLon;
+    const fy = (last.lat - home.lat) * KM_PER_DEG_LAT;
+    const vx = (fx - cx) / last.minutes;
+    const vy = (fy - cy) / last.minutes;
+    const speedKmh = Math.hypot(vx, vy) * 60;
+    const rangeKm = Math.hypot(cx, cy);
+    if (rangeKm > CELL_MAX_RANGE_KM || speedKmh < CELL_MIN_SPEED_KMH || speedKmh > CELL_MAX_SPEED_KMH) continue;
+    // Closest approach of the cell's straight track to the pin.
+    const v2 = vx * vx + vy * vy;
+    const tStar = -(cx * vx + cy * vy) / v2;
+    const passKm = Math.hypot(cx + vx * tStar, cy + vy * tStar);
+    if (tStar < -LEAD_STEP_MIN || tStar > HORIZON_MIN + LEAD_STEP_MIN || passKm > CELL_PASS_KM) continue;
+    let towardDeg = (Math.atan2(vx, vy) * 180) / Math.PI;
+    if (towardDeg < 0) towardDeg += 360;
+    out.push({
+      id: cell.id,
+      vx,
+      vy,
+      speedKmh: Math.round(speedKmh),
+      towardDeg: Math.round(towardDeg),
+      arrivalMin: Math.max(0, Math.round(tStar)),
+      passKm: Math.round(passKm * 10) / 10,
+      rangeKm: Math.round(rangeKm),
+    });
+  }
+  return out.sort((a, b) => a.arrivalMin - b.arrivalMin);
+}
+
+/**
+ * Fold the on-track cells into the ensemble: a share set by the closest
+ * approach (CELL_WEIGHT_MAX head-on … CELL_WEIGHT_MIN at CELL_PASS_KM),
+ * split equally among the cells, each as a small fan of members around
+ * its own vector; the field members are scaled down to make room. With
+ * no field motion the cells carry the whole ensemble.
+ *
+ * @param {Array<Object>|null} members field ensemble (null when motion is unknown)
+ * @param {Array<Object>} onTrack cellsOnTrack result
+ * @returns {Array<Object>} combined members
+ */
+function withCellMembers(members, onTrack) {
+  if (!onTrack.length) return members;
+  const nearest = Math.min(...onTrack.map((c) => c.passKm));
+  const byApproach = CELL_WEIGHT_MAX - (CELL_WEIGHT_MAX - CELL_WEIGHT_MIN) * Math.min(1, nearest / CELL_PASS_KM);
+  const cellShare = members && members.length ? byApproach : 1;
+  const out = (members || []).map((m) => ({ ...m, weight: m.weight * (1 - cellShare) }));
+  const fan = [[1, 0], [0.9, 0], [1.1, 0], [1, -6], [1, 6]];
+  const each = cellShare / onTrack.length / fan.length;
+  for (const cell of onTrack) {
+    for (const [sf, df] of fan) {
+      out.push({
+        speedFactor: sf, dirOffsetDeg: df, weight: each, base: { vx: cell.vx, vy: cell.vy }, previous: false, cell: cell.id,
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Where a member's air parcel that reaches home at `leadMin` is NOW: walk
  * back through the local field in 5-min steps, applying the member's
  * perturbation to each step.
@@ -760,7 +857,7 @@ function upstreamPoint(member, field, leadMin) {
   let remaining = leadMin;
   while (remaining > 0) {
     const dt = Math.min(LEAD_STEP_MIN, remaining);
-    const v = vectorAt(field, member.base, x, y);
+    const v = member.cell ? member.base : vectorAt(field, member.base, x, y);
     // Rotate by the direction offset (clockwise positive, like bearings).
     const vx = (v.vx * cos + v.vy * sin) * member.speedFactor;
     const vy = (-v.vx * sin + v.vy * cos) * member.speedFactor;
@@ -1159,6 +1256,7 @@ function confidenceFor(motion, keyLeadMin, keyProb = null) {
  * @param {Object|null} [opts.classification] decoded N0H payload for the newest scan
  * @param {{g: Object, samples: Uint16Array, validTime: String}|null} [opts.mrms] decoded MRMS PrecipRate near the newest scan
  * @param {{vx: Number, vy: Number, epoch: Number}|null} [opts.previous] the previous nowcast's vector for this pin
+ * @param {Array<Object>|null} [opts.cells] SCIT storm cells for the site (/api/storm-tracks `cells`)
  * @param {Iterable<String>} [opts.disable] features to switch off
  * @param {Iterable<String>} [opts.enable] features to switch on (MRMS is off by default)
  * @param {Float32Array|null} [opts.rateGrid] MRMS rate already on the home grid (harness shortcut; overrides opts.mrms)
@@ -1173,7 +1271,9 @@ function nowcastFromScans(scans, home, opts = {}) {
   const motion = frames.length > 1 ? estimateMotion(frames) : null;
   const field = motion && features.local ? estimateLocalField(frames, motion) : null;
   const trend = motion && features.trend ? estimateTrend(frames, motion) : null;
-  const members = motion ? ensembleMembers(motion, opts.previous || null, features, newest.epoch) : null;
+  const fieldMembers = motion ? ensembleMembers(motion, opts.previous || null, features, newest.epoch) : null;
+  const onTrack = features.cells ? cellsOnTrack(opts.cells, home) : [];
+  const members = withCellMembers(fieldMembers, onTrack);
 
   // MRMS surface rate: only when it is FRESH relative to the scan, else
   // the ground truth would lag the radar by more than one volume scan.
@@ -1198,7 +1298,9 @@ function nowcastFromScans(scans, home, opts = {}) {
   }
   const classGrid = features.ptype && opts.classification ? projectClassGrid(opts.classification, home) : null;
 
-  const series = advectSeries(newest.grid, motion, {
+  // With no field motion but a cell on track, advect on the cells alone.
+  const carrier = motion || (members && members.length ? { vx: 0, vy: 0 } : null);
+  const series = advectSeries(newest.grid, carrier, {
     members, field, trend, rateGrid, classGrid, features, mrmsMode: opts.mrmsMode, mrmsWet: opts.mrmsWet,
   });
   const summary = summarize(series);
@@ -1219,7 +1321,8 @@ function nowcastFromScans(scans, home, opts = {}) {
       localBlocks: field ? field.vectors.filter((v) => v.local).length : 0,
     } : null,
     trend,
-    ensemble: members ? { members: members.length, previousUsed: members.some((m) => m.previous) } : null,
+    ensemble: members ? { members: members.length, previousUsed: members.some((m) => m.previous), cellMembers: members.filter((m) => m.cell).length } : null,
+    cells: onTrack.map(({ vx, vy, ...rest }) => rest),
     mrms: mrmsInfo,
     classification: classGrid ? { product: CLASS_PRODUCT, scanTime: opts.classification.scanTime || null } : null,
     confidence: confidenceFor(motion, key ? key.leadMin : null, key ? key.prob : null),
@@ -1471,13 +1574,18 @@ async function fetchNowcast(site, home) {
   const newest = scans[scans.length - 1];
   const scanEpoch = Date.parse(newest.scanTime);
   const features = featureSet();
-  const [classification, mrms] = await Promise.all([
+  const [classification, mrms, tracks] = await Promise.all([
     features.ptype ? fetchClassification(site, scanEpoch) : null,
     features.mrms ? fetchMrmsRate(scanEpoch) : null,
+    // Storm cells: the same cached product the storm-track layer polls;
+    // never fatal (a radar with no cells has no product, which is fine).
+    features.cells ? fetchTracks(site).catch(() => null) : null,
   ]);
   const t0 = Date.now();
   const previous = previousMotion.get(pinKey) || null;
-  const core = nowcastFromScans(scans, home, { classification, mrms, previous });
+  const core = nowcastFromScans(scans, home, {
+    classification, mrms, previous, cells: tracks && Array.isArray(tracks.cells) ? tracks.cells : null,
+  });
   if (core.motion) previousMotion.set(pinKey, { vx: core.motion.vx, vy: core.motion.vy, epoch: scanEpoch });
   const liveSkill = verifyAndRecord(pinKey, scanEpoch, projectToGrid(newest, home), core.series);
   const value = {
@@ -1496,7 +1604,8 @@ async function fetchNowcast(site, home) {
   const what = value.now.raining
     ? `${value.now.ptype} now`
     : (value.arrival ? `${value.arrival.ptype} in ${value.arrival.leadMin} min (p ${value.arrival.prob})` : "dry");
-  recordServiceCall(SERVICE_NAME, 200, `${site} nowcast: ${what}, ${m}${value.mrms && value.mrms.weight ? ", +MRMS" : ""}`);
+  const cellNote = value.cells.length ? `, cell ${value.cells.map((c) => `${c.id}@${c.arrivalMin}min`).join("/")}` : "";
+  recordServiceCall(SERVICE_NAME, 200, `${site} nowcast: ${what}, ${m}${cellNote}${value.mrms && value.mrms.weight ? ", +MRMS" : ""}`);
   return value;
 }
 
@@ -1566,6 +1675,8 @@ module.exports = {
   summarize,
   sampleGrid,
   nearestEcho,
+  cellsOnTrack,
+  withCellMembers,
   categoryFor,
   rateForDbz,
   featureSet,
