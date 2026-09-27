@@ -70,7 +70,7 @@ colours vs 10 in the equivalent IEM tile over the same echo. Historical loop
 frames are rendered the same way progressively, so the loop sharpens as
 frames arrive.
 
-**Four radar products** at high zoom, one dock button each, all through the
+**Five radar products** at high zoom, one dock button each, all through the
 same raw-radial renderer and loop:
 
 - **Reflectivity** (N0B) — the default.
@@ -84,6 +84,26 @@ same raw-radial renderer and loop:
 - **Correlation coefficient** (N0C), with a **tornado debris marker**: gates
   near a detected circulation that combine ≥ 30 dBZ with CC < 0.8 are
   flagged as a debris signature on the storm-track layer.
+- **Rainfall accumulation** — one button cycles **last hour → last 3 hours
+  → storm total** (Level III DAA / DU3 / DTA, the radar's own dual-pol
+  rainfall estimates, in inches or millimetres). The legend prints the
+  rainfall **at your pin**, when the storm total started and the radar's
+  maximum, and at low zoom the 1 h and 3 h views switch to NOAA's MRMS
+  radar-only accumulation, which blends every radar in range and keeps
+  going past the home radar's 230 km edge.
+
+**Nowcast card** (optional, dock umbrella button). "Rain in 20–35 min ·
+light · 62 % chance · ending around 5:10 PM", from the radar itself: the
+last few volume scans' motion is found by cross-correlation and an
+ensemble of perturbed motions is advected over your pin, so the card prints
+a probability and a range rather than one number, shades a 0–90 min strip
+by likelihood in the active palette, says snow, sleet or hail when the
+dual-pol classifier does, and quotes its own measured track record
+(replayed against archived scans: it beats "same as now" at every lead,
+CSI 51 / 42 / 26 % at 15 / 30 / 60 min against 28 / 17 / 6 %). Every
+nowcast it issues is scored against the scans that arrive later, per pin,
+and the card quotes that live hit rate once it has enough of them. No
+forecast model, no key, no cloud call.
 
 **Reflectivity palette.** RadarScope-style by default (light rain recedes
 into white-grey, colour arrives with real precipitation) or the NWS
@@ -170,10 +190,10 @@ RadarScope. ECCC (Canada) alerts are also polled for locations in Canada.
 | Source | Used for | Key |
 |---|---|---|
 | [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) | N0Q mosaic tiles + composite time, N0B single-site tiles, frame-list JSON API, radar list for nearest-site resolution, N0Q colour table | none |
-| `unidata-nexrad-level3` (public S3 bucket) | Raw N0B reflectivity, N0G velocity, N0H hydrometeor class and N0C correlation-coefficient radials; STI storm tracks; NMD mesocyclones | none |
+| `unidata-nexrad-level3` (public S3 bucket) | Raw N0B reflectivity, N0G velocity, N0H hydrometeor class and N0C correlation-coefficient radials; DAA / DU3 / DTA rainfall accumulation; STI storm tracks; NMD mesocyclones; the nowcast's input scans | none |
 | [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) GOES layers | GOES-East infrared and visible satellite tiles + per-channel valid time | none |
 | `noaa-goes19` (public S3 bucket) | GLM lightning flashes | none |
-| `noaa-mrms-pds` (public S3 bucket) | MRMS MESH hail size at each storm cell; MRMS precipitation type + rate for the low-zoom mosaic | none |
+| `noaa-mrms-pds` (public S3 bucket) | MRMS MESH hail size at each storm cell; MRMS precipitation type + rate for the low-zoom mosaic; MRMS radar-only 1 h / 3 h accumulation for the rainfall mosaic | none |
 | [api.weather.gov](https://www.weather.gov/documentation/services-web-api) | Active alerts, zone geometry, radar-site fallback, the WSR-88D station list the site picker ships | none (User-Agent required) |
 | [Environment Canada](https://api.weather.gc.ca/) | Alerts for Canadian locations | none |
 | [Mapbox](https://www.mapbox.com/) | Basemap raster tiles | **required** |
