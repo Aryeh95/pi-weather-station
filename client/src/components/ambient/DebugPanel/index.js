@@ -1401,7 +1401,7 @@ const BucketAbout = ({ data, lang, gridTwoWide, fetchDebug }) => {
         <KV k={lbl(lang, "version", "version", "versión")}    v={v.version || "?"} />
         <KV k="commit"  v={v.commit || "?"} />
         <KV k={lbl(lang, "branch", "branche", "rama")}     v={v.branch || "?"} />
-        <KV k="repo"    v="github.com/thicla01/pi-weather-station" />
+        <KV k="repo"    v="github.com/Aryeh95/sweep" />
         <KV k={lbl(lang, "license", "licence", "licencia")}    v="MIT" />
         {/* UI flavour — handy for bug reports. A fixed technical
          * marker, not a localised word; v3 has been the only

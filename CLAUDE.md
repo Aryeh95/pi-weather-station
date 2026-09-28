@@ -1,9 +1,16 @@
 # Sweep (formerly pi-weather-station) → radar-focused rework
 
-> Product name changed to **Sweep** on 2026-09-03. The repository slug and
-> every on-disk identifier (`pi-weather-server.service`,
-> `~/.config/pi-weather-station/`, the log path) deliberately keep the old
-> name so existing installs and the updater's drift check keep working.
+> Product name changed to **Sweep** on 2026-09-03. Every on-disk identifier
+> (`pi-weather-server.service`, `~/.config/pi-weather-station/`, the log
+> path) deliberately keeps the old name so existing installs keep working.
+> **The repository moved to `Aryeh95/sweep` on 2026-09-28**, a real GitHub
+> fork of `thicla01/pi-weather-station`: the 88 commits made in the
+> stand-alone `Aryeh95/pi-weather-station` repo were grafted (trees and
+> metadata preserved) onto upstream commit `ca2587c`, the closest to the
+> 2026-08-11 baseline (12 files differed: 11 lost executable bits and a
+> local CLAUDE.md), so GitHub shows the fork lineage. Installs must repoint
+> `origin` to the new URL for the update checker, which compares against
+> `@{u}`.
 
 ## Context
 

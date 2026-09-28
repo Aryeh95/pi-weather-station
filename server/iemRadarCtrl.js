@@ -46,7 +46,7 @@ const NWS_POINTS_BASE = "https://api.weather.gov/points";
 
 // NWS asks for an identifying User-Agent on api.weather.gov. The existing
 // govAlertSources/nws.js sends the same courtesy header.
-const NWS_USER_AGENT = "sweep-radar (radar site lookup; github.com/aryeh95/pi-weather-station)";
+const NWS_USER_AGENT = "sweep-radar (radar site lookup; github.com/Aryeh95/sweep)";
 
 // Default product. N0B is super-res base reflectivity (0.5° tilt,
 // 0.25 km gates) — native radial data, the same product RadarScope

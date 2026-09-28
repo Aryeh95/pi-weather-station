@@ -120,6 +120,6 @@ it.
 
 ## Reporting a vulnerability
 
-Open a [GitHub issue](https://github.com/aryeh95/pi-weather-station/issues)
+Open a [GitHub issue](https://github.com/Aryeh95/sweep/issues)
 with the label `security`, or contact the maintainer directly via GitHub
 for sensitive disclosures.

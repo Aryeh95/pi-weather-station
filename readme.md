@@ -257,7 +257,7 @@ Three options live in `deploy/`. **Option 1 is recommended.**
 ### Option 1 — Automated installation (recommended)
 
 ```bash
-git clone https://github.com/aryeh95/pi-weather-station.git
+git clone https://github.com/Aryeh95/sweep.git
 cd pi-weather-station
 bash deploy/install.sh
 ```
@@ -285,7 +285,7 @@ Each prompt shows its default in uppercase; Enter accepts it.
 ### Option 2 — systemd (manual)
 
 ```bash
-git clone https://github.com/aryeh95/pi-weather-station.git
+git clone https://github.com/Aryeh95/sweep.git
 cd pi-weather-station
 cp deploy/pi-weather-server.service ~/.config/systemd/user/
 npm install

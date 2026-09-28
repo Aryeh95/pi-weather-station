@@ -8,7 +8,7 @@ welcome.
 ## Getting started
 
 ```bash
-git clone https://github.com/aryeh95/pi-weather-station.git
+git clone https://github.com/Aryeh95/sweep.git
 cd pi-weather-station
 npm install
 cd client && npm install && cd ..

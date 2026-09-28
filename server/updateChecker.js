@@ -76,7 +76,7 @@ function getLocalSha() {
  * SSH (git@github.com:owner/repo.git) formats.
  * Falls back to the original repository if the remote cannot be read.
  *
- * @returns {string} e.g. "thicla01/pi-weather-station"
+ * @returns {string} e.g. "Aryeh95/sweep"
  */
 function getRepo() {
   try {
@@ -88,7 +88,7 @@ function getRepo() {
     const match = remoteUrl.match(/github\.com[:/]([^/]+\/[^/.]+)(\.git)?$/);
     if (match) return match[1];
   } catch { /* git not available or no remote */ }
-  return "aryeh95/pi-weather-station"; // fallback
+  return "Aryeh95/sweep"; // fallback
 }
 
 // Commit that added `npm install` to /api/update (v2.4.1). Anything older

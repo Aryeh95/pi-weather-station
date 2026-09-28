@@ -20,7 +20,7 @@
 import axios from "axios";
 
 const API_TIMEOUT_MS = 10_000;
-const USER_AGENT_NOTE = "sweep-radar (github.com/aryeh95/pi-weather-station)";
+const USER_AGENT_NOTE = "sweep-radar (github.com/Aryeh95/sweep)";
 
 // api.weather.gov/points is stable per ~1 km cell and the app re-asks on
 // every pin move, so a small in-memory cache keyed to 3 decimals (~110 m)
